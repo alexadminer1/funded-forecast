@@ -107,30 +107,31 @@ function LoginInner() {
   return (
     <div style={{
       minHeight: "100vh",
-      background: "var(--bg-page)",
       display: "flex",
       fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
     }}>
       {/* LEFT — form */}
       <div style={{
-        flex: "0 0 auto",
-        width: "100%",
-        maxWidth: 480,
+        flex: 1,
+        background: "var(--bg-page)",
         display: "flex",
         flexDirection: "column",
         justifyContent: "center",
-        padding: "48px 40px",
+        alignItems: "center",
+        padding: 48,
         position: "relative",
-        zIndex: 1,
       }}>
         {/* Glow */}
         <div style={{
-          position: "fixed", top: "30%", left: "25%",
-          transform: "translate(-50%, -50%)",
-          width: 500, height: 400,
+          position: "absolute", top: "20%", left: "50%",
+          transform: "translateX(-50%)",
+          width: 400, height: 300,
           background: "radial-gradient(ellipse, rgba(34,197,94,0.06) 0%, transparent 70%)",
           pointerEvents: "none",
         }} />
+
+        {/* Form card */}
+        <div style={{ width: "100%", maxWidth: 400, position: "relative" }}>
 
         {/* Logo */}
         <a href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 9, marginBottom: 40 }}>
@@ -246,20 +247,23 @@ function LoginInner() {
             </>
           )}
         </div>
+        </div>{/* /form card */}
       </div>
 
-      {/* RIGHT — marketing panel (hidden on mobile via inline media workaround) */}
+      {/* RIGHT — marketing panel (hidden on mobile) */}
       <div className="login-right-panel" style={{
         flex: 1,
-        background: "linear-gradient(160deg, #0D1521 0%, #070D19 100%)",
-        borderLeft: "1px solid rgba(255,255,255,0.05)",
+        background: "#0a1f0f",
+        borderLeft: "1px solid rgba(34,197,94,0.08)",
         display: "flex",
         flexDirection: "column",
         justifyContent: "center",
-        padding: "64px 56px",
+        alignItems: "center",
+        padding: 48,
         position: "relative",
         overflow: "hidden",
       }}>
+        <div style={{ width: "100%", maxWidth: 400 }}>
         {/* Glow */}
         <div style={{
           position: "absolute", top: -100, right: -100,
@@ -320,6 +324,7 @@ function LoginInner() {
             </div>
           ))}
         </div>
+        </div>{/* /inner */}
       </div>
 
       <style>{`
