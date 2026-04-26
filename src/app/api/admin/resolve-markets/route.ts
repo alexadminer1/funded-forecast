@@ -44,8 +44,12 @@ export async function POST(req: NextRequest) {
 
     const markets: PolymarketMarket[] = await res.json();
 
+    // Filter only markets we have in DB
+    const ourMarketIds = new Set(liveMarkets.map((m) => m.id));
+
     // 3. Filter resolved markets
     const resolvedMarkets = markets.filter((m) => {
+      if (!ourMarketIds.has(m.id)) return false;
       if (!m.closed) return false;
       try {
         const prices = JSON.parse(m.outcomePrices);
