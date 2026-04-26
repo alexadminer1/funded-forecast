@@ -98,8 +98,29 @@ export default function MarketsPage() {
 
         {/* Markets Grid */}
         {loading ? (
-          <div style={{ textAlign: "center", color: "#94A3B8", padding: 64 }}>
-            Loading markets...
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+            gap: 16,
+          }}>
+            {[...Array(6)].map((_, i) => (
+              <div key={i} style={{
+                background: "#1E293B",
+                borderRadius: 12,
+                padding: 20,
+                border: "1px solid #334155",
+                animation: "pulse 1.5s ease-in-out infinite",
+              }}>
+                <div style={{ height: 12, background: "#334155", borderRadius: 4, width: "40%", marginBottom: 16 }} />
+                <div style={{ height: 16, background: "#334155", borderRadius: 4, width: "90%", marginBottom: 8 }} />
+                <div style={{ height: 16, background: "#334155", borderRadius: 4, width: "70%", marginBottom: 24 }} />
+                <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                  <div style={{ flex: 1, height: 60, background: "#334155", borderRadius: 8 }} />
+                  <div style={{ flex: 1, height: 60, background: "#334155", borderRadius: 8 }} />
+                </div>
+                <div style={{ height: 12, background: "#334155", borderRadius: 4, width: "60%" }} />
+              </div>
+            ))}
           </div>
         ) : markets.length === 0 ? (
           <div style={{ textAlign: "center", color: "#94A3B8", padding: 64 }}>
