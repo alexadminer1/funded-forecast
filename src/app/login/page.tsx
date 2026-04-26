@@ -1,12 +1,17 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, setToken } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [mode, setMode] = useState<"login" | "register">("login");
+
+  useEffect(() => {
+    if (searchParams.get("mode") === "register") setMode("register");
+  }, [searchParams]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -242,6 +247,14 @@ export default function LoginPage() {
         >
           {loading ? "Please wait..." : mode === "login" ? "Sign In" : "Create Account"}
         </button>
+
+        <div style={{ marginTop: 16, textAlign: "center", fontSize: 13, color: "var(--text-muted)" }}>
+          {mode === "login" ? (
+            <>Don&apos;t have an account? <button onClick={() => setMode("register")} style={{ background: "none", border: "none", color: "#22C55E", fontWeight: 600, fontSize: 13, cursor: "pointer", padding: 0 }}>Get started</button></>
+          ) : (
+            <>Already have an account? <button onClick={() => setMode("login")} style={{ background: "none", border: "none", color: "#22C55E", fontWeight: 600, fontSize: 13, cursor: "pointer", padding: 0 }}>Sign in</button></>
+          )}
+        </div>
       </div>
     </div>
   );
