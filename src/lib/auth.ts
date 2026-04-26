@@ -5,7 +5,7 @@ if (!JWT_SECRET) throw new Error('JWT_SECRET is not set')
 
 export function verifyToken(token: string): { userId: number } | null {
   try {
-    return jwt.verify(token, JWT_SECRET) as { userId: number }
+    return jwt.verify(token, JWT_SECRET) as unknown as { userId: number }
   } catch {
     return null
   }
