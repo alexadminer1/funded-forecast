@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+const API_URL = typeof window !== 'undefined' ? '' : (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000");
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
