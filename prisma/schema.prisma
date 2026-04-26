@@ -1,0 +1,246 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                   Int       @id @default(autoincrement())
+  email                String    @unique
+  username             String    @unique
+  firstName            String
+  lastName             String
+  password             String?
+  provider             String    @default("email")
+  membershipStatus     String    @default("free")
+  stripeCustomerId     String?   @unique
+  stripeSubscriptionId String?
+  subscriptionPlan     String?
+  subscriptionEndsAt   DateTime?
+  isBlocked            Boolean   @default(false)
+  blockReason          String?
+  lastTradeAt          DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  trades             Trade[]
+  positions          Position[]
+  balanceLogs        BalanceLog[]
+  challenges         Challenge[]
+  subscriptions      Subscription[]
+  payoutRequests     PayoutRequest[]
+  auditLogsAsActor   AuditLog[]      @relation("AuditActor")
+  userConsent        UserConsent?
+
+  @@index([isBlocked])
+  @@index([stripeCustomerId])
+}
+
+model UserConsent {
+  id                  Int      @id @default(autoincrement())
+  userId              Int      @unique
+  acceptedPayoutRules Boolean  @default(false)
+  acceptedPrivacy     Boolean  @default(false)
+  acceptedAt          DateTime
+  ipAddress           String?
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Market {
+  id                 String    @id
+  conditionId        String    @unique
+  slug               String
+  title              String
+  description        String?
+  category           String    @default("other")
+  imageUrl           String?
+  yesPrice           Float
+  noPrice            Float
+  volume24h          Float     @default(0)
+  endDate            DateTime
+  status             String    @default("live")
+  winningOutcome     String?
+  negRisk            Boolean   @default(false)
+  isRestricted       Boolean   @default(false)
+  resolutionSource   String?
+  resolvedExternalAt DateTime?
+  lastSyncedAt       DateTime
+  createdAt          DateTime  @default(now())
+
+  trades    Trade[]
+  positions Position[]
+
+  @@index([status])
+  @@index([status, negRisk])
+  @@index([endDate])
+}
+
+model Trade {
+  id                        Int      @id @default(autoincrement())
+  userId                    Int
+  marketId                  String
+  challengeId               Int?
+  side                      String
+  action                    String
+  amount                    Int
+  price                     Float
+  cost                      Float
+  marketYesPriceAtExecution Float
+  marketNoPriceAtExecution  Float
+  createdAt                 DateTime @default(now())
+
+  user       User        @relation(fields: [userId], references: [id])
+  market     Market      @relation(fields: [marketId], references: [id])
+  challenge  Challenge?  @relation(fields: [challengeId], references: [id])
+  balanceLogs BalanceLog[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([marketId, action])
+  @@index([challengeId])
+  @@index([userId, marketId])
+}
+
+model Position {
+  id           Int       @id @default(autoincrement())
+  userId       Int
+  marketId     String
+  challengeId  Int?
+  side         String
+  status       String    @default("open")
+  shares       Int       @default(0)
+  avgPrice     Float     @default(0)
+  costBasis    Float     @default(0)
+  realizedPnl  Float     @default(0)
+  version      Int       @default(0)
+  openedAt     DateTime  @default(now())
+  closedAt     DateTime?
+  resolvedAt   DateTime?
+
+  user      User       @relation(fields: [userId], references: [id])
+  market    Market     @relation(fields: [marketId], references: [id])
+  challenge Challenge? @relation(fields: [challengeId], references: [id])
+
+  @@index([userId, status])
+  @@index([marketId, status])
+  @@index([challengeId])
+}
+
+model BalanceLog {
+  id             Int      @id @default(autoincrement())
+  userId         Int
+  tradeId        Int?
+  challengeId    Int?
+  type           String
+  amount         Float
+  balanceBefore  Float
+  balanceAfter   Float
+  runningBalance Float
+  createdAt      DateTime @default(now())
+
+  user      User       @relation(fields: [userId], references: [id])
+  trade     Trade?     @relation(fields: [tradeId], references: [id])
+  challenge Challenge? @relation(fields: [challengeId], references: [id])
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([tradeId])
+  @@index([challengeId, createdAt(sort: Desc)])
+}
+
+model Challenge {
+  id                  Int       @id @default(autoincrement())
+  userId              Int
+  stage               String
+  status              String    @default("active")
+  startBalance        Float     @default(10000)
+  realizedBalance     Float
+  peakBalance         Float
+  profitTargetPct     Float
+  maxDailyDdPct       Float
+  maxTotalDdPct       Float
+  maxPositionSizePct  Float     @default(5)
+  minTradingDays      Int
+  tradingDaysCount    Int       @default(0)
+  profitTargetMet     Boolean   @default(false)
+  drawdownViolated    Boolean   @default(false)
+  violationReason     String?
+  startedAt           DateTime  @default(now())
+  endedAt             DateTime?
+
+  user           User            @relation(fields: [userId], references: [id])
+  trades         Trade[]
+  positions      Position[]
+  balanceLogs    BalanceLog[]
+  payoutRequests PayoutRequest[]
+
+  @@index([userId, status])
+  @@index([status])
+}
+
+model Subscription {
+  id                     Int       @id @default(autoincrement())
+  userId                 Int
+  stripeSubscriptionId   String    @unique
+  stripeCustomerId       String
+  plan                   String
+  status                 String
+  currentPeriodStart     DateTime
+  currentPeriodEnd       DateTime
+  canceledAt             DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, status])
+  @@index([stripeCustomerId])
+}
+
+model ProcessedStripeEvent {
+  eventId     String   @id
+  processedAt DateTime @default(now())
+}
+
+model PayoutRequest {
+  id              Int       @id @default(autoincrement())
+  userId          Int
+  challengeId     Int
+  amount          Float
+  maxPayoutAmount Float
+  feePct          Float     @default(20)
+  platformFee     Float
+  netAmount       Float
+  status          String    @default("pending")
+  rejectionReason String?
+  requestedAt     DateTime  @default(now())
+  processedAt     DateTime?
+  paidAt          DateTime?
+
+  user      User      @relation(fields: [userId], references: [id])
+  challenge Challenge @relation(fields: [challengeId], references: [id])
+
+  @@index([userId, status])
+  @@index([challengeId, status])
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  actorId    Int?
+  targetType String
+  targetId   Int
+  category   String
+  action     String
+  metadata   Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation("AuditActor", fields: [actorId], references: [id])
+
+  @@index([targetType, targetId])
+  @@index([actorId])
+  @@index([createdAt(sort: Desc)])
+  @@index([category])
+}
