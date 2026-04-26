@@ -33,9 +33,8 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Fetch from Polymarket
-    const ids = liveMarkets.map((m) => m.id).join(",");
     const res = await fetch(
-      `https://gamma-api.polymarket.com/markets?id=${ids}&limit=200`,
+      `https://gamma-api.polymarket.com/markets?limit=100&closed=true`,
       { headers: { Accept: "application/json" }, cache: "no-store" }
     );
 
