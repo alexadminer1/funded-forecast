@@ -9,13 +9,17 @@ export default function Header() {
   const router = useRouter();
   const pathname = usePathname();
   const [user, setUser] = useState<User | null>(null);
+  const [userLoading, setUserLoading] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const hasToken = typeof window !== "undefined" && !!getToken();
 
   useEffect(() => {
     if (!getToken()) return;
+    setUserLoading(true);
     apiFetch<{ success: boolean; user: User }>("/api/user/me")
       .then((data) => { if (data.success) setUser(data.user); })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setUserLoading(false));
   }, []);
 
   useEffect(() => {
@@ -32,6 +36,12 @@ export default function Header() {
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
 
+  const navLinks = [
+    { href: "/markets", label: "Markets" },
+    { href: "/dashboard", label: "Dashboard" },
+    { href: "/history", label: "History" },
+  ];
+
   return (
     <header style={{
       position: "sticky",
@@ -42,52 +52,30 @@ export default function Header() {
       alignItems: "center",
       justifyContent: "space-between",
       padding: "0 28px",
-      background: scrolled
-        ? "rgba(7,13,25,0.85)"
-        : "rgba(7,13,25,0.6)",
+      background: scrolled ? "rgba(7,13,25,0.88)" : "rgba(7,13,25,0.6)",
       backdropFilter: "blur(16px)",
       WebkitBackdropFilter: "blur(16px)",
-      borderBottom: scrolled
-        ? "1px solid rgba(255,255,255,0.07)"
-        : "1px solid rgba(255,255,255,0.04)",
+      borderBottom: scrolled ? "1px solid rgba(255,255,255,0.07)" : "1px solid rgba(255,255,255,0.04)",
       transition: "background 0.2s, border-color 0.2s",
     }}>
 
       {/* Logo */}
       <a href="/markets" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 8 }}>
         <div style={{
-          width: 28,
-          height: 28,
-          borderRadius: 8,
+          width: 28, height: 28, borderRadius: 8,
           background: "linear-gradient(135deg, #22C55E, #16A34A)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 14,
-          fontWeight: 800,
-          color: "#0a1a0e",
-          boxShadow: "0 0 12px rgba(34,197,94,0.3)",
-          flexShrink: 0,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 14, fontWeight: 800, color: "#0a1a0e",
+          boxShadow: "0 0 12px rgba(34,197,94,0.3)", flexShrink: 0,
         }}>F</div>
-        <span style={{
-          fontWeight: 700,
-          fontSize: 15,
-          letterSpacing: "-0.02em",
-          color: "#F1F5F9",
-        }}>
+        <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: "-0.02em", color: "#F1F5F9" }}>
           FundedForecast
         </span>
       </a>
 
-      {/* Nav */}
+      {/* Nav — always shown */}
       <nav style={{ display: "flex", gap: 4, alignItems: "center" }}>
-        {[
-          { href: "/markets", label: "Markets" },
-          ...(user ? [
-            { href: "/dashboard", label: "Dashboard" },
-            { href: "/history", label: "History" },
-          ] : []),
-        ].map(({ href, label }) => (
+        {navLinks.map(({ href, label }) => (
           <a
             key={href}
             href={href}
@@ -101,12 +89,8 @@ export default function Header() {
               background: isActive(href) ? "rgba(255,255,255,0.06)" : "transparent",
               transition: "color 0.15s, background 0.15s",
             }}
-            onMouseEnter={(e) => {
-              if (!isActive(href)) (e.currentTarget as HTMLElement).style.color = "#94A3B8";
-            }}
-            onMouseLeave={(e) => {
-              if (!isActive(href)) (e.currentTarget as HTMLElement).style.color = "#64748B";
-            }}
+            onMouseEnter={(e) => { if (!isActive(href)) (e.currentTarget as HTMLElement).style.color = "#94A3B8"; }}
+            onMouseLeave={(e) => { if (!isActive(href)) (e.currentTarget as HTMLElement).style.color = "#64748B"; }}
           >
             {label}
           </a>
@@ -115,17 +99,28 @@ export default function Header() {
 
       {/* Right */}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        {user ? (
+        {userLoading ? (
+          /* Skeleton */
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{
+              width: 120, height: 30, borderRadius: 8,
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.04)",
+              animation: "pulse 1.8s ease-in-out infinite",
+            }} />
+            <div style={{
+              width: 72, height: 30, borderRadius: 8,
+              background: "rgba(255,255,255,0.03)",
+              animation: "pulse 1.8s ease-in-out infinite",
+            }} />
+          </div>
+        ) : user ? (
           <>
             <div style={{
               background: "rgba(34,197,94,0.08)",
               border: "1px solid rgba(34,197,94,0.2)",
-              borderRadius: 8,
-              padding: "5px 13px",
-              fontSize: 13,
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
+              borderRadius: 8, padding: "5px 13px",
+              fontSize: 13, display: "flex", alignItems: "center", gap: 6,
             }}>
               <span style={{ color: "#475569", fontSize: 11, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.06em" }}>Balance</span>
               <span style={{ color: "#22C55E", fontWeight: 700, fontSize: 14 }}>
@@ -133,11 +128,7 @@ export default function Header() {
               </span>
             </div>
 
-            <div style={{
-              fontSize: 13,
-              color: "#475569",
-              fontWeight: 500,
-            }}>
+            <div style={{ fontSize: 13, color: "#475569", fontWeight: 500 }}>
               @{user.username}
             </div>
 
@@ -146,21 +137,12 @@ export default function Header() {
               style={{
                 background: "transparent",
                 border: "1px solid rgba(255,255,255,0.08)",
-                borderRadius: 8,
-                padding: "5px 13px",
-                color: "#64748B",
-                cursor: "pointer",
-                fontSize: 13,
+                borderRadius: 8, padding: "5px 13px",
+                color: "#64748B", cursor: "pointer", fontSize: 13,
                 transition: "border-color 0.15s, color 0.15s",
               }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.15)";
-                (e.currentTarget as HTMLElement).style.color = "#94A3B8";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.08)";
-                (e.currentTarget as HTMLElement).style.color = "#64748B";
-              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.15)"; (e.currentTarget as HTMLElement).style.color = "#94A3B8"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.08)"; (e.currentTarget as HTMLElement).style.color = "#64748B"; }}
             >
               Sign out
             </button>
@@ -169,23 +151,15 @@ export default function Header() {
           <a
             href="/login"
             style={{
-              background: "#22C55E",
-              color: "#071A0E",
-              padding: "7px 18px",
-              borderRadius: 8,
-              textDecoration: "none",
-              fontSize: 13,
-              fontWeight: 700,
+              background: "#22C55E", color: "#071A0E",
+              padding: "7px 18px", borderRadius: 8,
+              textDecoration: "none", fontSize: 13, fontWeight: 700,
               letterSpacing: "-0.01em",
               boxShadow: "0 0 16px rgba(34,197,94,0.25)",
-              transition: "box-shadow 0.15s, background 0.15s",
+              transition: "box-shadow 0.15s",
             }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.boxShadow = "0 0 24px rgba(34,197,94,0.4)";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.boxShadow = "0 0 16px rgba(34,197,94,0.25)";
-            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = "0 0 24px rgba(34,197,94,0.4)"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = "0 0 16px rgba(34,197,94,0.25)"; }}
           >
             Get Started
           </a>
