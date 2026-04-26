@@ -11,7 +11,6 @@ export default function Header() {
   const [user, setUser] = useState<User | null>(null);
   const [userLoading, setUserLoading] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const hasToken = typeof window !== "undefined" && !!getToken();
 
   useEffect(() => {
     if (!getToken()) return;
@@ -31,7 +30,7 @@ export default function Header() {
   function handleLogout() {
     removeToken();
     setUser(null);
-    router.push("/login");
+    router.push("/");
   }
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
@@ -41,6 +40,8 @@ export default function Header() {
     { href: "/dashboard", label: "Dashboard" },
     { href: "/history", label: "History" },
   ];
+
+  const isLoggedIn = !!user;
 
   return (
     <header style={{
@@ -60,7 +61,7 @@ export default function Header() {
     }}>
 
       {/* Logo */}
-      <a href="/markets" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 8 }}>
+      <a href={isLoggedIn ? "/markets" : "/"} style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 8 }}>
         <div style={{
           width: 28, height: 28, borderRadius: 8,
           background: "linear-gradient(135deg, #22C55E, #16A34A)",
@@ -73,34 +74,35 @@ export default function Header() {
         </span>
       </a>
 
-      {/* Nav — always shown */}
-      <nav style={{ display: "flex", gap: 4, alignItems: "center" }}>
-        {navLinks.map(({ href, label }) => (
-          <a
-            key={href}
-            href={href}
-            style={{
-              color: isActive(href) ? "#F1F5F9" : "#64748B",
-              textDecoration: "none",
-              fontSize: 13.5,
-              fontWeight: isActive(href) ? 600 : 400,
-              padding: "5px 12px",
-              borderRadius: 7,
-              background: isActive(href) ? "rgba(255,255,255,0.06)" : "transparent",
-              transition: "color 0.15s, background 0.15s",
-            }}
-            onMouseEnter={(e) => { if (!isActive(href)) (e.currentTarget as HTMLElement).style.color = "#94A3B8"; }}
-            onMouseLeave={(e) => { if (!isActive(href)) (e.currentTarget as HTMLElement).style.color = "#64748B"; }}
-          >
-            {label}
-          </a>
-        ))}
-      </nav>
+      {/* Nav — only when logged in */}
+      {isLoggedIn && (
+        <nav style={{ display: "flex", gap: 4, alignItems: "center" }}>
+          {navLinks.map(({ href, label }) => (
+            <a
+              key={href}
+              href={href}
+              style={{
+                color: isActive(href) ? "#F1F5F9" : "#64748B",
+                textDecoration: "none",
+                fontSize: 13.5,
+                fontWeight: isActive(href) ? 600 : 400,
+                padding: "5px 12px",
+                borderRadius: 7,
+                background: isActive(href) ? "rgba(255,255,255,0.06)" : "transparent",
+                transition: "color 0.15s, background 0.15s",
+              }}
+              onMouseEnter={(e) => { if (!isActive(href)) (e.currentTarget as HTMLElement).style.color = "#94A3B8"; }}
+              onMouseLeave={(e) => { if (!isActive(href)) (e.currentTarget as HTMLElement).style.color = "#64748B"; }}
+            >
+              {label}
+            </a>
+          ))}
+        </nav>
+      )}
 
-      {/* Right — fixed width, visibility controls visibility without layout shift */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 320, justifyContent: "flex-end" }}>
-        {/* Authenticated state */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, visibility: user ? "visible" : "hidden" }}>
+      {/* Right */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 280, justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, visibility: isLoggedIn ? "visible" : "hidden", position: isLoggedIn ? "static" : "absolute" }}>
           <div style={{
             background: "rgba(34,197,94,0.08)",
             border: "1px solid rgba(34,197,94,0.2)",
@@ -112,11 +114,7 @@ export default function Header() {
               ${user?.balance.toLocaleString("en-US", { minimumFractionDigits: 2 }) ?? "0.00"}
             </span>
           </div>
-
-          <div style={{ fontSize: 13, color: "#475569", fontWeight: 500 }}>
-            @{user?.username ?? ""}
-          </div>
-
+          <div style={{ fontSize: 13, color: "#475569", fontWeight: 500 }}>@{user?.username ?? ""}</div>
           <button
             onClick={handleLogout}
             style={{
@@ -128,29 +126,26 @@ export default function Header() {
             }}
             onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.15)"; (e.currentTarget as HTMLElement).style.color = "#94A3B8"; }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.08)"; (e.currentTarget as HTMLElement).style.color = "#64748B"; }}
-          >
-            Sign out
-          </button>
+          >Sign out</button>
         </div>
 
-        {/* Unauthenticated state */}
-        <a
-          href="/login"
-          style={{
-            background: "#22C55E", color: "#071A0E",
-            padding: "7px 18px", borderRadius: 8,
-            textDecoration: "none", fontSize: 13, fontWeight: 700,
-            letterSpacing: "-0.01em",
-            boxShadow: "0 0 16px rgba(34,197,94,0.25)",
-            transition: "box-shadow 0.15s, opacity 0.15s",
-            visibility: (!userLoading && !user) ? "visible" : "hidden",
-            position: (!userLoading && !user) ? "static" : "absolute",
-          }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = "0 0 24px rgba(34,197,94,0.4)"; }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = "0 0 16px rgba(34,197,94,0.25)"; }}
-        >
-          Get Started
-        </a>
+        {!userLoading && !isLoggedIn && (
+          <a
+            href="/login"
+            style={{
+              background: "#22C55E", color: "#071A0E",
+              padding: "7px 18px", borderRadius: 8,
+              textDecoration: "none", fontSize: 13, fontWeight: 700,
+              letterSpacing: "-0.01em",
+              boxShadow: "0 0 16px rgba(34,197,94,0.25)",
+              transition: "box-shadow 0.15s",
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = "0 0 24px rgba(34,197,94,0.4)"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = "0 0 16px rgba(34,197,94,0.25)"; }}
+          >
+            Get Started
+          </a>
+        )}
       </div>
     </header>
   );
