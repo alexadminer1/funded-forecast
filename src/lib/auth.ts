@@ -1,11 +1,11 @@
 import jwt from 'jsonwebtoken'
 
-const JWT_SECRET = process.env.JWT_SECRET
-if (!JWT_SECRET) throw new Error('JWT_SECRET is not set')
+const JWT_SECRET = process.env.JWT_SECRET!
 
 export function verifyToken(token: string): { userId: number } | null {
   try {
-    return jwt.verify(token, JWT_SECRET) as unknown as { userId: number }
+    const decoded = jwt.verify(token, JWT_SECRET)
+    return decoded as unknown as { userId: number }
   } catch {
     return null
   }
