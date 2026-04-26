@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getToken, apiFetch } from "@/lib/api";
-import { setToken } from "@/lib/api";
+import { getToken, apiFetch, setToken } from "@/lib/api";
 
 export default function Home() {
   const router = useRouter();
@@ -26,7 +25,7 @@ export default function Home() {
     setLoading(true);
     setError("");
     try {
-      const data = await apiFetch<{ success: boolean; token?: string; error?: string }>("/api/auth/login", {
+      const data = await apiFetch<{ success: boolean; token?: string; error?: string }>("/api/login", {
         method: "POST",
         body: JSON.stringify({ email, password }),
       });
