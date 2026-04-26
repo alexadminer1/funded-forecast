@@ -98,12 +98,10 @@ export default function Home() {
 
         {/* Center links */}
         <nav style={{ display: "flex", gap: 32, alignItems: "center" }}>
-          {[{ href: "/markets", label: "Markets" }, { href: "#how", label: "How it works" }].map(({ href, label }) => (
-            <a key={label} href={href} style={{ fontSize: 14, color: "#64748B", textDecoration: "none", fontWeight: 500, transition: "color 0.15s" }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "#94A3B8")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "#64748B")}
-            >{label}</a>
-          ))}
+          <a href="#how" style={{ fontSize: 14, color: "#64748B", textDecoration: "none", fontWeight: 500, transition: "color 0.15s" }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "#94A3B8")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "#64748B")}
+          >How it works</a>
         </nav>
 
         {/* Get started */}
