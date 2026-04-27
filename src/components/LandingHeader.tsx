@@ -7,12 +7,17 @@ export default function LandingHeader() {
   return (
     <header className="ff-header" style={{
       position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
-      padding: "16px 40px", display: "flex", alignItems: "center", justifyContent: "space-between",
       background: "rgba(8,12,20,0.80)",
       backdropFilter: "blur(16px)",
       WebkitBackdropFilter: "blur(16px)",
       borderBottom: "1px solid rgba(255,255,255,0.06)",
     }}>
+      <div style={{
+        maxWidth: 900, margin: "0 auto",
+        padding: "16px 40px",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        position: "relative",
+      }}>
       {/* Logo */}
       <a href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 9, flexShrink: 0 }}>
         <div style={{
@@ -77,6 +82,7 @@ export default function LandingHeader() {
           <a href="/login" onClick={() => setMenuOpen(false)} style={{ fontSize: 15, color: "#94A3B8", textDecoration: "none", fontWeight: 500, padding: "12px 0" }}>Login</a>
         </div>
       )}
+      </div>
     </header>
   );
 }
