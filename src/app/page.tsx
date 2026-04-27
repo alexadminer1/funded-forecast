@@ -98,7 +98,14 @@ export default async function Home() {
       }} />
 
       {/* Nav */}
-      <header style={{ position: "relative", zIndex: 10, padding: "20px 40px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <header style={{
+        position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
+        padding: "16px 40px", display: "flex", alignItems: "center", justifyContent: "space-between",
+        background: "rgba(8,12,20,0.75)",
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
+        borderBottom: "1px solid rgba(255,255,255,0.06)",
+      }}>
         <a href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 9 }}>
           <div style={{
             width: 30, height: 30, borderRadius: 9,
@@ -109,8 +116,10 @@ export default async function Home() {
           }}>F</div>
           <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: "-0.02em", color: "#F1F5F9" }}>FundedForecast</span>
         </a>
-        <nav style={{ display: "flex", gap: 32, alignItems: "center" }}>
-          <a href="#how" style={{ fontSize: 14, color: "#64748B", textDecoration: "none", fontWeight: 500 }}>How it works</a>
+        <nav style={{ display: "flex", gap: 28, alignItems: "center" }}>
+          <a href="#how" style={{ fontSize: 14, color: "#64748B", textDecoration: "none", fontWeight: 500, transition: "color 0.2s" }}>How it works</a>
+          <a href="#plans" style={{ fontSize: 14, color: "#64748B", textDecoration: "none", fontWeight: 500 }}>Pricing</a>
+          <a href="#faq" style={{ fontSize: 14, color: "#64748B", textDecoration: "none", fontWeight: 500 }}>FAQ</a>
         </nav>
         <a href="/login?mode=register" style={{
           fontSize: 13, fontWeight: 700, background: "#22C55E", color: "#071A0E",
@@ -122,7 +131,7 @@ export default async function Home() {
       {/* Main */}
       <main style={{
         flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
-        padding: "64px 24px 80px", position: "relative", zIndex: 1, textAlign: "center",
+        padding: "64px 24px 80px", paddingTop: "80px", position: "relative", zIndex: 1, textAlign: "center",
       }}>
         {/* Badge */}
         <div style={{
@@ -365,7 +374,7 @@ export default async function Home() {
         </section>
 
         {/* FAQ */}
-        <section style={{ width: "100%", maxWidth: 900, marginBottom: 120, textAlign: "left" }}>
+        <section id="faq" style={{ width: "100%", maxWidth: 900, marginBottom: 120, textAlign: "left" }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: "#22C55E", letterSpacing: "0.1em", marginBottom: 10 }}>FAQS</div>
           <h2 style={{ fontSize: 36, fontWeight: 800, letterSpacing: "-0.04em", color: "#F1F5F9", marginBottom: 12, marginTop: 0, textAlign: "center" }}>Your Questions, Answered.</h2>
           <p style={{ fontSize: 15, color: "#64748B", textAlign: "center", marginBottom: 40 }}>Everything you need to know about our platform, challenges, and payouts.</p>
