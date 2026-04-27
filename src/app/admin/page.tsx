@@ -79,7 +79,7 @@ function AdminDashboard({ onInvalidKey }: { onInvalidKey: () => void }) {
     const res = await fetch(url, { ...opts, headers: { "x-admin-key": adminKey, "Content-Type": "application/json", ...(opts?.headers ?? {}) } });
     if (res.status === 403) { onInvalidKey(); sessionStorage.removeItem(STORAGE_KEY); window.location.reload(); }
     const text = await res.text();
-    if (!text) return {};
+    if (!text) return {} as T;
     try {
       return JSON.parse(text);
     } catch {
