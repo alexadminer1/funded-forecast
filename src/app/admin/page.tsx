@@ -8,7 +8,7 @@ const BLOCKED_KEY = "adminBlockedUntil";
 const MAX_ATTEMPTS = 3;
 const BLOCK_MS = 5 * 60 * 1000;
 
-type Section = "dashboard" | "users" | "challenges" | "trades" | "balance-logs" | "markets" | "content" | "system";
+type Section = "dashboard" | "users" | "challenges" | "trades" | "balance-logs" | "markets" | "plans" | "content" | "system";
 
 export default function AdminPage() {
   const [authed, setAuthed] = useState(false);
@@ -94,6 +94,7 @@ function AdminDashboard({ onInvalidKey }: { onInvalidKey: () => void }) {
     { key: "dashboard", label: "Dashboard" }, { key: "users", label: "Users" },
     { key: "challenges", label: "Challenges" }, { key: "trades", label: "Trades" },
     { key: "balance-logs", label: "Balance Logs" }, { key: "markets", label: "Markets" },
+    { key: "plans", label: "Plans" },
     { key: "content", label: "Content" }, { key: "system", label: "System" },
   ];
 
@@ -121,6 +122,7 @@ function AdminDashboard({ onInvalidKey }: { onInvalidKey: () => void }) {
         {section === "trades" && <TradesSection apiFetch={apiFetch} />}
         {section === "balance-logs" && <BalanceLogsSection apiFetch={apiFetch} />}
         {section === "markets" && <MarketsSection apiFetch={apiFetch} />}
+        {section === "plans" && <PlansSection apiFetch={apiFetch} />}
         {section === "content" && <ContentSection apiFetch={apiFetch} />}
         {section === "system" && <SystemSection apiFetch={apiFetch} adminKey={adminKey} />}
       </div>
@@ -485,6 +487,125 @@ function MarketsSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestIn
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Plans ────────────────────────────────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function PlansSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestInit) => Promise<any> }) {
+  const [plans, setPlans] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editData, setEditData] = useState<Record<string, string | number | boolean>>({});
+  const [saving, setSaving] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newPlan, setNewPlan] = useState({ name: "", price: "", accountSize: "", profitTargetPct: "10", maxLossPct: "10", dailyLossPct: "5", maxPositionSizePct: "2", minTradingDays: "10", order: "" });
+  const [confirm, setConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
+
+  const load = useCallback(async () => { setLoading(true); const d = await apiFetch("/api/admin/plans"); if (d.success) setPlans(d.plans); setLoading(false); }, []);
+  useEffect(() => { load(); }, []);
+
+  function startEdit(p: any) {
+    setEditId(p.id);
+    setEditData({ name: p.name, price: p.price, accountSize: p.accountSize, profitTargetPct: p.profitTargetPct, maxLossPct: p.maxLossPct, dailyLossPct: p.dailyLossPct, maxPositionSizePct: p.maxPositionSizePct, minTradingDays: p.minTradingDays, isPopular: p.isPopular, isActive: p.isActive, order: p.order });
+  }
+
+  async function saveEdit() {
+    if (!editId) return;
+    setSaving(true);
+    await apiFetch(`/api/admin/plans/${editId}`, { method: "PUT", body: JSON.stringify(editData) });
+    setSaving(false); setEditId(null); load();
+  }
+
+  async function deactivate(id: number) {
+    await apiFetch(`/api/admin/plans/${id}`, { method: "DELETE" });
+    load();
+  }
+
+  async function addPlan() {
+    setSaving(true);
+    await apiFetch("/api/admin/plans", { method: "POST", body: JSON.stringify({
+      name: newPlan.name, price: Number(newPlan.price), accountSize: Number(newPlan.accountSize),
+      profitTargetPct: Number(newPlan.profitTargetPct), maxLossPct: Number(newPlan.maxLossPct),
+      dailyLossPct: Number(newPlan.dailyLossPct), maxPositionSizePct: Number(newPlan.maxPositionSizePct),
+      minTradingDays: Number(newPlan.minTradingDays), order: Number(newPlan.order) || 0,
+    }) });
+    setSaving(false); setShowAdd(false);
+    setNewPlan({ name: "", price: "", accountSize: "", profitTargetPct: "10", maxLossPct: "10", dailyLossPct: "5", maxPositionSizePct: "2", minTradingDays: "10", order: "" });
+    load();
+  }
+
+  const inpS: React.CSSProperties = { padding: "4px 8px", borderRadius: 5, border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 11, outline: "none", width: "100%" };
+
+  return (
+    <div>
+      {confirm && <ConfirmDialog title={confirm.title} message={confirm.message} onConfirm={confirm.onConfirm} onCancel={() => setConfirm(null)} />}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+        <SH>Plans</SH>
+        <Btn label="+ Add Plan" bg="#22C55E" color="#071A0E" onClick={() => setShowAdd(true)} />
+      </div>
+
+      {showAdd && (
+        <div style={{ background: "#1E293B", border: "1px solid #22C55E", borderRadius: 10, padding: "16px 18px", marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#22C55E", marginBottom: 12 }}>New Plan</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 10 }}>
+            {(["name", "price", "accountSize", "order"] as const).map(f => (
+              <div key={f}><div style={{ fontSize: 10, color: "#475569", marginBottom: 3, textTransform: "capitalize" }}>{f}</div>
+              <input style={inpS} value={newPlan[f]} onChange={e => setNewPlan(p => ({ ...p, [f]: e.target.value }))} /></div>
+            ))}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 12 }}>
+            {(["profitTargetPct", "maxLossPct", "dailyLossPct", "maxPositionSizePct", "minTradingDays"] as const).map(f => (
+              <div key={f}><div style={{ fontSize: 10, color: "#475569", marginBottom: 3, textTransform: "capitalize" }}>{f}</div>
+              <input style={inpS} value={newPlan[f]} onChange={e => setNewPlan(p => ({ ...p, [f]: e.target.value }))} /></div>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn label="Save" bg="#22C55E" color="#071A0E" onClick={addPlan} loading={saving} />
+            <Btn label="Cancel" bg="#334155" color="#94A3B8" onClick={() => setShowAdd(false)} />
+          </div>
+        </div>
+      )}
+
+      <div style={tableWrap}>
+        <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1.5fr 1fr 1fr 1fr 1fr 1fr 2fr", padding: "9px 16px", borderBottom: "1px solid #334155", background: "rgba(255,255,255,0.02)" }}>
+          {["Name", "Price", "Account Size", "Profit%", "Max Loss%", "Daily Loss%", "Popular", "Active", "Actions"].map(h => <div key={h} style={thStyle}>{h}</div>)}
+        </div>
+        {loading ? <div style={{ padding: 32, textAlign: "center", color: "#475569" }}>Loading...</div> :
+          plans.map((p, i) => editId === p.id ? (
+            <div key={p.id} style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1.5fr 1fr 1fr 1fr 1fr 1fr 2fr", padding: "8px 16px", alignItems: "center", gap: 4, borderBottom: "1px solid #22C55E40", background: "rgba(34,197,94,0.04)" }}>
+              <input style={inpS} value={String(editData.name)} onChange={e => setEditData(d => ({ ...d, name: e.target.value }))} />
+              <input style={inpS} value={String(editData.price)} onChange={e => setEditData(d => ({ ...d, price: Number(e.target.value) }))} />
+              <input style={inpS} value={String(editData.accountSize)} onChange={e => setEditData(d => ({ ...d, accountSize: Number(e.target.value) }))} />
+              <input style={inpS} value={String(editData.profitTargetPct)} onChange={e => setEditData(d => ({ ...d, profitTargetPct: Number(e.target.value) }))} />
+              <input style={inpS} value={String(editData.maxLossPct)} onChange={e => setEditData(d => ({ ...d, maxLossPct: Number(e.target.value) }))} />
+              <input style={inpS} value={String(editData.dailyLossPct)} onChange={e => setEditData(d => ({ ...d, dailyLossPct: Number(e.target.value) }))} />
+              <select style={{ ...inpS }} value={String(editData.isPopular)} onChange={e => setEditData(d => ({ ...d, isPopular: e.target.value === "true" }))}><option value="true">Yes</option><option value="false">No</option></select>
+              <select style={{ ...inpS }} value={String(editData.isActive)} onChange={e => setEditData(d => ({ ...d, isActive: e.target.value === "true" }))}><option value="true">Yes</option><option value="false">No</option></select>
+              <div style={{ display: "flex", gap: 5 }}>
+                <Btn label="Save" bg="#22C55E" color="#071A0E" onClick={saveEdit} loading={saving} />
+                <Btn label="Cancel" bg="#334155" color="#94A3B8" onClick={() => setEditId(null)} />
+              </div>
+            </div>
+          ) : (
+            <div key={p.id} style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1.5fr 1fr 1fr 1fr 1fr 1fr 2fr", padding: "9px 16px", alignItems: "center", borderBottom: i < plans.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
+              <div style={{ ...tdStyle, color: "#F1F5F9", fontWeight: 600 }}>{p.name}</div>
+              <div style={{ ...tdStyle, color: "#22C55E", fontWeight: 700 }}>${p.price}</div>
+              <div style={{ ...tdStyle }}>${p.accountSize.toLocaleString()}</div>
+              <div style={tdStyle}>{p.profitTargetPct}%</div>
+              <div style={tdStyle}>{p.maxLossPct}%</div>
+              <div style={tdStyle}>{p.dailyLossPct}%</div>
+              <div style={tdStyle}><Badge label={p.isPopular ? "Yes" : "No"} color={p.isPopular ? "#22C55E" : "#64748B"} /></div>
+              <div style={tdStyle}><Badge label={p.isActive ? "Yes" : "No"} color={p.isActive ? "#22C55E" : "#EF4444"} /></div>
+              <div style={{ display: "flex", gap: 5, padding: "0 16px" }}>
+                <Btn label="Edit" bg="#3B82F6" onClick={() => startEdit(p)} />
+                {p.isActive && <Btn label="Deactivate" bg="#334155" color="#94A3B8" onClick={() => setConfirm({ title: "Deactivate Plan", message: `Deactivate "${p.name}"? It will no longer be shown to users.`, onConfirm: () => deactivate(p.id) })} />}
+              </div>
+            </div>
+          ))
+        }
+      </div>
     </div>
   );
 }

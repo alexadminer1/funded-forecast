@@ -12,6 +12,14 @@ async function getContent(): Promise<Record<string, string>> {
   }
 }
 
+async function getPlans() {
+  try {
+    return await prisma.challengePlan.findMany({ where: { isActive: true }, orderBy: { order: "asc" } });
+  } catch {
+    return [];
+  }
+}
+
 function parseJson(val: string | undefined, fallback: { title: string; desc: string }) {
   if (!val) return fallback;
   try { return JSON.parse(val); } catch { return fallback; }
@@ -35,6 +43,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 export default async function Home() {
   const content = await getContent();
+  const plans = await getPlans();
 
   const heroTitle = content.hero_title ?? "Trade predictions. Get funded.";
   const heroSubtitle = content.hero_subtitle ?? "Prove your forecasting skills on real Polymarket events. Pass the challenge, earn up to 80% of profits.";
@@ -161,6 +170,66 @@ export default async function Home() {
             ))}
           </div>
         </section>
+
+        {/* Choose Your Challenge */}
+        {plans.length > 0 && (
+          <section id="plans" style={{ width: "100%", maxWidth: 960, marginBottom: 120, textAlign: "left" }}>
+            <SectionLabel>PRICING</SectionLabel>
+            <h2 style={h2}>Choose your challenge</h2>
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(${plans.length}, 1fr)`, gap: 16 }}>
+              {plans.map((plan) => (
+                <div key={plan.id} style={{
+                  background: "#1E293B",
+                  border: `1px solid ${plan.isPopular ? "#22C55E" : "#334155"}`,
+                  borderRadius: 16,
+                  padding: "28px 24px",
+                  position: "relative",
+                  boxShadow: plan.isPopular ? "0 0 32px rgba(34,197,94,0.12)" : "none",
+                }}>
+                  {plan.isPopular && (
+                    <div style={{
+                      position: "absolute", top: -12, left: "50%", transform: "translateX(-50%)",
+                      background: "#22C55E", color: "#071A0E", fontSize: 10, fontWeight: 800,
+                      letterSpacing: "0.1em", padding: "4px 14px", borderRadius: 20,
+                    }}>MOST POPULAR</div>
+                  )}
+                  <div style={{ fontSize: 13, fontWeight: 700, color: plan.isPopular ? "#22C55E" : "#94A3B8", marginBottom: 6, letterSpacing: "0.05em", textTransform: "uppercase" }}>{plan.name}</div>
+                  <div style={{ fontSize: 38, fontWeight: 800, color: "#F1F5F9", letterSpacing: "-0.04em", marginBottom: 2 }}>${plan.price}</div>
+                  <div style={{ fontSize: 13, color: "#475569", marginBottom: 20 }}>one-time fee</div>
+
+                  <div style={{ fontSize: 15, fontWeight: 700, color: "#22C55E", marginBottom: 16 }}>
+                    ${plan.accountSize.toLocaleString()} account
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 24 }}>
+                    {[
+                      { label: "Profit target", value: `${plan.profitTargetPct}%` },
+                      { label: "Max loss", value: `${plan.maxLossPct}%` },
+                      { label: "Daily loss limit", value: `${plan.dailyLossPct}%` },
+                      { label: "Min trading days", value: String(plan.minTradingDays) },
+                    ].map(({ label, value }) => (
+                      <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 13, color: "#64748B" }}>{label}</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: "#94A3B8" }}>{value}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <a href={`/login?mode=register&planId=${plan.id}`} style={{
+                    display: "block", textAlign: "center",
+                    background: plan.isPopular ? "#22C55E" : "transparent",
+                    color: plan.isPopular ? "#071A0E" : "#22C55E",
+                    border: `1px solid ${plan.isPopular ? "#22C55E" : "rgba(34,197,94,0.4)"}`,
+                    fontSize: 14, fontWeight: 700,
+                    padding: "12px", borderRadius: 10, textDecoration: "none",
+                    letterSpacing: "-0.01em",
+                    boxShadow: plan.isPopular ? "0 0 20px rgba(34,197,94,0.25)" : "none",
+                  }}>Get Started →</a>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Live markets preview */}
         <section style={{ width: "100%", maxWidth: 900, marginBottom: 120, textAlign: "left" }}>

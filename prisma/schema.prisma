@@ -150,9 +150,28 @@ model BalanceLog {
   @@index([challengeId, createdAt(sort: Desc)])
 }
 
+model ChallengePlan {
+  id                 Int        @id @default(autoincrement())
+  name               String
+  price              Float
+  accountSize        Float
+  profitTargetPct    Float
+  maxLossPct         Float
+  dailyLossPct       Float
+  maxPositionSizePct Float
+  minTradingDays     Int
+  payoutCap          Float?
+  isActive           Boolean    @default(true)
+  isPopular          Boolean    @default(false)
+  order              Int        @default(0)
+  createdAt          DateTime   @default(now())
+  challenges         Challenge[]
+}
+
 model Challenge {
   id                  Int       @id @default(autoincrement())
   userId              Int
+  planId              Int?
   stage               String
   status              String    @default("active")
   startBalance        Float     @default(10000)
@@ -171,6 +190,7 @@ model Challenge {
   endedAt             DateTime?
 
   user           User            @relation(fields: [userId], references: [id])
+  plan           ChallengePlan?  @relation(fields: [planId], references: [id])
   trades         Trade[]
   positions      Position[]
   balanceLogs    BalanceLog[]

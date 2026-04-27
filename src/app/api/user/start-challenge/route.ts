@@ -17,11 +17,35 @@ export async function POST(req: NextRequest) {
 
   const userId = payload.userId as number;
 
+  let planId: number | null = null;
+  let startBalance = 10000;
+  let profitTargetPct = 10;
+  let maxTotalDdPct = 10;
+  let maxDailyDdPct = 5;
+  let maxPositionSizePct = 2;
+  let minTradingDays = 10;
+
   try {
+    const body = await req.json().catch(() => ({}));
+    if (body.planId) {
+      const plan = await prisma.challengePlan.findFirst({
+        where: { id: Number(body.planId), isActive: true },
+      });
+      if (!plan) {
+        return NextResponse.json({ error: "Plan not found" }, { status: 400 });
+      }
+      planId = plan.id;
+      startBalance = plan.accountSize;
+      profitTargetPct = plan.profitTargetPct;
+      maxTotalDdPct = plan.maxLossPct;
+      maxDailyDdPct = plan.dailyLossPct;
+      maxPositionSizePct = plan.maxPositionSizePct;
+      minTradingDays = plan.minTradingDays;
+    }
+
     const existing = await prisma.challenge.findFirst({
       where: { userId, status: "active" },
     });
-
     if (existing) {
       return NextResponse.json({ error: "Challenge already active" }, { status: 400 });
     }
@@ -30,16 +54,17 @@ export async function POST(req: NextRequest) {
       const challenge = await tx.challenge.create({
         data: {
           userId,
+          planId,
           stage: "evaluation",
           status: "active",
-          startBalance: 10000,
-          realizedBalance: 10000,
-          peakBalance: 10000,
-          profitTargetPct: 10,
-          maxDailyDdPct: 5,
-          maxTotalDdPct: 10,
-          maxPositionSizePct: 2,
-          minTradingDays: 10,
+          startBalance,
+          realizedBalance: startBalance,
+          peakBalance: startBalance,
+          profitTargetPct,
+          maxDailyDdPct,
+          maxTotalDdPct,
+          maxPositionSizePct,
+          minTradingDays,
         },
       });
 
@@ -49,10 +74,10 @@ export async function POST(req: NextRequest) {
           tradeId: null,
           challengeId: challenge.id,
           type: "challenge_start",
-          amount: 10000,
+          amount: startBalance,
           balanceBefore: 0,
-          balanceAfter: 10000,
-          runningBalance: 10000,
+          balanceAfter: startBalance,
+          runningBalance: startBalance,
         },
       });
 

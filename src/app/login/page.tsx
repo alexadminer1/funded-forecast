@@ -18,6 +18,7 @@ function LoginInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [mode, setMode] = useState<"login" | "register">("login");
+  const planId = searchParams.get("planId");
 
   useEffect(() => {
     if (searchParams.get("mode") === "register") setMode("register");
@@ -42,6 +43,17 @@ function LoginInner() {
     setError(null);
   }
 
+  async function startChallengeIfNeeded(token: string) {
+    if (!planId) return;
+    try {
+      await apiFetch("/api/user/start-challenge", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ planId: Number(planId) }),
+      });
+    } catch { /* ignore */ }
+  }
+
   async function handleSubmit() {
     setLoading(true);
     setError(null);
@@ -51,8 +63,11 @@ function LoginInner() {
           method: "POST",
           body: JSON.stringify({ email: form.email, password: form.password }),
         });
-        if (data.token) { setToken(data.token); router.push("/markets"); }
-        else setError(data.error ?? "Login failed");
+        if (data.token) {
+          setToken(data.token);
+          await startChallengeIfNeeded(data.token);
+          router.push("/dashboard");
+        } else setError(data.error ?? "Login failed");
       } else {
         if (form.password !== form.confirmPassword) { setError("Passwords do not match"); setLoading(false); return; }
         const data = await apiFetch<{ token?: string; error?: string }>("/api/register", {
@@ -63,8 +78,14 @@ function LoginInner() {
             acceptedPayoutRules: form.acceptedPayoutRules, acceptedPrivacy: form.acceptedPrivacy,
           }),
         });
-        if (data.token) { setToken(data.token); router.push("/markets"); }
-        else setError(data.error ?? "Registration failed");
+        if (data.token) {
+          setToken(data.token);
+          if (planId) {
+            router.push(`/login?planId=${planId}`);
+          } else {
+            router.push("/dashboard");
+          }
+        } else setError(data.error ?? "Registration failed");
       }
     } catch { setError("Request failed"); }
     finally { setLoading(false); }
