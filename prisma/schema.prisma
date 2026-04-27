@@ -282,3 +282,16 @@ model FAQItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+model Review {
+  id        Int      @id @default(autoincrement())
+  name      String
+  role      String
+  avatar    String   @default("")
+  text      String
+  rating    Int      @default(5)
+  isActive  Boolean  @default(true)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

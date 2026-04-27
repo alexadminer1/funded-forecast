@@ -1,6 +1,7 @@
 import LoginForm from "@/components/LoginForm";
 import FAQBlock from "@/components/FAQBlock";
 import LandingHeader from "@/components/LandingHeader";
+import ReviewsCarousel from "@/components/ReviewsCarousel";
 import { prisma } from "@/lib/prisma";
 
 async function getContent(): Promise<Record<string, string>> {
@@ -32,6 +33,12 @@ async function getPlans() {
   }
 }
 
+async function getReviews() {
+  try {
+    return await prisma.review.findMany({ where: { isActive: true }, orderBy: { order: "asc" } });
+  } catch { return []; }
+}
+
 function parseJson(val: string | undefined, fallback: { title: string; desc: string }) {
   if (!val) return fallback;
   try { return JSON.parse(val); } catch { return fallback; }
@@ -57,6 +64,7 @@ export default async function Home() {
   const content = await getContent();
   const plans = await getPlans();
   const faq = await getFAQ();
+  const reviews = await getReviews();
 
   const heroTitle = content.hero_title ?? "Trade predictions. Get funded.";
   const heroSubtitle = content.hero_subtitle ?? "Prove your forecasting skills on real Polymarket events. Pass the challenge, earn up to 80% of profits.";
@@ -318,6 +326,22 @@ export default async function Home() {
               </div>
             ))}
           </div>
+        </section>
+
+        {/* Reviews */}
+        <section style={{ width: "100%", marginBottom: 120 }}>
+          <div style={{ textAlign: "center", marginBottom: 48 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#22C55E", letterSpacing: "0.1em", marginBottom: 10 }}>REVIEWS</div>
+            <h2 style={{ fontSize: 32, fontWeight: 800, letterSpacing: "-0.03em", color: "#F1F5F9", marginBottom: 8, marginTop: 0 }}>Trusted by traders worldwide</h2>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <div style={{ display: "flex", gap: 2 }}>
+                {[1,2,3,4,5].map(i => <span key={i} style={{ color: "#22C55E", fontSize: 18 }}>★</span>)}
+              </div>
+              <span style={{ fontSize: 14, fontWeight: 700, color: "#F1F5F9" }}>4.9</span>
+              <span style={{ fontSize: 13, color: "#475569" }}>based on 200+ reviews</span>
+            </div>
+          </div>
+          <ReviewsCarousel reviews={reviews} />
         </section>
 
         {/* Earnings examples */}
