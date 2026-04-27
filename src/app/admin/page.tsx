@@ -8,7 +8,7 @@ const BLOCKED_KEY = "adminBlockedUntil";
 const MAX_ATTEMPTS = 3;
 const BLOCK_MS = 5 * 60 * 1000;
 
-type Section = "dashboard" | "users" | "challenges" | "trades" | "balance-logs" | "markets" | "plans" | "content" | "system";
+type Section = "dashboard" | "users" | "challenges" | "trades" | "balance-logs" | "markets" | "plans" | "content" | "faq" | "system";
 
 export default function AdminPage() {
   const [authed, setAuthed] = useState(false);
@@ -95,7 +95,8 @@ function AdminDashboard({ onInvalidKey }: { onInvalidKey: () => void }) {
     { key: "challenges", label: "Challenges" }, { key: "trades", label: "Trades" },
     { key: "balance-logs", label: "Balance Logs" }, { key: "markets", label: "Markets" },
     { key: "plans", label: "Plans" },
-    { key: "content", label: "Content" }, { key: "system", label: "System" },
+    { key: "content", label: "Content" }, { key: "faq", label: "FAQ" },
+    { key: "system", label: "System" },
   ];
 
   return (
@@ -124,6 +125,7 @@ function AdminDashboard({ onInvalidKey }: { onInvalidKey: () => void }) {
         {section === "markets" && <MarketsSection apiFetch={apiFetch} />}
         {section === "plans" && <PlansSection apiFetch={apiFetch} />}
         {section === "content" && <ContentSection apiFetch={apiFetch} />}
+        {section === "faq" && <FAQSection apiFetch={apiFetch} />}
         {section === "system" && <SystemSection apiFetch={apiFetch} adminKey={adminKey} />}
       </div>
     </div>
@@ -741,6 +743,109 @@ function SystemSection({ apiFetch, adminKey }: { apiFetch: (url: string, opts?: 
                 {results[label]}
               </pre>
             )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── FAQ ──────────────────────────────────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function FAQSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestInit) => Promise<any> }) {
+  const [items, setItems] = useState<any[]>([]);
+  const [tab, setTab] = useState<"platform" | "rules">("platform");
+  const [form, setForm] = useState({ question: "", answer: "", order: 0 });
+  const [editing, setEditing] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState({ question: "", answer: "", order: 0, isActive: true });
+
+  const load = useCallback(async () => {
+    const data = await apiFetch("/api/admin/faq");
+    if (Array.isArray(data)) setItems(data);
+  }, [apiFetch]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = items.filter((i) => i.category === tab);
+
+  async function create() {
+    if (!form.question || !form.answer) return;
+    await apiFetch("/api/admin/faq", { method: "POST", body: JSON.stringify({ ...form, category: tab }) });
+    setForm({ question: "", answer: "", order: 0 });
+    load();
+  }
+
+  async function save(id: number) {
+    await apiFetch(`/api/admin/faq/${id}`, { method: "PUT", body: JSON.stringify(editForm) });
+    setEditing(null);
+    load();
+  }
+
+  async function remove(id: number) {
+    await apiFetch(`/api/admin/faq/${id}`, { method: "DELETE" });
+    load();
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: 20, fontWeight: 700, color: "#F1F5F9", marginBottom: 4 }}>FAQ</div>
+      <div style={{ fontSize: 13, color: "#475569", marginBottom: 24 }}>Manage FAQ items for the landing page</div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+        {(["platform", "rules"] as const).map((t) => (
+          <button key={t} onClick={() => setTab(t)} style={{
+            padding: "6px 18px", borderRadius: 8, border: "1px solid",
+            borderColor: tab === t ? "#22C55E" : "#334155",
+            background: tab === t ? "rgba(34,197,94,0.1)" : "transparent",
+            color: tab === t ? "#22C55E" : "#475569", cursor: "pointer", fontSize: 13, fontWeight: 600,
+          }}>{t === "platform" ? "Our Platform" : "Challenge Rules"}</button>
+        ))}
+      </div>
+
+      <div style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 10, padding: 16, marginBottom: 24 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.08em" }}>Add new</div>
+        <input placeholder="Question" value={form.question} onChange={(e) => setForm({ ...form, question: e.target.value })}
+          style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 13, marginBottom: 8, boxSizing: "border-box" }} />
+        <textarea placeholder="Answer" value={form.answer} onChange={(e) => setForm({ ...form, answer: e.target.value })}
+          rows={3} style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 13, marginBottom: 8, boxSizing: "border-box", resize: "vertical" }} />
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input type="number" placeholder="Order" value={form.order} onChange={(e) => setForm({ ...form, order: parseInt(e.target.value) || 0 })}
+            style={{ width: 80, padding: "8px 12px", borderRadius: 6, border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 13 }} />
+          <button onClick={create} style={{ padding: "8px 20px", borderRadius: 6, border: "none", background: "#22C55E", color: "#071A0E", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Add</button>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {filtered.map((item) => editing === item.id ? (
+          <div key={item.id} style={{ background: "#1E293B", border: "1px solid #22C55E", borderRadius: 10, padding: 16 }}>
+            <input value={editForm.question} onChange={(e) => setEditForm({ ...editForm, question: e.target.value })}
+              style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 13, marginBottom: 8, boxSizing: "border-box" }} />
+            <textarea value={editForm.answer} onChange={(e) => setEditForm({ ...editForm, answer: e.target.value })}
+              rows={3} style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 13, marginBottom: 8, boxSizing: "border-box", resize: "vertical" }} />
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input type="number" value={editForm.order} onChange={(e) => setEditForm({ ...editForm, order: parseInt(e.target.value) || 0 })}
+                style={{ width: 80, padding: "8px 12px", borderRadius: 6, border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 13 }} />
+              <label style={{ display: "flex", alignItems: "center", gap: 6, color: "#94A3B8", fontSize: 13, cursor: "pointer" }}>
+                <input type="checkbox" checked={editForm.isActive} onChange={(e) => setEditForm({ ...editForm, isActive: e.target.checked })} />
+                Active
+              </label>
+              <button onClick={() => save(item.id)} style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: "#22C55E", color: "#071A0E", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Save</button>
+              <button onClick={() => setEditing(null)} style={{ padding: "8px 16px", borderRadius: 6, border: "1px solid #334155", background: "transparent", color: "#94A3B8", fontSize: 13, cursor: "pointer" }}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <div key={item.id} style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 10, padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: item.isActive ? "#F1F5F9" : "#475569", marginBottom: 4 }}>{item.question}</div>
+              <div style={{ fontSize: 12, color: "#475569", lineHeight: 1.5 }}>{item.answer}</div>
+              <div style={{ fontSize: 11, color: "#334155", marginTop: 6 }}>order: {item.order} · {item.isActive ? "active" : "hidden"}</div>
+            </div>
+            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+              <button onClick={() => { setEditing(item.id); setEditForm({ question: item.question, answer: item.answer, order: item.order, isActive: item.isActive }); }}
+                style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #334155", background: "transparent", color: "#94A3B8", fontSize: 12, cursor: "pointer" }}>Edit</button>
+              <button onClick={() => remove(item.id)}
+                style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid rgba(239,68,68,0.3)", background: "transparent", color: "#EF4444", fontSize: 12, cursor: "pointer" }}>Hide</button>
+            </div>
           </div>
         ))}
       </div>
