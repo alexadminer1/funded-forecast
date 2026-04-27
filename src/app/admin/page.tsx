@@ -75,15 +75,16 @@ function AdminDashboard({ onInvalidKey }: { onInvalidKey: () => void }) {
   const [section, setSection] = useState<Section>("dashboard");
   const adminKey = sessionStorage.getItem(STORAGE_KEY) ?? "";
 
-  async function apiFetch<T>(url: string, opts?: RequestInit): Promise<T> {
-    const res = await fetch(url, { ...opts, headers: { "x-admin-key": adminKey, "Content-Type": "application/json", ...(opts?.headers ?? {}) } });
+  async function apiFetch<T = unknown>(url: string, opts: RequestInit = {}): Promise<T> {
+    const key = sessionStorage.getItem(STORAGE_KEY) ?? '';
+    const res = await fetch(url, { ...opts, headers: { 'x-admin-key': key, 'Content-Type': 'application/json', ...opts.headers } });
     if (res.status === 403) { onInvalidKey(); sessionStorage.removeItem(STORAGE_KEY); window.location.reload(); }
     const text = await res.text();
     if (!text) return {} as T;
     try {
-      return JSON.parse(text);
+      return JSON.parse(text) as T;
     } catch {
-      return { error: 'Invalid JSON response' };
+      return { error: 'Invalid JSON response' } as unknown as T;
     }
   }
 
