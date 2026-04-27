@@ -147,6 +147,21 @@ function Btn({ label, bg, color = "#fff", onClick, loading }: { label: string; b
 
 function fmt(date: string) { return new Date(date).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
 
+function ConfirmDialog({ title, message, onConfirm, onCancel }: { title: string; message: string; onConfirm: () => void; onCancel: () => void }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200 }} onClick={onCancel}>
+      <div style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 12, padding: 28, width: 360, maxWidth: "90vw" }} onClick={e => e.stopPropagation()}>
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 10 }}>{title}</div>
+        <div style={{ fontSize: 13, color: "#94A3B8", marginBottom: 24 }}>{message}</div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button onClick={onCancel} style={{ padding: "7px 16px", borderRadius: 7, border: "1px solid #334155", background: "transparent", color: "#64748B", fontSize: 13, cursor: "pointer" }}>Cancel</button>
+          <button onClick={() => { onConfirm(); onCancel(); }} style={{ padding: "7px 16px", borderRadius: 7, border: "none", background: "#EF4444", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Confirm</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Dashboard ────────────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function DashboardSection({ apiFetch }: { apiFetch: (url: string) => Promise<any> }) {
@@ -187,6 +202,7 @@ function UsersSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestInit
   const [modeFilter, setModeFilter] = useState("all");
   const [detail, setDetail] = useState<any>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
 
   const load = useCallback(async () => { setLoading(true); const d = await apiFetch("/api/admin/users"); if (d.success) setUsers(d.users); setLoading(false); }, []);
   useEffect(() => { load(); }, []);
@@ -199,6 +215,10 @@ function UsersSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestInit
     setActionLoading(null);
   }
 
+  function confirmAction(title: string, message: string, fn: () => void) {
+    setConfirm({ title, message, onConfirm: fn });
+  }
+
   const filtered = users.filter(u => {
     const q = search.toLowerCase();
     const matchQ = !q || u.email.toLowerCase().includes(q) || u.username.toLowerCase().includes(q);
@@ -208,6 +228,7 @@ function UsersSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestInit
 
   return (
     <div>
+      {confirm && <ConfirmDialog title={confirm.title} message={confirm.message} onConfirm={confirm.onConfirm} onCancel={() => setConfirm(null)} />}
       <SH>Users</SH>
       <div style={{ display: "flex", gap: 10, marginTop: 16, marginBottom: 4 }}>
         <input placeholder="Search email / username" value={search} onChange={(e) => setSearch(e.target.value)}
@@ -230,9 +251,9 @@ function UsersSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestInit
               <div style={{ display: "flex", gap: 5, padding: "0 16px", flexWrap: "wrap", alignItems: "center" }} onClick={e => e.stopPropagation()}>
                 <Btn label="View" bg="#1E293B" color="#94A3B8" onClick={async () => { const d = await apiFetch(`/api/admin/users/${u.id}`); if (d.success) setDetail(d); }} />
                 {u.mode === "sandbox" && <Btn label="Start" bg="#3B82F6" onClick={() => action(u.id, "start_challenge")} loading={actionLoading === `${u.id}-start_challenge`} />}
-                {u.mode === "challenge" && <Btn label="Fail" bg="#EF4444" onClick={() => action(u.id, "fail_challenge")} loading={actionLoading === `${u.id}-fail_challenge`} />}
-                {u.mode === "challenge" && <Btn label="Pass" bg="#22C55E" color="#071A0E" onClick={() => action(u.id, "pass_challenge")} loading={actionLoading === `${u.id}-pass_challenge`} />}
-                <Btn label="Reset" bg="#334155" color="#94A3B8" onClick={() => action(u.id, "reset_balance")} loading={actionLoading === `${u.id}-reset_balance`} />
+                {u.mode === "challenge" && <Btn label="Fail" bg="#EF4444" onClick={() => confirmAction("Fail Challenge", "This will permanently fail the user's active challenge. Are you sure?", () => action(u.id, "fail_challenge"))} loading={actionLoading === `${u.id}-fail_challenge`} />}
+                {u.mode === "challenge" && <Btn label="Pass" bg="#22C55E" color="#071A0E" onClick={() => confirmAction("Pass Challenge", "This will mark the challenge as passed. Are you sure?", () => action(u.id, "pass_challenge"))} loading={actionLoading === `${u.id}-pass_challenge`} />}
+                <Btn label="Reset" bg="#334155" color="#94A3B8" onClick={() => confirmAction("Reset Balance", "This will reset the user's balance to $10,000. Are you sure?", () => action(u.id, "reset_balance"))} loading={actionLoading === `${u.id}-reset_balance`} />
               </div>
             </div>
           ))
@@ -287,6 +308,7 @@ function ChallengesSection({ apiFetch }: { apiFetch: (url: string, opts?: Reques
   const [filter, setFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
 
   const load = useCallback(async (s: string) => {
     setLoading(true);
@@ -305,8 +327,13 @@ function ChallengesSection({ apiFetch }: { apiFetch: (url: string, opts?: Reques
     setActionLoading(null);
   }
 
+  function confirmAction(title: string, message: string, fn: () => void) {
+    setConfirm({ title, message, onConfirm: fn });
+  }
+
   return (
     <div>
+      {confirm && <ConfirmDialog title={confirm.title} message={confirm.message} onConfirm={confirm.onConfirm} onCancel={() => setConfirm(null)} />}
       <SH>Challenges</SH>
       <div style={{ display: "flex", gap: 6, marginTop: 16, marginBottom: 4 }}>
         {["all", "active", "passed", "failed"].map(f => (
@@ -327,8 +354,8 @@ function ChallengesSection({ apiFetch }: { apiFetch: (url: string, opts?: Reques
               <div style={{ ...tdStyle, color: "#22C55E", fontWeight: 700 }}>${c.realizedBalance.toFixed(2)}</div>
               <div style={{ ...tdStyle, fontSize: 11 }}>{fmt(c.createdAt ?? c.startedAt)}</div>
               <div style={{ display: "flex", gap: 5, padding: "0 16px" }}>
-                {c.status === "active" && <Btn label="Fail" bg="#EF4444" onClick={() => action(c.id, c.userId, "fail_challenge")} loading={actionLoading === `${c.id}-fail_challenge`} />}
-                {c.status === "active" && <Btn label="Pass" bg="#22C55E" color="#071A0E" onClick={() => action(c.id, c.userId, "pass_challenge")} loading={actionLoading === `${c.id}-pass_challenge`} />}
+                {c.status === "active" && <Btn label="Fail" bg="#EF4444" onClick={() => confirmAction("Fail Challenge", "This will permanently fail the user's active challenge. Are you sure?", () => action(c.id, c.userId, "fail_challenge"))} loading={actionLoading === `${c.id}-fail_challenge`} />}
+                {c.status === "active" && <Btn label="Pass" bg="#22C55E" color="#071A0E" onClick={() => confirmAction("Pass Challenge", "This will mark the challenge as passed. Are you sure?", () => action(c.id, c.userId, "pass_challenge"))} loading={actionLoading === `${c.id}-pass_challenge`} />}
               </div>
             </div>
           ))}
@@ -461,6 +488,17 @@ function MarketsSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestIn
   );
 }
 
+const PLAIN_INPUT_KEYS = ["hero_title", "hero_subtitle", "cta_text"];
+const JSON_BLOCK_KEYS_PREFIX = ["feature_", "how_it_works_"];
+
+function isJsonBlockKey(key: string) {
+  return JSON_BLOCK_KEYS_PREFIX.some(p => key.startsWith(p));
+}
+
+function parseJsonBlock(value: string): { title: string; desc: string } {
+  try { const p = JSON.parse(value); return { title: p.title ?? "", desc: p.desc ?? "" }; } catch { return { title: value, desc: "" }; }
+}
+
 // ─── Content ──────────────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function ContentSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestInit) => Promise<any> }) {
@@ -481,23 +519,61 @@ function ContentSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestIn
     setSaving(null); setSaved(key); setTimeout(() => setSaved(null), 2000);
   }
 
+  function saveBtn(key: string) {
+    return (
+      <button onClick={() => save(key)} disabled={saving === key} style={{ padding: "7px 14px", borderRadius: 7, border: "none", background: saved === key ? "#22C55E" : "#334155", color: saved === key ? "#071A0E" : "#94A3B8", fontSize: 12, fontWeight: 700, cursor: saving === key ? "not-allowed" : "pointer", flexShrink: 0 }}>
+        {saving === key ? "..." : saved === key ? "Saved ✓" : "Save"}
+      </button>
+    );
+  }
+
+  const inputStyle: React.CSSProperties = { flex: 1, padding: "8px 10px", borderRadius: 7, border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 12, outline: "none" };
+
   return (
     <div>
       <SH>Content</SH>
       <div style={{ fontSize: 13, color: "#475569", marginTop: 4, marginBottom: 16 }}>Edit landing page content blocks</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {blocks.map(({ key }) => (
-          <div key={key} style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 10, padding: "14px 18px" }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>{key}</div>
-            <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-              <textarea value={edits[key] ?? ""} onChange={e => setEdits(p => ({ ...p, [key]: e.target.value }))} rows={2}
-                style={{ flex: 1, padding: "8px 10px", borderRadius: 7, border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 12, outline: "none", resize: "vertical", fontFamily: "monospace" }} />
-              <button onClick={() => save(key)} disabled={saving === key} style={{ padding: "7px 14px", borderRadius: 7, border: "none", background: saved === key ? "#22C55E" : "#334155", color: saved === key ? "#071A0E" : "#94A3B8", fontSize: 12, fontWeight: 700, cursor: saving === key ? "not-allowed" : "pointer", flexShrink: 0 }}>
-                {saving === key ? "..." : saved === key ? "Saved ✓" : "Save"}
-              </button>
+        {blocks.map(({ key }) => {
+          const isPlain = PLAIN_INPUT_KEYS.includes(key);
+          const isJson = isJsonBlockKey(key);
+          const parsed = isJson ? parseJsonBlock(edits[key] ?? "") : null;
+
+          return (
+            <div key={key} style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 10, padding: "14px 18px" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>{key}</div>
+              {isPlain && (
+                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <input value={edits[key] ?? ""} onChange={e => setEdits(p => ({ ...p, [key]: e.target.value }))}
+                    style={{ ...inputStyle, width: "100%" }} />
+                  {saveBtn(key)}
+                </div>
+              )}
+              {isJson && parsed && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <input placeholder="Title" value={parsed.title} onChange={e => {
+                    const next = JSON.stringify({ title: e.target.value, desc: parsed.desc });
+                    setEdits(p => ({ ...p, [key]: next }));
+                  }} style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }} />
+                  <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <textarea placeholder="Description" value={parsed.desc} onChange={e => {
+                      const next = JSON.stringify({ title: parsed.title, desc: e.target.value });
+                      setEdits(p => ({ ...p, [key]: next }));
+                    }} rows={2} style={{ ...inputStyle, flex: 1, resize: "vertical", fontFamily: "inherit" }} />
+                    {saveBtn(key)}
+                  </div>
+                </div>
+              )}
+              {!isPlain && !isJson && (
+                <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                  <textarea value={edits[key] ?? ""} onChange={e => setEdits(p => ({ ...p, [key]: e.target.value }))} rows={2}
+                    style={{ ...inputStyle, flex: 1, resize: "vertical", fontFamily: "monospace" }} />
+                  {saveBtn(key)}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
