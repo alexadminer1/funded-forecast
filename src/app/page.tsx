@@ -89,6 +89,24 @@ export default async function Home() {
       fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
       overflowX: "hidden",
     }}>
+      <style>{`
+        @media (max-width: 768px) {
+          .ff-header { padding: 14px 16px !important; }
+          .ff-nav { display: none !important; }
+          .ff-main { padding: 100px 16px 60px !important; }
+          .ff-grid-3 { grid-template-columns: 1fr !important; }
+          .ff-grid-2 { grid-template-columns: 1fr !important; }
+          .ff-grid-plans { grid-template-columns: 1fr !important; max-width: 340px; margin: 0 auto; }
+          .ff-stats { flex-wrap: wrap !important; }
+          .ff-stats > div { flex: 1 1 45% !important; }
+          .ff-earnings-grid { grid-template-columns: 1fr 1fr !important; }
+          .ff-earnings-grid-header { grid-template-columns: 1fr 1fr !important; }
+          .ff-earnings-col3, .ff-earnings-col4-header { display: none !important; }
+          .ff-footer-grid { grid-template-columns: 1fr !important; gap: 40px !important; }
+          .ff-market-row { flex-wrap: wrap !important; gap: 10px !important; }
+          .ff-market-odds { flex-wrap: wrap !important; }
+        }
+      `}</style>
       {/* Green glow */}
       <div style={{
         position: "fixed", top: -200, left: "50%", transform: "translateX(-50%)",
@@ -98,7 +116,7 @@ export default async function Home() {
       }} />
 
       {/* Nav */}
-      <header style={{
+      <header className="ff-header" style={{
         position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
         padding: "16px 40px", display: "flex", alignItems: "center", justifyContent: "space-between",
         background: "rgba(8,12,20,0.75)",
@@ -116,7 +134,7 @@ export default async function Home() {
           }}>F</div>
           <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: "-0.02em", color: "#F1F5F9" }}>FundedForecast</span>
         </a>
-        <nav style={{ display: "flex", gap: 28, alignItems: "center" }}>
+        <nav className="ff-nav" style={{ display: "flex", gap: 28, alignItems: "center" }}>
           <a href="#how" style={{ fontSize: 14, color: "#64748B", textDecoration: "none", fontWeight: 500, transition: "color 0.2s" }}>How it works</a>
           <a href="#plans" style={{ fontSize: 14, color: "#64748B", textDecoration: "none", fontWeight: 500 }}>Pricing</a>
           <a href="#faq" style={{ fontSize: 14, color: "#64748B", textDecoration: "none", fontWeight: 500 }}>FAQ</a>
@@ -129,7 +147,7 @@ export default async function Home() {
       </header>
 
       {/* Main */}
-      <main style={{
+      <main className="ff-main" style={{
         flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
         padding: "64px 24px 80px", paddingTop: "80px", position: "relative", zIndex: 1, textAlign: "center",
       }}>
@@ -165,7 +183,7 @@ export default async function Home() {
         <LoginForm ctaText="Sign In" />
 
         {/* Stats */}
-        <div style={{
+        <div className="ff-stats" style={{
           display: "flex", gap: 0, borderRadius: 14, border: "1px solid rgba(255,255,255,0.06)",
           overflow: "hidden", background: "rgba(13,21,33,0.6)", backdropFilter: "blur(12px)", marginBottom: 120,
         }}>
@@ -181,7 +199,7 @@ export default async function Home() {
         <section id="how" style={{ width: "100%", maxWidth: 900, marginBottom: 120, textAlign: "left" }}>
           <SectionLabel>HOW IT WORKS</SectionLabel>
           <h2 style={h2}>Three steps to funding</h2>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+          <div className="ff-grid-3" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
             {steps.map(({ step, title, desc }) => (
               <div key={step} style={card}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: "#22C55E", letterSpacing: "0.08em", marginBottom: 12 }}>{step}</div>
@@ -197,7 +215,7 @@ export default async function Home() {
           <section id="plans" style={{ width: "100%", maxWidth: 960, marginBottom: 120, textAlign: "left" }}>
             <SectionLabel>PRICING</SectionLabel>
             <h2 style={h2}>Choose your challenge</h2>
-            <div style={{ display: "grid", gridTemplateColumns: `repeat(${plans.length}, 1fr)`, gap: 16 }}>
+            <div className="ff-grid-plans" style={{ display: "grid", gridTemplateColumns: `repeat(${plans.length}, 1fr)`, gap: 16 }}>
               {plans.map((plan) => {
                 const params = [
                   { label: "Profit Target", value: `${plan.profitTargetPct}%` },
@@ -293,7 +311,7 @@ export default async function Home() {
               { title: "Will the US hold a federal election in November 2026?", category: "Politics", yes: 91, no: 9, vol: "$210k" },
               { title: "Will the NBA Finals go to 7 games in 2026?", category: "Sports", yes: 34, no: 66, vol: "$31k" },
             ].map(({ title, category, yes, no, vol }) => (
-              <div key={title} style={{ ...card, display: "flex", alignItems: "center", gap: 20, padding: "16px 20px" }}>
+              <div key={title} className="ff-market-row" style={{ ...card, display: "flex", alignItems: "center", gap: 20, padding: "16px 20px" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>{category}</div>
                   <div style={{ fontSize: 14, fontWeight: 600, color: "#F1F5F9", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</div>
@@ -315,7 +333,7 @@ export default async function Home() {
         <section style={{ width: "100%", maxWidth: 900, marginBottom: 120, textAlign: "left" }}>
           <SectionLabel>ADVANTAGES</SectionLabel>
           <h2 style={h2}>Why traders choose us</h2>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
+          <div className="ff-grid-2" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
             {features.map(({ title, desc }, i) => (
               <div key={title} style={card}>
                 <div style={{ fontSize: 20, marginBottom: 12, color: "#22C55E" }}>{icons[i]}</div>
@@ -331,9 +349,9 @@ export default async function Home() {
           <SectionLabel>RESULTS</SectionLabel>
           <h2 style={h2}>Earnings examples</h2>
           <div style={{ border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, overflow: "hidden" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", background: "rgba(255,255,255,0.02)", padding: "10px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-              {["Trader", "Profit", "Payout (80%)", "Status"].map((h) => (
-                <div key={h} style={{ fontSize: 11, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.07em" }}>{h}</div>
+            <div className="ff-earnings-grid-header" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", background: "rgba(255,255,255,0.02)", padding: "10px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+              {["Trader", "Profit", "Payout (80%)", "Status"].map((h, hi) => (
+                <div key={h} className={hi === 2 ? "ff-earnings-col3" : hi === 3 ? "ff-earnings-col4-header" : undefined} style={{ fontSize: 11, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.07em" }}>{h}</div>
               ))}
             </div>
             {[
@@ -342,10 +360,10 @@ export default async function Home() {
               { trader: "@markets_pro", profit: "$2,100", payout: "$1,680", status: "Funded" },
               { trader: "@alpha_caller", profit: "$540", payout: "$432", status: "In progress" },
             ].map(({ trader, profit, payout, status }, i) => (
-              <div key={trader} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", padding: "14px 20px", borderBottom: i < 3 ? "1px solid rgba(255,255,255,0.04)" : "none", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)" }}>
+              <div key={trader} className="ff-earnings-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", padding: "14px 20px", borderBottom: i < 3 ? "1px solid rgba(255,255,255,0.04)" : "none", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)" }}>
                 <div style={{ fontSize: 13, color: "#94A3B8", fontWeight: 500 }}>{trader}</div>
                 <div style={{ fontSize: 13, color: "#22C55E", fontWeight: 700 }}>{profit}</div>
-                <div style={{ fontSize: 13, color: "#F1F5F9", fontWeight: 600 }}>{payout}</div>
+                <div className="ff-earnings-col3" style={{ fontSize: 13, color: "#F1F5F9", fontWeight: 600 }}>{payout}</div>
                 <div>
                   <span style={{ fontSize: 11, fontWeight: 700, color: status === "Funded" ? "#22C55E" : "#F59E0B", background: status === "Funded" ? "rgba(34,197,94,0.08)" : "rgba(245,158,11,0.08)", border: `1px solid ${status === "Funded" ? "rgba(34,197,94,0.2)" : "rgba(245,158,11,0.2)"}`, borderRadius: 4, padding: "2px 8px", letterSpacing: "0.04em" }}>{status.toUpperCase()}</span>
                 </div>
@@ -358,7 +376,7 @@ export default async function Home() {
         <section style={{ width: "100%", maxWidth: 900, marginBottom: 120, textAlign: "left" }}>
           <SectionLabel>RULES</SectionLabel>
           <h2 style={h2}>Evaluation criteria</h2>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+          <div className="ff-grid-3" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
             {[
               { value: "10%", label: "Profit target", desc: "Grow your $10,000 account by at least $1,000 to pass." },
               { value: "10%", label: "Max drawdown", desc: "Never lose more than $1,000 from the starting balance." },
@@ -408,7 +426,7 @@ export default async function Home() {
         fontFamily: "'Inter', -apple-system, sans-serif",
       }}>
         {/* Top row */}
-        <div style={{ maxWidth: 900, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr auto auto", gap: 80, marginBottom: 48 }}>
+        <div className="ff-footer-grid" style={{ maxWidth: 900, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr auto auto", gap: 80, marginBottom: 48 }}>
           {/* Logo + desc */}
           <div>
             <a href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 9, marginBottom: 16 }}>
