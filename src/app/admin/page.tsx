@@ -78,7 +78,13 @@ function AdminDashboard({ onInvalidKey }: { onInvalidKey: () => void }) {
   async function apiFetch<T>(url: string, opts?: RequestInit): Promise<T> {
     const res = await fetch(url, { ...opts, headers: { "x-admin-key": adminKey, "Content-Type": "application/json", ...(opts?.headers ?? {}) } });
     if (res.status === 403) { onInvalidKey(); sessionStorage.removeItem(STORAGE_KEY); window.location.reload(); }
-    return res.json();
+    const text = await res.text();
+    if (!text) return {};
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { error: 'Invalid JSON response' };
+    }
   }
 
   function signOut() { sessionStorage.clear(); window.location.reload(); }
