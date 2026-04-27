@@ -1,4 +1,5 @@
 import LoginForm from "@/components/LoginForm";
+import FAQBlock from "@/components/FAQBlock";
 import { prisma } from "@/lib/prisma";
 
 async function getContent(): Promise<Record<string, string>> {
@@ -10,6 +11,16 @@ async function getContent(): Promise<Record<string, string>> {
   } catch {
     return {};
   }
+}
+
+async function getFAQ() {
+  try {
+    const [platform, rules] = await Promise.all([
+      prisma.fAQItem.findMany({ where: { isActive: true, category: "platform" }, orderBy: { order: "asc" } }),
+      prisma.fAQItem.findMany({ where: { isActive: true, category: "rules" }, orderBy: { order: "asc" } }),
+    ]);
+    return { platform, rules };
+  } catch { return { platform: [], rules: [] }; }
 }
 
 async function getPlans() {
@@ -44,6 +55,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 export default async function Home() {
   const content = await getContent();
   const plans = await getPlans();
+  const faq = await getFAQ();
 
   const heroTitle = content.hero_title ?? "Trade predictions. Get funded.";
   const heroSubtitle = content.hero_subtitle ?? "Prove your forecasting skills on real Polymarket events. Pass the challenge, earn up to 80% of profits.";
@@ -350,6 +362,14 @@ export default async function Home() {
               </div>
             ))}
           </div>
+        </section>
+
+        {/* FAQ */}
+        <section style={{ width: "100%", maxWidth: 900, marginBottom: 120, textAlign: "left" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#22C55E", letterSpacing: "0.1em", marginBottom: 10 }}>FAQS</div>
+          <h2 style={{ fontSize: 36, fontWeight: 800, letterSpacing: "-0.04em", color: "#F1F5F9", marginBottom: 12, marginTop: 0, textAlign: "center" }}>Your Questions, Answered.</h2>
+          <p style={{ fontSize: 15, color: "#64748B", textAlign: "center", marginBottom: 40 }}>Everything you need to know about our platform, challenges, and payouts.</p>
+          <FAQBlock platform={faq.platform} rules={faq.rules} />
         </section>
 
         {/* Final CTA */}
