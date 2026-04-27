@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { verifyToken } from "@/lib/auth";
 
 const MAX_SLIPPAGE = 0.02;
+const SANDBOX_MAX_POSITION_PCT = 2;
 
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
@@ -25,7 +26,6 @@ export async function POST(req: NextRequest) {
     side: "yes" | "no";
     amount: number;
     clientPrice: number;
-    challengeId?: number;
   };
 
   try {
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { marketId, side, amount, clientPrice, challengeId } = body;
+  const { marketId, side, amount, clientPrice } = body;
 
   if (!marketId || !side || !amount || !clientPrice) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -54,95 +54,69 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      const market = await tx.market.findUnique({
-        where: { id: marketId },
+      // Determine active challenge server-side
+      const activeChallenge = await tx.challenge.findFirst({
+        where: { userId, status: "active" },
       });
+      const challengeId = activeChallenge ? activeChallenge.id : null;
 
+      const market = await tx.market.findUnique({ where: { id: marketId } });
       if (!market) throw new Error("MARKET_NOT_FOUND");
       if (market.status !== "live") throw new Error("MARKET_NOT_LIVE");
       if (market.negRisk) throw new Error("NEG_RISK_NOT_SUPPORTED");
 
       const currentPrice = side === "yes" ? market.yesPrice : market.noPrice;
-      const slippage = Math.abs(clientPrice - currentPrice);
-
-      if (slippage > MAX_SLIPPAGE) {
-        throw new Error("PRICE_MOVED");
-      }
+      if (Math.abs(clientPrice - currentPrice) > MAX_SLIPPAGE) throw new Error("PRICE_MOVED");
 
       const executionPrice = currentPrice;
       const cost = parseFloat((amount * executionPrice).toFixed(2));
 
+      // Balance scoped to mode (challenge or sandbox)
       const lastLog = await tx.balanceLog.findFirst({
-        where: { userId },
+        where: challengeId !== null
+          ? { userId, challengeId }
+          : { userId, challengeId: null },
         orderBy: { createdAt: "desc" },
       });
 
       const currentBalance = lastLog ? lastLog.runningBalance : 0;
 
-      if (currentBalance < cost) {
-        throw new Error("INSUFFICIENT_BALANCE");
-      }
+      if (currentBalance < cost) throw new Error("INSUFFICIENT_BALANCE");
 
-      let challenge = null;
-      if (challengeId) {
-        challenge = await tx.challenge.findUnique({
-          where: { id: challengeId },
-        });
-
-        if (!challenge || challenge.userId !== userId) {
-          throw new Error("CHALLENGE_NOT_FOUND");
-        }
-
-        if (challenge.status !== "active") {
-          throw new Error("CHALLENGE_NOT_ACTIVE");
-        }
-
-        const maxPositionCost = parseFloat(
-          (challenge.realizedBalance * challenge.maxPositionSizePct / 100).toFixed(2)
+      // Position size check
+      if (activeChallenge) {
+        const maxCost = parseFloat(
+          (activeChallenge.realizedBalance * activeChallenge.maxPositionSizePct / 100).toFixed(2)
         );
-
-        if (cost > maxPositionCost) {
-          throw new Error("POSITION_SIZE_EXCEEDED");
-        }
+        if (cost > maxCost) throw new Error("POSITION_SIZE_EXCEEDED");
+      } else {
+        const maxCost = parseFloat((currentBalance * SANDBOX_MAX_POSITION_PCT / 100).toFixed(2));
+        if (cost > maxCost) throw new Error("POSITION_SIZE_EXCEEDED");
       }
 
+      // Upsert position
       const existingPosition = await tx.position.findFirst({
-        where: {
-          userId,
-          marketId,
-          side,
-          status: "open",
-          challengeId: challengeId ?? null,
-        },
+        where: { userId, marketId, side, status: "open", challengeId },
       });
 
       let position;
-
       if (existingPosition) {
-        if (existingPosition.status !== "open") {
-          throw new Error("POSITION_NOT_OPEN");
-        }
-
         const newCostBasis = parseFloat((existingPosition.costBasis + cost).toFixed(2));
         const newShares = existingPosition.shares + amount;
-        const newAvgPrice = parseFloat((newCostBasis / newShares).toFixed(6));
-
         position = await tx.position.update({
           where: { id: existingPosition.id },
           data: {
             shares: newShares,
             costBasis: newCostBasis,
-            avgPrice: newAvgPrice,
+            avgPrice: parseFloat((newCostBasis / newShares).toFixed(6)),
             version: { increment: 1 },
           },
         });
       } else {
         position = await tx.position.create({
           data: {
-            userId,
-            marketId,
-            side,
-            challengeId: challengeId ?? null,
+            userId, marketId, side,
+            challengeId,
             status: "open",
             shares: amount,
             avgPrice: executionPrice,
@@ -154,26 +128,19 @@ export async function POST(req: NextRequest) {
 
       const trade = await tx.trade.create({
         data: {
-          userId,
-          marketId,
-          challengeId: challengeId ?? null,
-          side,
-          action: "buy",
-          amount,
-          price: executionPrice,
-          cost,
+          userId, marketId,
+          challengeId,
+          side, action: "buy",
+          amount, price: executionPrice, cost,
           marketYesPriceAtExecution: market.yesPrice,
           marketNoPriceAtExecution: market.noPrice,
         },
       });
 
       const newBalance = parseFloat((currentBalance - cost).toFixed(2));
-
       await tx.balanceLog.create({
         data: {
-          userId,
-          tradeId: trade.id,
-          challengeId: challengeId ?? null,
+          userId, tradeId: trade.id, challengeId,
           type: "trade_open",
           amount: -cost,
           balanceBefore: currentBalance,
@@ -182,15 +149,15 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      if (challenge && challengeId) {
-        const newRealizedBalance = parseFloat((challenge.realizedBalance - cost).toFixed(2));
-        const newPeakBalance = Math.max(challenge.peakBalance, newRealizedBalance);
-
+      // Update challenge balance and check drawdown
+      if (activeChallenge && challengeId) {
+        const newRealizedBalance = parseFloat((activeChallenge.realizedBalance - cost).toFixed(2));
+        const newPeakBalance = Math.max(activeChallenge.peakBalance, newRealizedBalance);
         const totalDrawdownPct = parseFloat(
-          (((challenge.startBalance - newRealizedBalance) / challenge.startBalance) * 100).toFixed(2)
+          (((activeChallenge.startBalance - newRealizedBalance) / activeChallenge.startBalance) * 100).toFixed(2)
         );
 
-        if (totalDrawdownPct >= challenge.maxTotalDdPct) {
+        if (totalDrawdownPct >= activeChallenge.maxTotalDdPct) {
           await tx.challenge.update({
             where: { id: challengeId },
             data: {
@@ -198,49 +165,23 @@ export async function POST(req: NextRequest) {
               peakBalance: newPeakBalance,
               status: "failed",
               drawdownViolated: true,
-              violationReason: `Total drawdown ${totalDrawdownPct}% exceeded limit ${challenge.maxTotalDdPct}%`,
+              violationReason: `Total drawdown ${totalDrawdownPct}% exceeded limit ${activeChallenge.maxTotalDdPct}%`,
               endedAt: new Date(),
             },
           });
-
-          await tx.auditLog.create({
-            data: {
-              actorId: userId,
-              targetType: "challenge",
-              targetId: challengeId,
-              category: "challenge",
-              action: "challenge_failed",
-              metadata: {
-                reason: "total_drawdown_exceeded",
-                drawdownPct: totalDrawdownPct,
-                limit: challenge.maxTotalDdPct,
-              },
-            },
-          });
-
           throw new Error("CHALLENGE_DRAWDOWN_VIOLATED");
         }
 
         await tx.challenge.update({
           where: { id: challengeId },
-          data: {
-            realizedBalance: newRealizedBalance,
-            peakBalance: newPeakBalance,
-          },
+          data: { realizedBalance: newRealizedBalance, peakBalance: newPeakBalance },
         });
       }
 
-      await tx.user.update({
-        where: { id: userId },
-        data: { lastTradeAt: new Date() },
-      });
+      await tx.user.update({ where: { id: userId }, data: { lastTradeAt: new Date() } });
 
-      return {
-        trade,
-        position,
-        balanceAfter: newBalance,
-      };
-    }, { timeout: 15000 }); // ← ВАЖНО: увеличенный таймаут
+      return { trade, position, balanceAfter: newBalance };
+    }, { timeout: 15000 });
 
     return NextResponse.json({
       success: true,
@@ -251,25 +192,20 @@ export async function POST(req: NextRequest) {
 
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "UNKNOWN_ERROR";
-
     const clientErrors: Record<string, { status: number; error: string }> = {
-      MARKET_NOT_FOUND:          { status: 404, error: "Market not found" },
-      MARKET_NOT_LIVE:           { status: 400, error: "Market is not live" },
-      NEG_RISK_NOT_SUPPORTED:    { status: 400, error: "This market type is not supported" },
-      PRICE_MOVED:               { status: 409, error: "Price moved beyond slippage tolerance. Please retry." },
-      INSUFFICIENT_BALANCE:      { status: 400, error: "Insufficient balance" },
-      CHALLENGE_NOT_FOUND:       { status: 404, error: "Challenge not found" },
-      CHALLENGE_NOT_ACTIVE:      { status: 400, error: "Challenge is not active" },
-      POSITION_SIZE_EXCEEDED:    { status: 400, error: "Position size exceeds challenge limit" },
-      POSITION_NOT_OPEN:         { status: 400, error: "Position is not open" },
-      CHALLENGE_DRAWDOWN_VIOLATED: { status: 400, error: "Challenge failed: drawdown limit exceeded" },
+      MARKET_NOT_FOUND:             { status: 404, error: "Market not found" },
+      MARKET_NOT_LIVE:              { status: 400, error: "Market is not live" },
+      NEG_RISK_NOT_SUPPORTED:       { status: 400, error: "This market type is not supported" },
+      PRICE_MOVED:                  { status: 409, error: "Price moved beyond slippage tolerance. Please retry." },
+      INSUFFICIENT_BALANCE:         { status: 400, error: "Insufficient balance" },
+      POSITION_SIZE_EXCEEDED:       { status: 400, error: "Position size exceeds limit" },
+      POSITION_NOT_OPEN:            { status: 400, error: "Position is not open" },
+      CHALLENGE_DRAWDOWN_VIOLATED:  { status: 400, error: "Challenge failed: drawdown limit exceeded" },
     };
-
     if (message in clientErrors) {
       const { status, error } = clientErrors[message];
       return NextResponse.json({ error }, { status });
     }
-
     console.error("[BUY] Unexpected error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
