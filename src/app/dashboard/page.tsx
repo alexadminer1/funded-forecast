@@ -67,10 +67,15 @@ export default function DashboardPage() {
   if (!user) return null;
 
   const totalUnrealized = positions.reduce((sum, p) => sum + p.unrealizedPnl, 0);
-  const portfolioValue = user.balance + positions.reduce((s, p) => s + p.currentValue, 0);
+
+  const activeBalance = modeData?.mode === "challenge" && modeData.challenge
+    ? modeData.challenge.realizedBalance
+    : user.balance;
+
+  const portfolioValue = activeBalance + positions.reduce((s, p) => s + p.currentValue, 0);
 
   const stats = [
-    { label: "Available Balance", value: `$${user.balance.toLocaleString("en-US", { minimumFractionDigits: 2 })}`, color: "#22C55E", sub: "paper capital" },
+    { label: "Available Balance", value: `$${activeBalance.toLocaleString("en-US", { minimumFractionDigits: 2 })}`, color: "#22C55E", sub: modeData?.mode === "challenge" ? "challenge balance" : "paper capital" },
     { label: "Open Positions", value: String(user.openPositionsCount), color: "#3B82F6", sub: "active trades" },
     { label: "Unrealized PnL", value: `${totalUnrealized >= 0 ? "+" : ""}$${totalUnrealized.toFixed(2)}`, color: totalUnrealized >= 0 ? "#22C55E" : "#EF4444", sub: "open positions" },
     { label: "Portfolio Value", value: `$${portfolioValue.toFixed(2)}`, color: "#F59E0B", sub: "balance + positions" },
