@@ -699,6 +699,27 @@ function ContentSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestIn
           );
         })}
       </div>
+
+      {/* Legal pages */}
+      <div style={{ marginTop: 40, borderTop: "1px solid #1E293B", paddingTop: 32 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#F1F5F9", marginBottom: 20 }}>Legal Pages</div>
+        {[
+          { key: "terms_content", label: "Terms of Use" },
+          { key: "privacy_content", label: "Privacy Policy" },
+          { key: "risk_content", label: "Risk Disclosure" },
+        ].map(({ key, label }) => (
+          <div key={key} style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>{label}</div>
+            <textarea
+              value={edits[key] ?? ""}
+              onChange={e => setEdits(p => ({ ...p, [key]: e.target.value }))}
+              rows={10}
+              style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 13, boxSizing: "border-box", resize: "vertical", fontFamily: "inherit", lineHeight: 1.6 }}
+            />
+            <button onClick={() => save(key)} style={{ marginTop: 8, padding: "7px 20px", borderRadius: 6, border: "none", background: "#22C55E", color: "#071A0E", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Save</button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
