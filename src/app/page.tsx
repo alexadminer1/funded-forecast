@@ -177,56 +177,87 @@ export default async function Home() {
             <SectionLabel>PRICING</SectionLabel>
             <h2 style={h2}>Choose your challenge</h2>
             <div style={{ display: "grid", gridTemplateColumns: `repeat(${plans.length}, 1fr)`, gap: 16 }}>
-              {plans.map((plan) => (
+              {plans.map((plan) => {
+                const params = [
+                  { label: "Profit Target", value: `${plan.profitTargetPct}%` },
+                  { label: "Max Loss Limit", value: `${plan.maxLossPct}%` },
+                  { label: "Daily Loss Limit", value: `${plan.dailyLossPct}%` },
+                  { label: "Min Trading Days", value: String(plan.minTradingDays) },
+                  { label: "Profit Share", value: "80%" },
+                  { label: "Refundable Fee", value: `$${plan.price}` },
+                ];
+                return (
                 <div key={plan.id} style={{
-                  background: "#1E293B",
-                  border: `1px solid ${plan.isPopular ? "#22C55E" : "#334155"}`,
+                  background: "#0F1A0F",
+                  border: `1px solid ${plan.isPopular ? "#22C55E" : "#1a3a1a"}`,
                   borderRadius: 16,
-                  padding: "28px 24px",
+                  padding: "24px 20px",
                   position: "relative",
-                  boxShadow: plan.isPopular ? "0 0 32px rgba(34,197,94,0.12)" : "none",
+                  boxShadow: plan.isPopular ? "0 0 40px rgba(34,197,94,0.10)" : "none",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 0,
                 }}>
+                  {/* -50% badge top right */}
+                  <div style={{
+                    position: "absolute", top: 14, right: 14,
+                    background: "#F59E0B", color: "#000",
+                    fontSize: 10, fontWeight: 800, letterSpacing: "0.06em",
+                    padding: "3px 8px", borderRadius: 6,
+                  }}>-50%</div>
+
+                  {/* Best value badge */}
                   {plan.isPopular && (
                     <div style={{
-                      position: "absolute", top: -12, left: "50%", transform: "translateX(-50%)",
+                      position: "absolute", top: -13, left: "50%", transform: "translateX(-50%)",
                       background: "#22C55E", color: "#071A0E", fontSize: 10, fontWeight: 800,
-                      letterSpacing: "0.1em", padding: "4px 14px", borderRadius: 20,
-                    }}>MOST POPULAR</div>
+                      letterSpacing: "0.08em", padding: "4px 16px", borderRadius: 20, whiteSpace: "nowrap",
+                    }}>BEST VALUE</div>
                   )}
-                  <div style={{ fontSize: 13, fontWeight: 700, color: plan.isPopular ? "#22C55E" : "#94A3B8", marginBottom: 6, letterSpacing: "0.05em", textTransform: "uppercase" }}>{plan.name}</div>
-                  <div style={{ fontSize: 38, fontWeight: 800, color: "#F1F5F9", letterSpacing: "-0.04em", marginBottom: 2 }}>${plan.price}</div>
-                  <div style={{ fontSize: 13, color: "#475569", marginBottom: 20 }}>one-time fee</div>
 
-                  <div style={{ fontSize: 15, fontWeight: 700, color: "#22C55E", marginBottom: 16 }}>
-                    ${plan.accountSize.toLocaleString()} account
+                  {/* Account size */}
+                  <div style={{ marginBottom: 18 }}>
+                    <div style={{ fontSize: 36, fontWeight: 800, color: "#F1F5F9", letterSpacing: "-0.04em", lineHeight: 1.1 }}>
+                      ${plan.accountSize.toLocaleString()}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#4B6A4B", fontWeight: 500, marginTop: 3 }}>Account Size</div>
                   </div>
 
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 24 }}>
-                    {[
-                      { label: "Profit target", value: `${plan.profitTargetPct}%` },
-                      { label: "Max loss", value: `${plan.maxLossPct}%` },
-                      { label: "Daily loss limit", value: `${plan.dailyLossPct}%` },
-                      { label: "Min trading days", value: String(plan.minTradingDays) },
-                    ].map(({ label, value }) => (
-                      <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ fontSize: 13, color: "#64748B" }}>{label}</span>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: "#94A3B8" }}>{value}</span>
+                  {/* GET PLAN button */}
+                  <a href={`/login?mode=register&planId=${plan.id}`} style={{
+                    display: "block", textAlign: "center",
+                    background: "#22C55E", color: "#071A0E",
+                    fontSize: 14, fontWeight: 800, letterSpacing: "0.04em",
+                    padding: "13px", borderRadius: 10, textDecoration: "none",
+                    boxShadow: "0 0 24px rgba(34,197,94,0.25)",
+                    marginBottom: 10,
+                  }}>GET PLAN →</a>
+
+                  {/* Price row */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, justifyContent: "center" }}>
+                    <span style={{ fontSize: 20, fontWeight: 800, color: "#F1F5F9" }}>${plan.price}</span>
+                    <span style={{ fontSize: 14, color: "#475569", textDecoration: "line-through" }}>${plan.price * 2}</span>
+                  </div>
+
+                  {/* Params list */}
+                  <div style={{ display: "flex", flexDirection: "column" }}>
+                    {params.map(({ label, value }, i) => (
+                      <div key={label} style={{
+                        display: "flex", justifyContent: "space-between", alignItems: "center",
+                        padding: "9px 0",
+                        borderTop: i === 0 ? "1px solid #1a3a1a" : "1px solid #1a3a1a",
+                      }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontSize: 13, color: "#3a5a3a" }}>ⓘ</span>
+                          <span style={{ fontSize: 13, color: "#94A3B8" }}>{label}</span>
+                        </div>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "#22C55E" }}>{value}</span>
                       </div>
                     ))}
                   </div>
-
-                  <a href={`/login?mode=register&planId=${plan.id}`} style={{
-                    display: "block", textAlign: "center",
-                    background: plan.isPopular ? "#22C55E" : "transparent",
-                    color: plan.isPopular ? "#071A0E" : "#22C55E",
-                    border: `1px solid ${plan.isPopular ? "#22C55E" : "rgba(34,197,94,0.4)"}`,
-                    fontSize: 14, fontWeight: 700,
-                    padding: "12px", borderRadius: 10, textDecoration: "none",
-                    letterSpacing: "-0.01em",
-                    boxShadow: plan.isPopular ? "0 0 20px rgba(34,197,94,0.25)" : "none",
-                  }}>Get Started →</a>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         )}
