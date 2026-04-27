@@ -428,6 +428,7 @@ export default async function Home() {
                 { label: "How it works", href: "#how" },
                 { label: "Pricing", href: "#plans" },
                 { label: "FAQ", href: "#faq" },
+                { label: "Contact", href: "/contact" },
                 { label: "Support", href: "mailto:support@fundedforecast.com" },
               ].map(({ label, href }) => (
                 <a key={label} href={href} style={{ fontSize: 13, color: "#64748B", textDecoration: "none" }}>{label}</a>
