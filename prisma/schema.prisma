@@ -244,3 +244,10 @@ model AuditLog {
   @@index([createdAt(sort: Desc)])
   @@index([category])
 }
+
+model ContentBlock {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
