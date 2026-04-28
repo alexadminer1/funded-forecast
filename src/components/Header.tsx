@@ -40,6 +40,7 @@ export default function Header() {
     { href: "/dashboard", label: "Dashboard" },
     { href: "/history", label: "History" },
     { href: "/faq", label: "FAQ" },
+    { href: "/leaderboard", label: "Leaderboard" },
   ];
 
   const isLoggedIn = !!user;
