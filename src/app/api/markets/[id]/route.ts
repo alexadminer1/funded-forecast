@@ -38,10 +38,6 @@ export async function GET(
       return NextResponse.json({ error: "Market not found" }, { status: 404 });
     }
 
-    if (market.negRisk) {
-      return NextResponse.json({ error: "Market not supported" }, { status: 400 });
-    }
-
     return NextResponse.json({ success: true, market });
 
   } catch (error) {
