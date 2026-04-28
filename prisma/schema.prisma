@@ -240,6 +240,10 @@ model PayoutRequest {
   requestedAt     DateTime  @default(now())
   processedAt     DateTime?
   paidAt          DateTime?
+  walletAddress   String?
+  walletNetwork   String?
+  txHash          String?
+  currency        String    @default("USDT")
 
   user      User      @relation(fields: [userId], references: [id])
   challenge Challenge @relation(fields: [challengeId], references: [id])
