@@ -2,8 +2,6 @@
 import { useState, useMemo } from "react";
 import { faqData, FAQCategory } from "./data";
 
-export const metadata = undefined;
-
 function AccordionItem({ q, a }: { q: string; a: string }) {
   const [open, setOpen] = useState(false);
   return (
