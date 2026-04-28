@@ -23,7 +23,7 @@ export default function Footer() {
             {[
               { label: "How it works", href: "/#how" },
               { label: "Pricing", href: "/#plans" },
-              { label: "FAQ", href: "/#faq" },
+              { label: "FAQ", href: "/faq" },
               { label: "Contact", href: "/contact" },
               { label: "Support", href: "mailto:support@fundedforecast.com" },
             ].map(({ label, href }) => (
