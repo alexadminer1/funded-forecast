@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const offset = parseInt(body.offset ?? 0);
-    const limit = 100;
+    const limit = 30;
 
     const markets = await fetchActiveMarkets(limit, offset);
 
