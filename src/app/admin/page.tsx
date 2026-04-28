@@ -8,7 +8,7 @@ const BLOCKED_KEY = "adminBlockedUntil";
 const MAX_ATTEMPTS = 3;
 const BLOCK_MS = 5 * 60 * 1000;
 
-type Section = "dashboard" | "users" | "challenges" | "trades" | "balance-logs" | "markets" | "plans" | "content" | "faq" | "system";
+type Section = "dashboard" | "users" | "challenges" | "trades" | "balance-logs" | "markets" | "plans" | "content" | "faq" | "reviews" | "system";
 
 export default function AdminPage() {
   const [authed, setAuthed] = useState(false);
@@ -96,6 +96,7 @@ function AdminDashboard({ onInvalidKey }: { onInvalidKey: () => void }) {
     { key: "balance-logs", label: "Balance Logs" }, { key: "markets", label: "Markets" },
     { key: "plans", label: "Plans" },
     { key: "content", label: "Content" }, { key: "faq", label: "FAQ" },
+    { key: "reviews", label: "Reviews" },
     { key: "system", label: "System" },
   ];
 
@@ -126,6 +127,7 @@ function AdminDashboard({ onInvalidKey }: { onInvalidKey: () => void }) {
         {section === "plans" && <PlansSection apiFetch={apiFetch} />}
         {section === "content" && <ContentSection apiFetch={apiFetch} />}
         {section === "faq" && <FAQSection apiFetch={apiFetch} />}
+        {section === "reviews" && <ReviewsSection apiFetch={apiFetch} />}
         {section === "system" && <SystemSection apiFetch={apiFetch} adminKey={adminKey} />}
       </div>
     </div>
@@ -764,6 +766,128 @@ function SystemSection({ apiFetch, adminKey }: { apiFetch: (url: string, opts?: 
                 {results[label]}
               </pre>
             )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Reviews ─────────────────────────────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function ReviewsSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestInit) => Promise<any> }) {
+  const [items, setItems] = useState<any[]>([]);
+  const [form, setForm] = useState({ name: "", role: "", avatar: "", text: "", rating: 5, order: 0 });
+  const [editing, setEditing] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", role: "", avatar: "", text: "", rating: 5, order: 0, isActive: true });
+
+  const load = useCallback(async () => {
+    const data = await apiFetch("/api/admin/reviews");
+    setItems(data);
+  }, [apiFetch]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function create() {
+    if (!form.name || !form.text) return;
+    await apiFetch("/api/admin/reviews", { method: "POST", body: JSON.stringify(form) });
+    setForm({ name: "", role: "", avatar: "", text: "", rating: 5, order: 0 });
+    load();
+  }
+
+  async function save(id: number) {
+    await apiFetch(`/api/admin/reviews/${id}`, { method: "PUT", body: JSON.stringify(editForm) });
+    setEditing(null);
+    load();
+  }
+
+  async function remove(id: number) {
+    await apiFetch(`/api/admin/reviews/${id}`, { method: "DELETE" });
+    load();
+  }
+
+  function Stars({ value, onChange }: { value: number; onChange?: (v: number) => void }) {
+    return (
+      <div style={{ display: "flex", gap: 4 }}>
+        {[1,2,3,4,5].map(i => (
+          <span key={i} onClick={() => onChange?.(i)} style={{ fontSize: 20, cursor: onChange ? "pointer" : "default", color: i <= value ? "#22C55E" : "#334155" }}>★</span>
+        ))}
+      </div>
+    );
+  }
+
+  const inputStyle: React.CSSProperties = { width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 13, boxSizing: "border-box" };
+
+  return (
+    <div>
+      <div style={{ fontSize: 20, fontWeight: 700, color: "#F1F5F9", marginBottom: 4 }}>Reviews</div>
+      <div style={{ fontSize: 13, color: "#475569", marginBottom: 24 }}>Manage reviews shown on the landing page</div>
+
+      {/* Add form */}
+      <div style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 10, padding: 16, marginBottom: 24 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.08em" }}>Add new review</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+          <input placeholder="Name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={inputStyle} />
+          <input placeholder="Role (e.g. Crypto Trader)" value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} style={inputStyle} />
+        </div>
+        <input placeholder="Avatar URL (optional)" value={form.avatar} onChange={e => setForm({ ...form, avatar: e.target.value })} style={{ ...inputStyle, marginBottom: 8 }} />
+        <textarea placeholder="Review text" value={form.text} onChange={e => setForm({ ...form, text: e.target.value })}
+          rows={3} style={{ ...inputStyle, marginBottom: 8, resize: "vertical", fontFamily: "inherit", lineHeight: 1.6 }} />
+        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+          <Stars value={form.rating} onChange={v => setForm({ ...form, rating: v })} />
+          <input type="number" placeholder="Order" value={form.order} onChange={e => setForm({ ...form, order: parseInt(e.target.value) || 0 })}
+            style={{ ...inputStyle, width: 80 }} />
+          <button onClick={create} style={{ padding: "8px 20px", borderRadius: 6, border: "none", background: "#22C55E", color: "#071A0E", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Add</button>
+        </div>
+      </div>
+
+      {/* List */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {items.map(item => editing === item.id ? (
+          <div key={item.id} style={{ background: "#1E293B", border: "1px solid #22C55E", borderRadius: 10, padding: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+              <input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} style={inputStyle} />
+              <input value={editForm.role} onChange={e => setEditForm({ ...editForm, role: e.target.value })} style={inputStyle} />
+            </div>
+            <input value={editForm.avatar} onChange={e => setEditForm({ ...editForm, avatar: e.target.value })} style={{ ...inputStyle, marginBottom: 8 }} />
+            <textarea value={editForm.text} onChange={e => setEditForm({ ...editForm, text: e.target.value })}
+              rows={3} style={{ ...inputStyle, marginBottom: 8, resize: "vertical", fontFamily: "inherit", lineHeight: 1.6 }} />
+            <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+              <Stars value={editForm.rating} onChange={v => setEditForm({ ...editForm, rating: v })} />
+              <input type="number" value={editForm.order} onChange={e => setEditForm({ ...editForm, order: parseInt(e.target.value) || 0 })}
+                style={{ ...inputStyle, width: 80 }} />
+              <label style={{ display: "flex", alignItems: "center", gap: 6, color: "#94A3B8", fontSize: 13, cursor: "pointer" }}>
+                <input type="checkbox" checked={editForm.isActive} onChange={e => setEditForm({ ...editForm, isActive: e.target.checked })} />
+                Active
+              </label>
+              <button onClick={() => save(item.id)} style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: "#22C55E", color: "#071A0E", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Save</button>
+              <button onClick={() => setEditing(null)} style={{ padding: "8px 16px", borderRadius: 6, border: "1px solid #334155", background: "transparent", color: "#94A3B8", fontSize: 13, cursor: "pointer" }}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <div key={item.id} style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 10, padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
+            <div style={{ display: "flex", gap: 12, flex: 1 }}>
+              {item.avatar ? (
+                <img src={item.avatar} alt={item.name} style={{ width: 36, height: 36, borderRadius: "50%", flexShrink: 0 }} />
+              ) : (
+                <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg,#22C55E,#16A34A)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, color: "#071A0E", flexShrink: 0 }}>{item.name.charAt(0)}</div>
+              )}
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: item.isActive ? "#F1F5F9" : "#475569" }}>{item.name}</span>
+                  <span style={{ fontSize: 12, color: "#475569" }}>{item.role}</span>
+                  <Stars value={item.rating} />
+                </div>
+                <div style={{ fontSize: 12, color: "#475569", lineHeight: 1.5 }}>{item.text}</div>
+                <div style={{ fontSize: 11, color: "#334155", marginTop: 4 }}>order: {item.order} · {item.isActive ? "active" : "hidden"}</div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+              <button onClick={() => { setEditing(item.id); setEditForm({ name: item.name, role: item.role, avatar: item.avatar, text: item.text, rating: item.rating, order: item.order, isActive: item.isActive }); }}
+                style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #334155", background: "transparent", color: "#94A3B8", fontSize: 12, cursor: "pointer" }}>Edit</button>
+              <button onClick={() => remove(item.id)}
+                style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid rgba(239,68,68,0.3)", background: "transparent", color: "#EF4444", fontSize: 12, cursor: "pointer" }}>Hide</button>
+            </div>
           </div>
         ))}
       </div>
