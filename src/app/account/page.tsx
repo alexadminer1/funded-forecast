@@ -23,6 +23,11 @@ export default function AccountPage() {
   const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
   const [pwMsg, setPwMsg] = useState("");
 
+  const [payouts, setPayouts] = useState<any[]>([]);
+  const [passedChallenges, setPassedChallenges] = useState<any[]>([]);
+  const [payoutForm, setPayoutForm] = useState({ challengeId: "", amount: "", walletAddress: "", walletNetwork: "USDT TRC20" });
+  const [payoutMsg, setPayoutMsg] = useState("");
+
   const load = useCallback(async () => {
     if (!getToken()) { router.push("/login"); return; }
     const [p, s] = await Promise.all([
@@ -34,7 +39,13 @@ export default function AccountPage() {
       setConsent(p.consent);
       setForm({ username: p.user.username ?? "", firstName: p.user.firstName ?? "", lastName: p.user.lastName ?? "", walletAddress: p.user.walletAddress ?? "", walletNetwork: p.user.walletNetwork ?? "USDT TRC20" });
     }
-    if (s.success) { setStats(s.stats); setHistory(s.challengeHistory); }
+    if (s.success) {
+      setStats(s.stats);
+      setHistory(s.challengeHistory);
+      setPassedChallenges(s.challengeHistory.filter((c: any) => c.status === "passed"));
+    }
+    const po = await apiFetch<any>("/api/user/payout");
+    if (po.success) setPayouts(po.requests);
     setLoading(false);
   }, [router]);
 
@@ -54,6 +65,27 @@ export default function AccountPage() {
     const res = await apiFetch<any>("/api/user/profile", { method: "PUT", body: JSON.stringify({ currentPassword: pwForm.current, newPassword: pwForm.next }) });
     setPwMsg(res.success ? "Password changed" : res.error ?? "Error");
     if (res.success) setPwForm({ current: "", next: "", confirm: "" });
+  }
+
+  async function requestPayout() {
+    setPayoutMsg("");
+    if (!payoutForm.challengeId || !payoutForm.amount || !payoutForm.walletAddress) {
+      setPayoutMsg("All fields required"); return;
+    }
+    const res = await apiFetch<any>("/api/user/payout", {
+      method: "POST",
+      body: JSON.stringify({
+        challengeId: parseInt(payoutForm.challengeId),
+        amount: parseFloat(payoutForm.amount),
+        walletAddress: payoutForm.walletAddress,
+        walletNetwork: payoutForm.walletNetwork,
+      }),
+    });
+    setPayoutMsg(res.success ? "Payout requested successfully" : res.error ?? "Error");
+    if (res.success) {
+      setPayoutForm({ challengeId: "", amount: "", walletAddress: "", walletNetwork: "USDT TRC20" });
+      load();
+    }
   }
 
   if (loading) return <div style={{ minHeight: "100vh", background: "#080c14", display: "flex", alignItems: "center", justifyContent: "center", color: "#475569" }}>Loading...</div>;
@@ -117,7 +149,7 @@ export default function AccountPage() {
           </div>
         </div>
 
-        {/* Payout */}
+        {/* Payout Settings */}
         <div style={card}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "#F1F5F9", marginBottom: 4 }}>Payout Settings</div>
           <div style={{ fontSize: 12, color: "#475569", marginBottom: 20 }}>Your wallet details for future payouts</div>
@@ -180,6 +212,74 @@ export default function AccountPage() {
             </div>
           </div>
         )}
+
+        {/* Payouts */}
+        <div style={card}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#F1F5F9", marginBottom: 4 }}>Payout Requests</div>
+          <div style={{ fontSize: 12, color: "#475569", marginBottom: 20 }}>Request withdrawal of your earned profits</div>
+
+          {passedChallenges.length > 0 ? (
+            <div style={{ marginBottom: 24, padding: 16, background: "#080c14", borderRadius: 10, border: "1px solid rgba(255,255,255,0.04)" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>New Request</div>
+              <div style={{ marginBottom: 10 }}>
+                <div style={label}>Challenge</div>
+                <select style={{ ...inputStyle }} value={payoutForm.challengeId} onChange={e => setPayoutForm({ ...payoutForm, challengeId: e.target.value })}>
+                  <option value="">Select challenge</option>
+                  {passedChallenges.map((c: any) => (
+                    <option key={c.id} value={c.id}>Challenge #{c.id} — PnL: ${(c.realizedBalance - c.startBalance).toFixed(2)}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ marginBottom: 10 }}>
+                <div style={label}>Amount (USD)</div>
+                <input type="number" style={inputStyle} placeholder="Enter amount" value={payoutForm.amount} onChange={e => setPayoutForm({ ...payoutForm, amount: e.target.value })} />
+              </div>
+              <div style={{ marginBottom: 10 }}>
+                <div style={label}>Network</div>
+                <select style={{ ...inputStyle }} value={payoutForm.walletNetwork} onChange={e => setPayoutForm({ ...payoutForm, walletNetwork: e.target.value })}>
+                  <option>USDT TRC20</option>
+                  <option>USDT ERC20</option>
+                  <option>USDT BEP20</option>
+                  <option>USDC ERC20</option>
+                </select>
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <div style={label}>Wallet Address</div>
+                <input style={inputStyle} placeholder="Your wallet address" value={payoutForm.walletAddress} onChange={e => setPayoutForm({ ...payoutForm, walletAddress: e.target.value })} />
+              </div>
+              <div style={{ fontSize: 12, color: "#475569", marginBottom: 16 }}>Platform fee: 20% · You receive 80% of requested amount</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <button style={btn} onClick={requestPayout}>Request Payout</button>
+                {payoutMsg && <span style={{ fontSize: 13, color: payoutMsg.includes("success") ? "#22C55E" : "#EF4444" }}>{payoutMsg}</span>}
+              </div>
+            </div>
+          ) : (
+            <div style={{ padding: "16px", background: "#080c14", borderRadius: 10, border: "1px solid rgba(255,255,255,0.04)", marginBottom: 24, fontSize: 13, color: "#475569" }}>
+              Pass a challenge to become eligible for payouts.
+            </div>
+          )}
+
+          {/* Payout history */}
+          {payouts.length > 0 && (
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>History</div>
+              {payouts.map((p: any) => {
+                const statusColor: Record<string, string> = { pending: "#F59E0B", approved: "#3B82F6", paid: "#22C55E", rejected: "#EF4444" };
+                return (
+                  <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "#F1F5F9" }}>${p.netAmount} {p.currency}</div>
+                      <div style={{ fontSize: 11, color: "#475569", marginTop: 2 }}>{p.walletNetwork} · {new Date(p.requestedAt).toLocaleDateString()}</div>
+                      {p.txHash && <div style={{ fontSize: 11, color: "#22C55E", fontFamily: "monospace" }}>TX: {p.txHash.slice(0, 20)}...</div>}
+                      {p.rejectionReason && <div style={{ fontSize: 11, color: "#EF4444" }}>{p.rejectionReason}</div>}
+                    </div>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 4, background: `${statusColor[p.status]}18`, color: statusColor[p.status] }}>{p.status.toUpperCase()}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {/* Documents */}
         <div style={card}>
