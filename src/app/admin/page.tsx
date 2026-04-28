@@ -73,51 +73,126 @@ export default function AdminPage() {
 // ─────────────────────────────────────────────────────────────
 function AdminDashboard({ onInvalidKey }: { onInvalidKey: () => void }) {
   const [section, setSection] = useState<Section>("dashboard");
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
   const adminKey = sessionStorage.getItem(STORAGE_KEY) ?? "";
 
   async function apiFetch<T = unknown>(url: string, opts: RequestInit = {}): Promise<T> {
     const key = sessionStorage.getItem(STORAGE_KEY) ?? '';
     const res = await fetch(url, { ...opts, headers: { 'x-admin-key': key, 'Content-Type': 'application/json', ...opts.headers } });
-    if (res.status === 403) { onInvalidKey(); sessionStorage.removeItem(STORAGE_KEY); window.location.reload(); }
-    const text = await res.text();
-    if (!text) return {} as T;
-    try {
-      return JSON.parse(text) as T;
-    } catch {
-      return { error: 'Invalid JSON response' } as unknown as T;
-    }
+    if (res.status === 403) { onInvalidKey(); throw new Error('Forbidden'); }
+    return res.json();
   }
 
-  function signOut() { sessionStorage.clear(); window.location.reload(); }
-
-  const NAV: { key: Section; label: string }[] = [
-    { key: "dashboard", label: "Dashboard" }, { key: "users", label: "Users" },
-    { key: "challenges", label: "Challenges" }, { key: "trades", label: "Trades" },
-    { key: "balance-logs", label: "Balance Logs" }, { key: "markets", label: "Markets" },
-    { key: "plans", label: "Plans" },
-    { key: "content", label: "Content" }, { key: "faq", label: "FAQ" },
-    { key: "reviews", label: "Reviews" },
-    { key: "system", label: "System" },
+  const groups = [
+    {
+      key: "trading",
+      label: "Trading",
+      items: [
+        { key: "challenges", label: "Challenges" },
+        { key: "trades", label: "Trades" },
+        { key: "balance-logs", label: "Balance Logs" },
+      ],
+    },
+    {
+      key: "markets",
+      label: "Markets",
+      items: [{ key: "markets", label: "Markets" }],
+    },
+    {
+      key: "users",
+      label: "Users",
+      items: [{ key: "users", label: "Users" }],
+    },
+    {
+      key: "content",
+      label: "Content",
+      items: [
+        { key: "plans", label: "Plans" },
+        { key: "faq", label: "FAQ" },
+        { key: "reviews", label: "Reviews" },
+        { key: "content", label: "Content" },
+      ],
+    },
+    {
+      key: "system",
+      label: "System",
+      items: [{ key: "system", label: "System" }],
+    },
   ];
 
+  function getActiveGroup() {
+    for (const g of groups) {
+      if (g.items.some(i => i.key === section)) return g.key;
+    }
+    return null;
+  }
+
   return (
-    <div style={{ minHeight: "100vh", background: "#0F172A", fontFamily: "'Inter',-apple-system,sans-serif", color: "#F1F5F9" }}>
-      {/* Top bar */}
-      <div style={{ padding: "14px 28px", borderBottom: "1px solid #1E293B", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div style={{ fontWeight: 700, fontSize: 15 }}><span style={{ color: "#22C55E" }}>Admin</span> · FundedForecast</div>
-        <div style={{ display: "flex", gap: 4 }}>
-          {NAV.map(({ key, label }) => (
-            <button key={key} onClick={() => setSection(key)} style={{
-              padding: "5px 12px", borderRadius: 6, border: "none", fontSize: 12, fontWeight: 500, cursor: "pointer",
-              background: section === key ? "#1E293B" : "transparent",
-              color: section === key ? "#F1F5F9" : "#475569",
-            }}>{label}</button>
-          ))}
-          <button onClick={signOut} style={{ marginLeft: 8, padding: "5px 12px", borderRadius: 6, border: "1px solid #334155", background: "transparent", color: "#64748B", fontSize: 12, cursor: "pointer" }}>Sign out</button>
-        </div>
+    <div style={{ minHeight: "100vh", background: "#0F172A", fontFamily: "'Inter',-apple-system,sans-serif" }}>
+      {/* Header */}
+      <div style={{ background: "#1E293B", borderBottom: "1px solid #334155", padding: "0 24px", display: "flex", alignItems: "center", gap: 0, height: 52, position: "relative" }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color: "#22C55E", marginRight: 24 }}>Admin</span>
+        <span style={{ fontSize: 14, color: "#475569", marginRight: 32 }}>· FundedForecast</span>
+
+        {/* Dashboard */}
+        <button onClick={() => { setSection("dashboard"); setOpenGroup(null); }} style={{
+          padding: "0 16px", height: 52, border: "none", background: "transparent",
+          color: section === "dashboard" ? "#F1F5F9" : "#475569",
+          fontWeight: section === "dashboard" ? 700 : 500,
+          fontSize: 13, cursor: "pointer",
+          borderBottom: section === "dashboard" ? "2px solid #22C55E" : "2px solid transparent",
+        }}>Dashboard</button>
+
+        {/* Groups */}
+        {groups.map(group => {
+          const isActive = getActiveGroup() === group.key;
+          const isOpen = openGroup === group.key;
+          return (
+            <div key={group.key} style={{ position: "relative", height: 52, display: "flex", alignItems: "center" }}
+              onMouseEnter={() => setOpenGroup(group.key)}
+              onMouseLeave={() => setOpenGroup(null)}>
+              <button style={{
+                padding: "0 16px", height: 52, border: "none", background: "transparent",
+                color: isActive ? "#F1F5F9" : "#475569",
+                fontWeight: isActive ? 700 : 500,
+                fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4,
+                borderBottom: isActive ? "2px solid #22C55E" : "2px solid transparent",
+              }}>
+                {group.label}
+                <span style={{ fontSize: 10, opacity: 0.5 }}>▾</span>
+              </button>
+              {isOpen && (
+                <div style={{
+                  position: "absolute", top: 52, left: 0, zIndex: 100,
+                  background: "#1E293B", border: "1px solid #334155", borderRadius: 8,
+                  minWidth: 160, padding: "6px 0",
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+                }}>
+                  {group.items.map(item => (
+                    <button key={item.key} onClick={() => { setSection(item.key as Section); setOpenGroup(null); }} style={{
+                      display: "block", width: "100%", textAlign: "left",
+                      padding: "9px 16px", border: "none", background: "transparent",
+                      color: section === item.key ? "#22C55E" : "#94A3B8",
+                      fontWeight: section === item.key ? 700 : 400,
+                      fontSize: 13, cursor: "pointer",
+                    }}>{item.label}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Sign out */}
+        <button onClick={() => { sessionStorage.clear(); window.location.reload(); }} style={{
+          marginLeft: "auto", padding: "6px 16px", borderRadius: 7,
+          border: "1px solid #334155", background: "transparent",
+          color: "#475569", fontSize: 13, cursor: "pointer",
+        }}>Sign out</button>
       </div>
 
-      <div style={{ maxWidth: 1300, margin: "0 auto", padding: "28px 24px" }}>
+      {/* Content */}
+      <div style={{ padding: "32px 24px", maxWidth: 1100, margin: "0 auto" }}>
         {section === "dashboard" && <DashboardSection apiFetch={apiFetch} />}
         {section === "users" && <UsersSection apiFetch={apiFetch} />}
         {section === "challenges" && <ChallengesSection apiFetch={apiFetch} />}
