@@ -113,10 +113,10 @@ export default function Header() {
               ? ((ch.realizedBalance - ch.startBalance) / ch.startBalance) * 100
               : 0;
             const progress = Math.min(Math.max(profitPct / ch.profitTargetPct, 0), 1);
-            const planName = ch.plan?.name ?? "Challenge";
+            const planName = ch.plan?.name ?? "Evaluation";
             const badgeColor =
               planName.toLowerCase().includes("elite") ? "#F59E0B" :
-              planName.toLowerCase().includes("pro") ? "#3B82F6" : "#64748B";
+              planName.toLowerCase().includes("pro") ? "#3B82F6" : "#94A3B8";
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 140 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -125,7 +125,7 @@ export default function Header() {
                     textTransform: "uppercase", letterSpacing: "0.08em",
                   }}>{planName}</span>
                   <span style={{ fontSize: 10, color: "#475569" }}>
-                    {profitPct >= 0 ? "+" : ""}{profitPct.toFixed(1)}% / {ch.profitTargetPct}%
+                    {Math.max(0, profitPct) > 0 ? "+" : ""}{Math.max(0, profitPct).toFixed(1)}% / {ch.profitTargetPct}%
                   </span>
                 </div>
                 <div style={{ height: 4, borderRadius: 4, background: "rgba(255,255,255,0.07)", overflow: "hidden" }}>
