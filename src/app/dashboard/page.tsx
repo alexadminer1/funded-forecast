@@ -236,19 +236,17 @@ function ChallengeCard({ challenge: c }: { challenge: Challenge }) {
         ))}
       </div>
 
-      {/* Progress bar */}
-      <div>
+      {/* Profit progress */}
+      <div style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 7 }}>
           <span style={{ fontSize: 11, color: "#475569", fontWeight: 600 }}>Profit progress</span>
-          <span style={{ fontSize: 11, color: progress >= 100 ? "#22C55E" : "#94A3B8", fontWeight: 700 }}>{progress.toFixed(1)}%</span>
+          <span style={{ fontSize: 11, color: progress >= 100 ? "#22C55E" : "#94A3B8", fontWeight: 700 }}>{progress.toFixed(1)}% of {c.profitTargetPct}% target</span>
         </div>
-        <div style={{ height: 6, background: "#334155", borderRadius: 3, overflow: "hidden" }}>
+        <div style={{ height: 8, background: "#334155", borderRadius: 4, overflow: "hidden" }}>
           <div style={{
-            height: "100%",
-            width: `${Math.min(100, progress)}%`,
-            background: "#22C55E",
-            borderRadius: 3,
-            transition: "width 0.4s ease",
+            height: "100%", width: `${Math.min(100, progress)}%`,
+            background: progress >= 100 ? "#22C55E" : "linear-gradient(90deg, #16A34A, #22C55E)",
+            borderRadius: 4, transition: "width 0.4s ease",
           }} />
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5 }}>
@@ -256,6 +254,33 @@ function ChallengeCard({ challenge: c }: { challenge: Challenge }) {
           <span style={{ fontSize: 10, color: "#334155" }}>${target.toLocaleString()}</span>
         </div>
       </div>
+
+      {/* Drawdown meter */}
+      {(() => {
+        const maxLoss = c.startBalance * (c.maxTotalDdPct / 100);
+        const currentLoss = Math.max(0, c.startBalance - c.realizedBalance);
+        const ddUsed = Math.min(100, (currentLoss / maxLoss) * 100);
+        const ddColor = ddUsed >= 80 ? "#EF4444" : ddUsed >= 50 ? "#F59E0B" : "#22C55E";
+        return (
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 7 }}>
+              <span style={{ fontSize: 11, color: "#475569", fontWeight: 600 }}>Drawdown used</span>
+              <span style={{ fontSize: 11, color: ddColor, fontWeight: 700 }}>{ddUsed.toFixed(1)}% of {c.maxTotalDdPct}% limit</span>
+            </div>
+            <div style={{ height: 8, background: "#334155", borderRadius: 4, overflow: "hidden" }}>
+              <div style={{
+                height: "100%", width: `${ddUsed}%`,
+                background: ddUsed >= 80 ? "#EF4444" : ddUsed >= 50 ? "#F59E0B" : "#22C55E",
+                borderRadius: 4, transition: "width 0.4s ease",
+              }} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5 }}>
+              <span style={{ fontSize: 10, color: "#334155" }}>$0 lost</span>
+              <span style={{ fontSize: 10, color: "#334155" }}>max -${maxLoss.toFixed(0)}</span>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
