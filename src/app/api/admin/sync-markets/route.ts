@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const markets = await fetchActiveMarkets(100);
+    const markets = await fetchActiveMarkets(500);
 
     let created = 0;
     let updated = 0;
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
 
     for (const m of markets) {
       // Filter out invalid markets
-      if (m.negRisk || m.closed || !m.active || !m.conditionId || !m.endDateIso) {
+      if (m.closed || !m.active || !m.conditionId || !m.endDateIso) {
         skipped++;
         continue;
       }
@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
             volume24h: m.volume24hr ?? 0,
             endDate,
             status: "live",
-            negRisk: false,
+            negRisk: m.negRisk ?? false,
             isRestricted: m.restricted ?? false,
             lastSyncedAt: new Date(),
           },

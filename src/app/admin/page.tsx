@@ -330,9 +330,15 @@ function UsersSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestInit
   const [detail, setDetail] = useState<any>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
+  const [plans, setPlans] = useState<any[]>([]);
+  const [assignPlan, setAssignPlan] = useState<{ userId: number; username: string } | null>(null);
+  const [selectedPlanId, setSelectedPlanId] = useState<string>("");
 
   const load = useCallback(async () => { setLoading(true); const d = await apiFetch("/api/admin/users"); if (d.success) setUsers(d.users); setLoading(false); }, []);
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    apiFetch("/api/admin/plans").then((d: any) => { if (d.success) setPlans(d.plans); });
+  }, []);
 
   async function action(userId: number, act: string) {
     setActionLoading(`${userId}-${act}`);
@@ -344,6 +350,19 @@ function UsersSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestInit
 
   function confirmAction(title: string, message: string, fn: () => void) {
     setConfirm({ title, message, onConfirm: fn });
+  }
+
+  async function assignPlanToUser() {
+    if (!assignPlan || !selectedPlanId) return;
+    setActionLoading(`${assignPlan.userId}-assign`);
+    await apiFetch(`/api/admin/users/${assignPlan.userId}/action`, {
+      method: "POST",
+      body: JSON.stringify({ action: "assign_plan", planId: parseInt(selectedPlanId) }),
+    });
+    setAssignPlan(null);
+    setSelectedPlanId("");
+    await load();
+    setActionLoading(null);
   }
 
   const filtered = users.filter(u => {
@@ -381,11 +400,40 @@ function UsersSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestInit
                 {u.mode === "challenge" && <Btn label="Fail" bg="#EF4444" onClick={() => confirmAction("Fail Challenge", "This will permanently fail the user's active challenge. Are you sure?", () => action(u.id, "fail_challenge"))} loading={actionLoading === `${u.id}-fail_challenge`} />}
                 {u.mode === "challenge" && <Btn label="Pass" bg="#22C55E" color="#071A0E" onClick={() => confirmAction("Pass Challenge", "This will mark the challenge as passed. Are you sure?", () => action(u.id, "pass_challenge"))} loading={actionLoading === `${u.id}-pass_challenge`} />}
                 <Btn label="Reset" bg="#334155" color="#94A3B8" onClick={() => confirmAction("Reset Balance", "This will reset the user's balance to $10,000. Are you sure?", () => action(u.id, "reset_balance"))} loading={actionLoading === `${u.id}-reset_balance`} />
+                <Btn label="Assign Plan" bg="#8B5CF6" color="#fff" onClick={() => { setAssignPlan({ userId: u.id, username: u.username }); setSelectedPlanId(""); }} />
               </div>
             </div>
           ))
         }
       </div>
+
+      {assignPlan && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 12, padding: 28, width: 380 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#F1F5F9", marginBottom: 6 }}>Assign Plan</div>
+            <div style={{ fontSize: 13, color: "#475569", marginBottom: 20 }}>@{assignPlan.username}</div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>Select Plan</div>
+              <select value={selectedPlanId} onChange={e => setSelectedPlanId(e.target.value)}
+                style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 14 }}>
+                <option value="">— Select plan —</option>
+                {plans.map((p: any) => (
+                  <option key={p.id} value={p.id}>{p.name} — ${p.accountSize.toLocaleString()} (${p.price})</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ fontSize: 12, color: "#475569", marginBottom: 20 }}>
+              This will create a new active challenge for this user without payment. Existing active challenge will be replaced.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={assignPlanToUser} disabled={!selectedPlanId || actionLoading !== null} style={{ flex: 1, padding: "10px", borderRadius: 8, border: "none", background: selectedPlanId ? "#8B5CF6" : "#334155", color: selectedPlanId ? "#fff" : "#475569", fontWeight: 700, fontSize: 13, cursor: selectedPlanId ? "pointer" : "not-allowed" }}>
+                {actionLoading ? "Assigning..." : "Assign Plan"}
+              </button>
+              <button onClick={() => setAssignPlan(null)} style={{ flex: 1, padding: "10px", borderRadius: 8, border: "1px solid #334155", background: "transparent", color: "#94A3B8", fontSize: 13, cursor: "pointer" }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {detail && (
         <div style={{ marginTop: 20, background: "#1E293B", border: "1px solid #334155", borderRadius: 12, padding: 24 }}>

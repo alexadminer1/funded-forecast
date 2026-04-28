@@ -14,7 +14,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const userId = parseInt(id);
   if (isNaN(userId)) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
 
-  let body: { action: string };
+  let body: { action: string; planId?: number };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
 
   const { action } = body;
@@ -87,6 +87,56 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             userId, tradeId: null, challengeId: challenge.id,
             type: "challenge_start", amount: 10000,
             balanceBefore: 0, balanceAfter: 10000, runningBalance: 10000,
+          },
+        });
+      });
+      return NextResponse.json({ success: true, action });
+    }
+
+    if (action === "assign_plan") {
+      const planId = body.planId;
+      if (!planId) return NextResponse.json({ error: "planId required" }, { status: 400 });
+
+      const plan = await prisma.challengePlan.findUnique({ where: { id: planId } });
+      if (!plan) return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+
+      await prisma.$transaction(async (tx) => {
+        // End any existing active challenge
+        const existing = await tx.challenge.findFirst({ where: { userId, status: "active" } });
+        if (existing) {
+          await tx.challenge.update({
+            where: { id: existing.id },
+            data: { status: "failed", violationReason: "Replaced by admin plan assignment", endedAt: new Date() },
+          });
+        }
+
+        const challenge = await tx.challenge.create({
+          data: {
+            userId,
+            planId: plan.id,
+            stage: "evaluation",
+            status: "active",
+            startBalance: plan.accountSize,
+            realizedBalance: plan.accountSize,
+            peakBalance: plan.accountSize,
+            profitTargetPct: plan.profitTargetPct,
+            maxDailyDdPct: plan.dailyLossPct,
+            maxTotalDdPct: plan.maxLossPct,
+            maxPositionSizePct: plan.maxPositionSizePct,
+            minTradingDays: plan.minTradingDays,
+          },
+        });
+
+        await tx.balanceLog.create({
+          data: {
+            userId,
+            tradeId: null,
+            challengeId: challenge.id,
+            type: "challenge_start",
+            amount: plan.accountSize,
+            balanceBefore: 0,
+            balanceAfter: plan.accountSize,
+            runningBalance: plan.accountSize,
           },
         });
       });
