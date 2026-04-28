@@ -21,8 +21,8 @@ export interface PolymarketMarket {
 
 const POLYMARKET_API = "https://gamma-api.polymarket.com";
 
-export async function fetchActiveMarkets(limit = 100): Promise<PolymarketMarket[]> {
-  const url = `${POLYMARKET_API}/markets?limit=${limit}&active=true&closed=false`;
+export async function fetchActiveMarkets(limit = 100, offset = 0): Promise<PolymarketMarket[]> {
+  const url = `${POLYMARKET_API}/markets?limit=${limit}&offset=${offset}&active=true&closed=false&order=volume24hr&ascending=false`;
 
   const res = await fetch(url, {
     headers: { "Accept": "application/json" },
