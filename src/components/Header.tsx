@@ -103,8 +103,44 @@ export default function Header() {
       )}
 
       {/* Right */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 280, justifyContent: "flex-end" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 320, justifyContent: "flex-end" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, visibility: isLoggedIn ? "visible" : "hidden", position: isLoggedIn ? "static" : "absolute" }}>
+
+          {/* Challenge progress bar */}
+          {user?.activeChallenge && (() => {
+            const ch = user.activeChallenge!;
+            const profitPct = ch.startBalance > 0
+              ? ((ch.realizedBalance - ch.startBalance) / ch.startBalance) * 100
+              : 0;
+            const progress = Math.min(Math.max(profitPct / ch.profitTargetPct, 0), 1);
+            const planName = ch.plan?.name ?? "Challenge";
+            const badgeColor =
+              planName.toLowerCase().includes("elite") ? "#F59E0B" :
+              planName.toLowerCase().includes("pro") ? "#3B82F6" : "#64748B";
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 140 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, color: badgeColor,
+                    textTransform: "uppercase", letterSpacing: "0.08em",
+                  }}>{planName}</span>
+                  <span style={{ fontSize: 10, color: "#475569" }}>
+                    {profitPct >= 0 ? "+" : ""}{profitPct.toFixed(1)}% / {ch.profitTargetPct}%
+                  </span>
+                </div>
+                <div style={{ height: 4, borderRadius: 4, background: "rgba(255,255,255,0.07)", overflow: "hidden" }}>
+                  <div style={{
+                    height: "100%", borderRadius: 4,
+                    width: `${progress * 100}%`,
+                    background: progress >= 1 ? "#22C55E" : `linear-gradient(90deg, ${badgeColor}99, ${badgeColor})`,
+                    transition: "width 0.4s ease",
+                  }} />
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Balance */}
           <div style={{
             background: "rgba(34,197,94,0.08)",
             border: "1px solid rgba(34,197,94,0.2)",
@@ -116,7 +152,11 @@ export default function Header() {
               ${user?.balance.toLocaleString("en-US", { minimumFractionDigits: 2 }) ?? "0.00"}
             </span>
           </div>
+
+          {/* @username */}
           <a href="/account" style={{ fontSize: 13, color: "#475569", fontWeight: 500, textDecoration: "none" }}>@{user?.username ?? ""}</a>
+
+          {/* Sign out */}
           <button
             onClick={handleLogout}
             style={{

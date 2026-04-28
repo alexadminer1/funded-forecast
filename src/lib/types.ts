@@ -61,6 +61,8 @@ export interface User {
     tradingDaysCount: number;
     minTradingDays: number;
     startedAt: string;
+    planId: number | null;
+    plan: { name: string } | null;
   };
 }
 

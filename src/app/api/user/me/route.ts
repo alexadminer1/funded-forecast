@@ -72,6 +72,8 @@ export async function GET(req: NextRequest) {
         tradingDaysCount: true,
         minTradingDays: true,
         startedAt: true,
+        planId: true,
+        plan: { select: { name: true } },
       },
     });
 
