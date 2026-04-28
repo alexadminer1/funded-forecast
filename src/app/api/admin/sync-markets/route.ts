@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const markets = await fetchActiveMarkets(500);
+    const markets = await fetchActiveMarkets(200);
 
     let created = 0;
     let updated = 0;
