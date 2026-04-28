@@ -898,6 +898,17 @@ function ContentSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestIn
 function SystemSection({ apiFetch, adminKey }: { apiFetch: (url: string, opts?: RequestInit) => Promise<unknown>; adminKey: string }) {
   const [results, setResults] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState<string | null>(null);
+  const [syncMarketsResult, setSyncMarketsResult] = useState<string>("");
+
+  async function syncMarkets() {
+    setSyncMarketsResult("Syncing...");
+    try {
+      const data = await apiFetch("/api/admin/sync-markets", { method: "POST" });
+      setSyncMarketsResult(JSON.stringify(data, null, 2));
+    } catch (e) {
+      setSyncMarketsResult("Error: " + String(e));
+    }
+  }
 
   async function run(label: string, url: string) {
     setLoading(label);
@@ -913,7 +924,6 @@ function SystemSection({ apiFetch, adminKey }: { apiFetch: (url: string, opts?: 
   }
 
   const actions = [
-    { label: "Sync Markets", url: "/api/admin/sync-markets" },
     { label: "Sync Prices", url: "/api/admin/sync-prices" },
     { label: "Run Resolve", url: "/api/admin/resolve-markets" },
   ];
@@ -923,6 +933,19 @@ function SystemSection({ apiFetch, adminKey }: { apiFetch: (url: string, opts?: 
       <SH>System</SH>
       <div style={{ fontSize: 13, color: "#475569", marginTop: 4, marginBottom: 20 }}>Admin system actions</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 10, padding: "16px 20px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: syncMarketsResult ? 12 : 0 }}>
+            <div style={{ flex: 1, fontWeight: 600, fontSize: 14 }}>Sync Markets</div>
+            <button onClick={syncMarkets} disabled={syncMarketsResult === "Syncing..."} style={{ padding: "6px 14px", borderRadius: 7, border: "1px solid #334155", background: "#334155", color: syncMarketsResult === "Syncing..." ? "#64748B" : "#94A3B8", fontSize: 12, fontWeight: 600, cursor: syncMarketsResult === "Syncing..." ? "not-allowed" : "pointer" }}>
+              {syncMarketsResult === "Syncing..." ? "⏳ Syncing..." : "Sync Markets"}
+            </button>
+          </div>
+          {syncMarketsResult && syncMarketsResult !== "Syncing..." && (
+            <pre style={{ fontSize: 11, color: "#64748B", background: "#0F172A", padding: "8px 10px", borderRadius: 6, overflow: "auto", margin: 0 }}>
+              {syncMarketsResult}
+            </pre>
+          )}
+        </div>
         {actions.map(({ label, url }) => (
           <div key={label} style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 10, padding: "16px 20px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: results[label] ? 12 : 0 }}>
