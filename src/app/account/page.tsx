@@ -23,6 +23,7 @@ export default function AccountPage() {
   const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
   const [pwMsg, setPwMsg] = useState("");
 
+  const [activeChallenge, setActiveChallenge] = useState<any>(null);
   const [payouts, setPayouts] = useState<any[]>([]);
   const [passedChallenges, setPassedChallenges] = useState<any[]>([]);
   const [payoutForm, setPayoutForm] = useState({ challengeId: "", amount: "", walletAddress: "", walletNetwork: "USDT TRC20" });
@@ -43,6 +44,8 @@ export default function AccountPage() {
       setStats(s.stats);
       setHistory(s.challengeHistory);
       setPassedChallenges(s.challengeHistory.filter((c: any) => c.status === "passed"));
+      const active = s.challengeHistory.find((c: any) => c.status === "active");
+      setActiveChallenge(active ?? null);
     }
     const po = await apiFetch<any>("/api/user/payout");
     if (po.success) setPayouts(po.requests);
@@ -189,29 +192,103 @@ export default function AccountPage() {
           </div>
         )}
 
-        {/* Challenge History */}
-        {history.length > 0 && (
-          <div style={card}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "#F1F5F9", marginBottom: 16 }}>Challenge History</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {history.map(c => {
-                const pnl = c.realizedBalance - c.startBalance;
+        {/* Plan Management */}
+        <div style={card}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#F1F5F9", marginBottom: 4 }}>Plan Management</div>
+          <div style={{ fontSize: 12, color: "#475569", marginBottom: 20 }}>Your current challenge and history</div>
+
+          {/* Active challenge */}
+          {activeChallenge ? (
+            <div style={{ background: "#080c14", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 10, padding: 20, marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: "#F1F5F9", marginBottom: 4 }}>
+                    {activeChallenge.plan?.name ?? "Challenge"} — ${activeChallenge.plan?.accountSize?.toLocaleString()}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#475569" }}>
+                    Started {new Date(activeChallenge.startedAt).toLocaleDateString()} · Target {activeChallenge.profitTargetPct}% · Max DD {activeChallenge.maxTotalDdPct}%
+                  </div>
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 4, background: "rgba(34,197,94,0.1)", color: "#22C55E" }}>ACTIVE</span>
+              </div>
+
+              {/* Progress bars */}
+              {(() => {
+                const target = activeChallenge.startBalance * (1 + activeChallenge.profitTargetPct / 100);
+                const progress = Math.max(0, Math.min(100, ((activeChallenge.realizedBalance - activeChallenge.startBalance) / (target - activeChallenge.startBalance)) * 100));
+                const maxLoss = activeChallenge.startBalance * (activeChallenge.maxTotalDdPct / 100);
+                const currentLoss = Math.max(0, activeChallenge.startBalance - activeChallenge.realizedBalance);
+                const ddUsed = Math.min(100, (currentLoss / maxLoss) * 100);
+                const ddColor = ddUsed >= 80 ? "#EF4444" : ddUsed >= 50 ? "#F59E0B" : "#22C55E";
                 return (
-                  <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "#F1F5F9" }}>Challenge #{c.id}</div>
-                      <div style={{ fontSize: 11, color: "#475569", marginTop: 2 }}>{new Date(c.startedAt).toLocaleDateString()} · Target {c.profitTargetPct}% · Max DD {c.maxTotalDdPct}%</div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                        <span style={{ fontSize: 11, color: "#475569" }}>Profit progress</span>
+                        <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 700 }}>{progress.toFixed(1)}%</span>
+                      </div>
+                      <div style={{ height: 6, background: "#1E293B", borderRadius: 3, overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${progress}%`, background: "#22C55E", borderRadius: 3, transition: "width 0.3s" }} />
+                      </div>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                      <span style={{ fontSize: 14, fontWeight: 700, color: pnl >= 0 ? "#22C55E" : "#EF4444" }}>{pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}</span>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 4, background: c.status === "passed" ? "rgba(34,197,94,0.1)" : c.status === "active" ? "rgba(59,130,246,0.1)" : "rgba(239,68,68,0.1)", color: c.status === "passed" ? "#22C55E" : c.status === "active" ? "#3B82F6" : "#EF4444" }}>{c.status.toUpperCase()}</span>
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                        <span style={{ fontSize: 11, color: "#475569" }}>Drawdown used</span>
+                        <span style={{ fontSize: 11, color: ddColor, fontWeight: 700 }}>{ddUsed.toFixed(1)}%</span>
+                      </div>
+                      <div style={{ height: 6, background: "#1E293B", borderRadius: 3, overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${ddUsed}%`, background: ddColor, borderRadius: 3, transition: "width 0.3s" }} />
+                      </div>
                     </div>
                   </div>
                 );
-              })}
+              })()}
+
+              {/* Actions */}
+              <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+                <a href={`/checkout?planId=${activeChallenge.planId}&action=extend`} style={{ fontSize: 12, fontWeight: 600, color: "#3B82F6", padding: "6px 14px", borderRadius: 6, border: "1px solid rgba(59,130,246,0.3)", textDecoration: "none" }}>Extend</a>
+                <button onClick={() => { if (confirm("Stop challenge? This cannot be undone and no refund will be issued.")) alert("Contact support to stop your challenge."); }} style={{ fontSize: 12, fontWeight: 600, color: "#EF4444", padding: "6px 14px", borderRadius: 6, border: "1px solid rgba(239,68,68,0.3)", background: "transparent", cursor: "pointer" }}>Stop</button>
+              </div>
             </div>
-          </div>
-        )}
+          ) : (
+            <div style={{ background: "#080c14", border: "1px solid rgba(255,255,255,0.04)", borderRadius: 10, padding: 20, marginBottom: 20, textAlign: "center" }}>
+              <div style={{ fontSize: 13, color: "#475569", marginBottom: 12 }}>No active challenge</div>
+              <a href="/#plans" style={{ fontSize: 13, fontWeight: 700, color: "#22C55E", textDecoration: "none" }}>Browse Plans →</a>
+            </div>
+          )}
+
+          {/* Challenge History */}
+          {history.length > 0 && (
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>History</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {history.map((c: any) => {
+                  const pnl = c.realizedBalance - c.startBalance;
+                  const statusColor: Record<string, string> = { active: "#3B82F6", passed: "#22C55E", failed: "#EF4444" };
+                  return (
+                    <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "12px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: "#F1F5F9" }}>{c.plan?.name ?? "Challenge"} #{c.id}</span>
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: `${statusColor[c.status] ?? "#475569"}18`, color: statusColor[c.status] ?? "#475569" }}>{c.status.toUpperCase()}</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: "#475569" }}>{new Date(c.startedAt).toLocaleDateString()}{c.endedAt ? ` → ${new Date(c.endedAt).toLocaleDateString()}` : ""}</div>
+                        {c.violationReason && <div style={{ fontSize: 11, color: "#EF4444", marginTop: 2 }}>Reason: {c.violationReason}</div>}
+                        {c.profitTargetMet && <div style={{ fontSize: 11, color: "#22C55E", marginTop: 2 }}>Profit target reached ✓</div>}
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: pnl >= 0 ? "#22C55E" : "#EF4444" }}>{pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}</span>
+                        {c.status === "failed" && c.planId && (
+                          <a href={`/checkout?planId=${c.planId}&action=restart`} style={{ fontSize: 11, fontWeight: 700, color: "#F59E0B", textDecoration: "none", padding: "3px 10px", borderRadius: 4, border: "1px solid rgba(245,158,11,0.3)" }}>Restart →</a>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Payouts */}
         <div style={card}>

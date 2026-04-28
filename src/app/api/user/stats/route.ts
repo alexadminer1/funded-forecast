@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
   const challenges = await prisma.challenge.findMany({
     where: { userId },
     orderBy: { startedAt: "desc" },
-    select: { id: true, status: true, startedAt: true, startBalance: true, realizedBalance: true, profitTargetPct: true, maxTotalDdPct: true, planId: true },
+    select: { id: true, status: true, startedAt: true, endedAt: true, startBalance: true, realizedBalance: true, profitTargetPct: true, maxTotalDdPct: true, planId: true, violationReason: true, drawdownViolated: true, profitTargetMet: true, plan: { select: { name: true, accountSize: true } } },
   });
 
   return NextResponse.json({
