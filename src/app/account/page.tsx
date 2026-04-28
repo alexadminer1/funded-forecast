@@ -246,8 +246,10 @@ export default function AccountPage() {
 
               {/* Actions */}
               <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-                <a href={`/checkout?planId=${activeChallenge.planId}&action=extend`} style={{ fontSize: 12, fontWeight: 600, color: "#3B82F6", padding: "6px 14px", borderRadius: 6, border: "1px solid rgba(59,130,246,0.3)", textDecoration: "none" }}>Extend</a>
-                <button onClick={() => { if (confirm("Stop challenge? This cannot be undone and no refund will be issued.")) alert("Contact support to stop your challenge."); }} style={{ fontSize: 12, fontWeight: 600, color: "#EF4444", padding: "6px 14px", borderRadius: 6, border: "1px solid rgba(239,68,68,0.3)", background: "transparent", cursor: "pointer" }}>Stop</button>
+                {activeChallenge.planId && (
+                  <a href={`/checkout?planId=${activeChallenge.planId}&action=extend`} style={{ fontSize: 12, fontWeight: 600, color: "#3B82F6", padding: "6px 14px", borderRadius: 6, border: "1px solid rgba(59,130,246,0.3)", textDecoration: "none" }}>Extend</a>
+                )}
+                <button onClick={() => { if (confirm("Stop challenge? This cannot be undone and no refund will be issued.")) alert("Contact support at support@fundedforecast.com to stop your challenge."); }} style={{ fontSize: 12, fontWeight: 600, color: "#EF4444", padding: "6px 14px", borderRadius: 6, border: "1px solid rgba(239,68,68,0.3)", background: "transparent", cursor: "pointer" }}>Stop</button>
               </div>
             </div>
           ) : (
