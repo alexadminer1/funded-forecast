@@ -8,7 +8,7 @@ const BLOCKED_KEY = "adminBlockedUntil";
 const MAX_ATTEMPTS = 3;
 const BLOCK_MS = 5 * 60 * 1000;
 
-type Section = "dashboard" | "users" | "challenges" | "trades" | "balance-logs" | "markets" | "plans" | "content" | "faq" | "reviews" | "system";
+type Section = "dashboard" | "users" | "challenges" | "trades" | "balance-logs" | "markets" | "plans" | "content" | "faq" | "reviews" | "payouts" | "system";
 
 export default function AdminPage() {
   const [authed, setAuthed] = useState(false);
@@ -91,6 +91,7 @@ function AdminDashboard({ onInvalidKey }: { onInvalidKey: () => void }) {
         { key: "challenges", label: "Challenges" },
         { key: "trades", label: "Trades" },
         { key: "balance-logs", label: "Balance Logs" },
+        { key: "payouts", label: "Payouts" },
       ],
     },
     {
@@ -246,6 +247,7 @@ function AdminDashboard({ onInvalidKey }: { onInvalidKey: () => void }) {
         {section === "content" && <ContentSection apiFetch={apiFetch} />}
         {section === "faq" && <FAQSection apiFetch={apiFetch} />}
         {section === "reviews" && <ReviewsSection apiFetch={apiFetch} />}
+        {section === "payouts" && <PayoutsSection apiFetch={apiFetch} />}
         {section === "system" && <SystemSection apiFetch={apiFetch} adminKey={adminKey} />}
       </div>
     </div>
@@ -1109,6 +1111,121 @@ function FAQSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestInit) 
               <button onClick={() => remove(item.id)}
                 style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid rgba(239,68,68,0.3)", background: "transparent", color: "#EF4444", fontSize: 12, cursor: "pointer" }}>Hide</button>
             </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PayoutsSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestInit) => Promise<any> }) {
+  const [items, setItems] = useState<any[]>([]);
+  const [filter, setFilter] = useState("pending");
+  const [editing, setEditing] = useState<number | null>(null);
+  const [txHash, setTxHash] = useState("");
+  const [rejectionReason, setRejectionReason] = useState("");
+
+  const load = useCallback(async () => {
+    const data = await apiFetch(`/api/admin/payouts?status=${filter}`);
+    setItems(Array.isArray(data) ? data : []);
+  }, [apiFetch, filter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function updateStatus(id: number, status: string) {
+    await apiFetch(`/api/admin/payouts/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({ status, txHash: txHash || undefined, rejectionReason: rejectionReason || undefined }),
+    });
+    setEditing(null);
+    setTxHash("");
+    setRejectionReason("");
+    load();
+  }
+
+  const STATUS_COLOR: Record<string, string> = {
+    pending: "#F59E0B",
+    approved: "#3B82F6",
+    paid: "#22C55E",
+    rejected: "#EF4444",
+  };
+
+  return (
+    <div>
+      <div style={{ fontSize: 20, fontWeight: 700, color: "#F1F5F9", marginBottom: 4 }}>Payouts</div>
+      <div style={{ fontSize: 13, color: "#475569", marginBottom: 24 }}>Manage payout requests from funded traders</div>
+
+      {/* Filter */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+        {["pending", "approved", "paid", "rejected"].map(s => (
+          <button key={s} onClick={() => setFilter(s)} style={{
+            padding: "6px 16px", borderRadius: 8, border: "1px solid",
+            borderColor: filter === s ? STATUS_COLOR[s] : "#334155",
+            background: filter === s ? `${STATUS_COLOR[s]}18` : "transparent",
+            color: filter === s ? STATUS_COLOR[s] : "#475569",
+            fontSize: 12, fontWeight: 600, cursor: "pointer", textTransform: "capitalize",
+          }}>{s}</button>
+        ))}
+      </div>
+
+      {/* List */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {items.length === 0 && (
+          <div style={{ textAlign: "center", padding: "40px 0", color: "#475569", fontSize: 13 }}>No {filter} payouts</div>
+        )}
+        {items.map(item => (
+          <div key={item.id} style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 10, padding: "16px 20px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: editing === item.id ? 16 : 0 }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "#F1F5F9" }}>@{item.user?.username}</span>
+                  <span style={{ fontSize: 11, color: "#475569" }}>{item.user?.email}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: `${STATUS_COLOR[item.status]}18`, color: STATUS_COLOR[item.status] }}>{item.status.toUpperCase()}</span>
+                </div>
+                <div style={{ fontSize: 12, color: "#475569", display: "flex", gap: 16 }}>
+                  <span>Amount: <span style={{ color: "#22C55E", fontWeight: 700 }}>${item.netAmount}</span></span>
+                  <span>Network: <span style={{ color: "#94A3B8" }}>{item.walletNetwork}</span></span>
+                  <span>Wallet: <span style={{ color: "#94A3B8", fontFamily: "monospace" }}>{item.walletAddress?.slice(0, 12)}...</span></span>
+                  <span>Requested: {new Date(item.requestedAt).toLocaleDateString()}</span>
+                </div>
+                {item.txHash && <div style={{ fontSize: 11, color: "#22C55E", marginTop: 4, fontFamily: "monospace" }}>TX: {item.txHash}</div>}
+                {item.rejectionReason && <div style={{ fontSize: 11, color: "#EF4444", marginTop: 4 }}>Reason: {item.rejectionReason}</div>}
+              </div>
+              <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                {item.status === "pending" && (
+                  <button onClick={() => setEditing(editing === item.id ? null : item.id)} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #334155", background: "transparent", color: "#94A3B8", fontSize: 12, cursor: "pointer" }}>Actions</button>
+                )}
+                {item.status === "approved" && (
+                  <button onClick={() => { setEditing(item.id); }} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid rgba(34,197,94,0.3)", background: "transparent", color: "#22C55E", fontSize: 12, cursor: "pointer" }}>Mark Paid</button>
+                )}
+              </div>
+            </div>
+
+            {editing === item.id && (
+              <div style={{ borderTop: "1px solid #334155", paddingTop: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+                {item.status === "pending" && (
+                  <>
+                    <input placeholder="TX Hash (optional)" value={txHash} onChange={e => setTxHash(e.target.value)}
+                      style={{ padding: "8px 12px", borderRadius: 6, border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 13 }} />
+                    <input placeholder="Rejection reason (if rejecting)" value={rejectionReason} onChange={e => setRejectionReason(e.target.value)}
+                      style={{ padding: "8px 12px", borderRadius: 6, border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 13 }} />
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={() => updateStatus(item.id, "approved")} style={{ padding: "7px 16px", borderRadius: 6, border: "none", background: "#3B82F6", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Approve</button>
+                      <button onClick={() => updateStatus(item.id, "rejected")} style={{ padding: "7px 16px", borderRadius: 6, border: "none", background: "#EF4444", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Reject</button>
+                      <button onClick={() => setEditing(null)} style={{ padding: "7px 16px", borderRadius: 6, border: "1px solid #334155", background: "transparent", color: "#94A3B8", fontSize: 12, cursor: "pointer" }}>Cancel</button>
+                    </div>
+                  </>
+                )}
+                {item.status === "approved" && (
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input placeholder="TX Hash" value={txHash} onChange={e => setTxHash(e.target.value)}
+                      style={{ flex: 1, padding: "8px 12px", borderRadius: 6, border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 13 }} />
+                    <button onClick={() => updateStatus(item.id, "paid")} style={{ padding: "7px 16px", borderRadius: 6, border: "none", background: "#22C55E", color: "#071A0E", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Mark as Paid</button>
+                    <button onClick={() => setEditing(null)} style={{ padding: "7px 16px", borderRadius: 6, border: "1px solid #334155", background: "transparent", color: "#94A3B8", fontSize: 12, cursor: "pointer" }}>Cancel</button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ))}
       </div>
