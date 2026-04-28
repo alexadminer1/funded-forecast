@@ -18,7 +18,7 @@ function getIdentifier(req: NextRequest): string {
   return `ip:${ip}`;
 }
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Only rate limit API routes
