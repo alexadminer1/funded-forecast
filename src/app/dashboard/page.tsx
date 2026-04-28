@@ -86,13 +86,19 @@ export default function DashboardPage() {
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "48px 24px", animation: "fadeIn 0.3s ease" }}>
 
         {/* Page header */}
-        <div style={{ marginBottom: 40 }}>
-          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.03em", marginBottom: 4, color: "var(--text-primary)" }}>
-            Welcome back, {user.firstName}
-          </h1>
-          <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
-            @{user.username} · {user.membershipStatus === "active" ? "Pro Member" : "Free Plan"}
-          </p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 40 }}>
+          <div>
+            <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.03em", marginBottom: 4, color: "var(--text-primary)" }}>
+              Welcome back, {user.firstName}
+            </h1>
+            <p style={{ color: "var(--text-muted)", fontSize: 13, margin: 0 }}>
+              @{user.username} · {user.membershipStatus === "active" ? "Pro Member" : "Free Plan"}
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <a href="/account" style={{ fontSize: 13, fontWeight: 600, color: "#94A3B8", padding: "7px 16px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)", textDecoration: "none" }}>My Account</a>
+            <a href="/markets" style={{ fontSize: 13, fontWeight: 700, background: "#22C55E", color: "#071A0E", padding: "8px 18px", borderRadius: 8, textDecoration: "none" }}>Trade →</a>
+          </div>
         </div>
 
         {/* Stats */}
