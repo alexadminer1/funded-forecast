@@ -114,7 +114,7 @@ export default function Header() {
               ${user?.balance.toLocaleString("en-US", { minimumFractionDigits: 2 }) ?? "0.00"}
             </span>
           </div>
-          <div style={{ fontSize: 13, color: "#475569", fontWeight: 500 }}>@{user?.username ?? ""}</div>
+          <a href="/account" style={{ fontSize: 13, color: "#475569", fontWeight: 500, textDecoration: "none" }}>@{user?.username ?? ""}</a>
           <button
             onClick={handleLogout}
             style={{
