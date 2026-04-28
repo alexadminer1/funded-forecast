@@ -36,6 +36,7 @@ model User {
   payoutRequests     PayoutRequest[]
   auditLogsAsActor   AuditLog[]      @relation("AuditActor")
   userConsent        UserConsent?
+  payments           Payment[]
 
   @@index([isBlocked])
   @@index([stripeCustomerId])
@@ -168,6 +169,7 @@ model ChallengePlan {
   order              Int        @default(0)
   createdAt          DateTime   @default(now())
   challenges         Challenge[]
+  payments           Payment[]
 }
 
 model Challenge {
@@ -300,4 +302,26 @@ model Review {
   order     Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Payment {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  planId        Int?
+  nowPaymentId  String?  @unique
+  orderId       String   @unique
+  amount        Float
+  currency      String   @default("USD")
+  payCurrency   String?
+  payAmount     Float?
+  status        String   @default("pending")
+  paymentUrl    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user User           @relation(fields: [userId], references: [id])
+  plan ChallengePlan? @relation(fields: [planId], references: [id])
+
+  @@index([userId])
+  @@index([orderId])
 }

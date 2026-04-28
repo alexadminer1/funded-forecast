@@ -1,0 +1,87 @@
+export const dynamic = 'force-dynamic'
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import crypto from "crypto";
+
+function verifySignature(body: string, signature: string): boolean {
+  const hmac = crypto.createHmac("sha512", process.env.NOWPAYMENTS_IPN_SECRET!);
+  hmac.update(body);
+  return hmac.digest("hex") === signature;
+}
+
+export async function POST(req: NextRequest) {
+  const rawBody = await req.text();
+  const signature = req.headers.get("x-nowpayments-sig") ?? "";
+
+  // Verify HMAC signature
+  if (!verifySignature(rawBody, signature)) {
+    console.error("[WEBHOOK] Invalid signature");
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  }
+
+  let data: any;
+  try { data = JSON.parse(rawBody); } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const { order_id, payment_status, actually_paid, pay_currency, payment_id } = data;
+
+  if (!order_id) return NextResponse.json({ ok: true });
+
+  const payment = await prisma.payment.findUnique({ where: { orderId: order_id } });
+  if (!payment) return NextResponse.json({ error: "Payment not found" }, { status: 404 });
+
+  // Update payment status
+  await prisma.payment.update({
+    where: { orderId: order_id },
+    data: {
+      status: payment_status,
+      nowPaymentId: String(payment_id),
+      payAmount: actually_paid,
+      payCurrency: pay_currency,
+    },
+  });
+
+  // If confirmed/finished — start challenge
+  if (["confirmed", "finished"].includes(payment_status) && payment.planId) {
+    // Idempotency check — don't create duplicate challenges
+    const existing = await prisma.challenge.findFirst({
+      where: { userId: payment.userId, status: { in: ["active", "passed"] } },
+    });
+
+    if (!existing) {
+      const plan = await prisma.challengePlan.findUnique({ where: { id: payment.planId } });
+      if (plan) {
+        const startBalance = plan.accountSize;
+        await prisma.challenge.create({
+          data: {
+            userId: payment.userId,
+            planId: plan.id,
+            stage: "evaluation",
+            status: "active",
+            startBalance,
+            realizedBalance: startBalance,
+            peakBalance: startBalance,
+            profitTargetPct: plan.profitTargetPct,
+            maxDailyDdPct: plan.dailyLossPct,
+            maxTotalDdPct: plan.maxLossPct,
+            maxPositionSizePct: plan.maxPositionSizePct,
+            minTradingDays: plan.minTradingDays,
+          },
+        });
+
+        await prisma.balanceLog.create({
+          data: {
+            userId: payment.userId,
+            type: "challenge_start",
+            amount: startBalance,
+            runningBalance: startBalance,
+            note: `Challenge started - ${plan.name} plan`,
+          },
+        });
+      }
+    }
+  }
+
+  return NextResponse.json({ ok: true });
+}
