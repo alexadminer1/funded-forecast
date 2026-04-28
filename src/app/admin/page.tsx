@@ -129,66 +129,109 @@ function AdminDashboard({ onInvalidKey }: { onInvalidKey: () => void }) {
 
   return (
     <div style={{ minHeight: "100vh", background: "#0F172A", fontFamily: "'Inter',-apple-system,sans-serif" }}>
+      <style>{`
+        @media (max-width: 768px) {
+          .admin-nav { display: none !important; }
+          .admin-hamburger { display: flex !important; }
+          .admin-mobile-menu { display: flex !important; }
+        }
+      `}</style>
+
       {/* Header */}
-      <div style={{ background: "#1E293B", borderBottom: "1px solid #334155", padding: "0 24px", display: "flex", alignItems: "center", gap: 0, height: 52, position: "relative" }}>
-        <span style={{ fontSize: 14, fontWeight: 700, color: "#22C55E", marginRight: 24 }}>Admin</span>
-        <span style={{ fontSize: 14, color: "#475569", marginRight: 32 }}>· FundedForecast</span>
+      <div style={{ background: "#1E293B", borderBottom: "1px solid #334155", padding: "0 24px", display: "flex", alignItems: "center", height: 52, position: "relative" }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color: "#22C55E", marginRight: 8 }}>Admin</span>
+        <span style={{ fontSize: 14, color: "#475569", marginRight: "auto" }}>· FundedForecast</span>
 
-        {/* Dashboard */}
-        <button onClick={() => { setSection("dashboard"); setOpenGroup(null); }} style={{
-          padding: "0 16px", height: 52, border: "none", background: "transparent",
-          color: section === "dashboard" ? "#F1F5F9" : "#475569",
-          fontWeight: section === "dashboard" ? 700 : 500,
-          fontSize: 13, cursor: "pointer",
-          borderBottom: section === "dashboard" ? "2px solid #22C55E" : "2px solid transparent",
-        }}>Dashboard</button>
+        {/* Desktop nav */}
+        <div className="admin-nav" style={{ display: "flex", alignItems: "center", height: 52 }}>
+          <button onClick={() => { setSection("dashboard"); setOpenGroup(null); }} style={{
+            padding: "0 16px", height: 52, border: "none", background: "transparent",
+            color: section === "dashboard" ? "#F1F5F9" : "#475569",
+            fontWeight: section === "dashboard" ? 700 : 500,
+            fontSize: 13, cursor: "pointer",
+            borderBottom: section === "dashboard" ? "2px solid #22C55E" : "2px solid transparent",
+          }}>Dashboard</button>
 
-        {/* Groups */}
-        {groups.map(group => {
-          const isActive = getActiveGroup() === group.key;
-          const isOpen = openGroup === group.key;
-          return (
-            <div key={group.key} style={{ position: "relative", height: 52, display: "flex", alignItems: "center" }}
-              onMouseEnter={() => setOpenGroup(group.key)}
-              onMouseLeave={() => setOpenGroup(null)}>
-              <button style={{
-                padding: "0 16px", height: 52, border: "none", background: "transparent",
-                color: isActive ? "#F1F5F9" : "#475569",
-                fontWeight: isActive ? 700 : 500,
-                fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4,
-                borderBottom: isActive ? "2px solid #22C55E" : "2px solid transparent",
-              }}>
-                {group.label}
-                <span style={{ fontSize: 10, opacity: 0.5 }}>▾</span>
-              </button>
-              {isOpen && (
-                <div style={{
-                  position: "absolute", top: 52, left: 0, zIndex: 100,
-                  background: "#1E293B", border: "1px solid #334155", borderRadius: 8,
-                  minWidth: 160, padding: "6px 0",
-                  boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+          {groups.map(group => {
+            const isActive = getActiveGroup() === group.key;
+            const isOpen = openGroup === group.key;
+            return (
+              <div key={group.key} style={{ position: "relative", height: 52, display: "flex", alignItems: "center" }}
+                onMouseEnter={() => setOpenGroup(group.key)}
+                onMouseLeave={() => setOpenGroup(null)}>
+                <button style={{
+                  padding: "0 16px", height: 52, border: "none", background: "transparent",
+                  color: isActive ? "#F1F5F9" : "#475569",
+                  fontWeight: isActive ? 700 : 500,
+                  fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4,
+                  borderBottom: isActive ? "2px solid #22C55E" : "2px solid transparent",
                 }}>
-                  {group.items.map(item => (
-                    <button key={item.key} onClick={() => { setSection(item.key as Section); setOpenGroup(null); }} style={{
-                      display: "block", width: "100%", textAlign: "left",
-                      padding: "9px 16px", border: "none", background: "transparent",
-                      color: section === item.key ? "#22C55E" : "#94A3B8",
-                      fontWeight: section === item.key ? 700 : 400,
-                      fontSize: 13, cursor: "pointer",
-                    }}>{item.label}</button>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
+                  {group.label}
+                  <span style={{ fontSize: 10, opacity: 0.5 }}>▾</span>
+                </button>
+                {isOpen && (
+                  <div style={{
+                    position: "absolute", top: 52, left: 0, zIndex: 100,
+                    background: "#1E293B", border: "1px solid #334155", borderRadius: 8,
+                    minWidth: 160, padding: "6px 0",
+                    boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+                  }}>
+                    {group.items.map(item => (
+                      <button key={item.key} onClick={() => { setSection(item.key as Section); setOpenGroup(null); }} style={{
+                        display: "block", width: "100%", textAlign: "left",
+                        padding: "9px 16px", border: "none", background: "transparent",
+                        color: section === item.key ? "#22C55E" : "#94A3B8",
+                        fontWeight: section === item.key ? 700 : 400,
+                        fontSize: 13, cursor: "pointer",
+                      }}>{item.label}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
 
-        {/* Sign out */}
-        <button onClick={() => { sessionStorage.clear(); window.location.reload(); }} style={{
-          marginLeft: "auto", padding: "6px 16px", borderRadius: 7,
-          border: "1px solid #334155", background: "transparent",
-          color: "#475569", fontSize: 13, cursor: "pointer",
-        }}>Sign out</button>
+          <button onClick={() => { sessionStorage.clear(); window.location.reload(); }} style={{
+            marginLeft: 16, padding: "6px 16px", borderRadius: 7,
+            border: "1px solid #334155", background: "transparent",
+            color: "#475569", fontSize: 13, cursor: "pointer",
+          }}>Sign out</button>
+        </div>
+
+        {/* Mobile hamburger */}
+        <button className="admin-hamburger" onClick={() => setOpenGroup(openGroup === "mobile" ? null : "mobile")} style={{
+          display: "none", background: "transparent", border: "none",
+          cursor: "pointer", padding: 4, flexDirection: "column", gap: 5,
+        }}>
+          <span style={{ width: 22, height: 2, background: "#F1F5F9", borderRadius: 2, display: "block" }} />
+          <span style={{ width: 22, height: 2, background: "#F1F5F9", borderRadius: 2, display: "block" }} />
+          <span style={{ width: 22, height: 2, background: "#F1F5F9", borderRadius: 2, display: "block" }} />
+        </button>
+
+        {/* Mobile dropdown */}
+        {openGroup === "mobile" && (
+          <div className="admin-mobile-menu" style={{
+            position: "absolute", top: 52, left: 0, right: 0, zIndex: 200,
+            background: "#1E293B", borderBottom: "1px solid #334155",
+            padding: "8px 0", display: "none", flexDirection: "column",
+          }}>
+            <button onClick={() => { setSection("dashboard"); setOpenGroup(null); }} style={{
+              padding: "10px 24px", border: "none", background: "transparent",
+              color: "#F1F5F9", fontSize: 14, fontWeight: 600, cursor: "pointer", textAlign: "left",
+            }}>Dashboard</button>
+            {groups.flatMap(g => g.items).map(item => (
+              <button key={item.key} onClick={() => { setSection(item.key as Section); setOpenGroup(null); }} style={{
+                padding: "10px 24px", border: "none", background: "transparent",
+                color: section === item.key ? "#22C55E" : "#94A3B8",
+                fontSize: 14, cursor: "pointer", textAlign: "left",
+              }}>{item.label}</button>
+            ))}
+            <button onClick={() => { sessionStorage.clear(); window.location.reload(); }} style={{
+              padding: "10px 24px", border: "none", background: "transparent",
+              color: "#EF4444", fontSize: 14, cursor: "pointer", textAlign: "left",
+            }}>Sign out</button>
+          </div>
+        )}
       </div>
 
       {/* Content */}
