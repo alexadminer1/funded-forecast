@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useCallback } from "react";
 
 type Review = { id: number; name: string; role: string; avatar: string; text: string; rating: number };
 
@@ -22,8 +22,8 @@ function ReviewCard({ review }: { review: Review }) {
       background: "#0d1117",
       border: "1px solid rgba(255,255,255,0.06)",
       borderRadius: 14, padding: "24px",
-      display: "flex", flexDirection: "column", gap: 0,
       userSelect: "none",
+      flexShrink: 0,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
         {review.avatar ? (
@@ -45,41 +45,84 @@ function ReviewCard({ review }: { review: Review }) {
   );
 }
 
-export default function ReviewsCarousel({ reviews }: { reviews: Review[] }) {
+function CarouselTrack({ reviews, speed, direction }: { reviews: Review[]; speed: number; direction: 1 | -1 }) {
   const trackRef = useRef<HTMLDivElement>(null);
-  const [paused, setPaused] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
   const posRef = useRef(0);
   const rafRef = useRef<number>(0);
+  const pausedRef = useRef(false);
+  const CARD_WIDTH = 316;
+  const totalWidth = reviews.length * CARD_WIDTH;
   const doubled = [...reviews, ...reviews];
 
-  useEffect(() => {
-    const track = trackRef.current;
-    if (!track) return;
-    const cardWidth = 316;
-    const totalWidth = reviews.length * cardWidth;
-
-    function animate() {
-      if (!paused) {
-        posRef.current += 0.5;
-        if (posRef.current >= totalWidth) posRef.current = 0;
-        if (track) track.style.transform = `translateX(-${posRef.current}px)`;
+  const animate = useCallback(() => {
+    if (!pausedRef.current) {
+      posRef.current += speed * direction;
+      if (posRef.current >= totalWidth) posRef.current -= totalWidth;
+      if (posRef.current < 0) posRef.current += totalWidth;
+      if (trackRef.current) {
+        trackRef.current.style.transform = `translateX(-${posRef.current}px)`;
       }
-      rafRef.current = requestAnimationFrame(animate);
+      const container = containerRef.current;
+      const track = trackRef.current;
+      if (container && track) {
+        const containerWidth = container.offsetWidth;
+        const center = containerWidth / 2;
+        const cards = track.children;
+        for (let i = 0; i < cards.length; i++) {
+          const card = cards[i] as HTMLElement;
+          const cardLeft = i * CARD_WIDTH - posRef.current;
+          const cardCenter = cardLeft + CARD_WIDTH / 2;
+          const dist = Math.abs(cardCenter - center);
+          const maxDist = containerWidth / 2;
+          const ratio = Math.min(dist / maxDist, 1);
+          const scale = 1 - ratio * 0.12;
+          const opacity = 1 - ratio * 0.55;
+          card.style.transform = `scale(${scale})`;
+          card.style.opacity = String(Math.max(0.4, opacity));
+        }
+      }
     }
+    rafRef.current = requestAnimationFrame(animate);
+  }, [speed, direction, totalWidth]);
 
+  useEffect(() => {
     rafRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [paused, reviews.length]);
+  }, [animate]);
 
   return (
     <div
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      style={{ overflow: "hidden", width: "100%", cursor: "grab" }}
+      ref={containerRef}
+      onMouseEnter={() => { pausedRef.current = true; }}
+      onMouseLeave={() => { pausedRef.current = false; }}
+      style={{
+        overflow: "hidden",
+        width: "100%",
+        cursor: "grab",
+        maskImage: "linear-gradient(to right, transparent 0%, black 12%, black 88%, transparent 100%)",
+        WebkitMaskImage: "linear-gradient(to right, transparent 0%, black 12%, black 88%, transparent 100%)",
+      }}
     >
-      <div ref={trackRef} style={{ display: "flex", gap: 16, willChange: "transform" }}>
-        {doubled.map((r, i) => <ReviewCard key={`${r.id}-${i}`} review={r} />)}
+      <div ref={trackRef} style={{ display: "flex", gap: 16, willChange: "transform", paddingBottom: 8 }}>
+        {doubled.map((r, i) => (
+          <ReviewCard key={`${r.id}-${i}`} review={r} />
+        ))}
       </div>
+    </div>
+  );
+}
+
+export default function ReviewsCarousel({ reviews }: { reviews: Review[] }) {
+  if (reviews.length === 0) return null;
+  const half = Math.ceil(reviews.length / 2);
+  const row1 = reviews.slice(0, half);
+  const row2 = reviews.slice(half).length > 0 ? reviews.slice(half) : reviews;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 900, margin: "0 auto" }}>
+      <CarouselTrack reviews={row1} speed={0.4} direction={1} />
+      <CarouselTrack reviews={row2} speed={0.28} direction={-1} />
     </div>
   );
 }
