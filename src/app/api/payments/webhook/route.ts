@@ -75,8 +75,9 @@ export async function POST(req: NextRequest) {
             userId: payment.userId,
             type: "challenge_start",
             amount: startBalance,
+            balanceBefore: 0,
+            balanceAfter: startBalance,
             runningBalance: startBalance,
-            note: `Challenge started - ${plan.name} plan`,
           },
         });
       }
