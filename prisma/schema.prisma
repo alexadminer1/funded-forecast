@@ -25,6 +25,8 @@ model User {
   lastTradeAt          DateTime?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
+  walletAddress        String?
+  walletNetwork        String?
 
   trades             Trade[]
   positions          Position[]
