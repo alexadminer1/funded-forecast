@@ -14,7 +14,6 @@ export async function GET(req: NextRequest) {
 
   const where = {
     status: "live",
-    negRisk: false,
     ...(category && category !== "all" ? { category } : {}),
     ...(search ? {
       title: { contains: search, mode: "insensitive" as const },
