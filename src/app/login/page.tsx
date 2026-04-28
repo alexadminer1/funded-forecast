@@ -66,7 +66,7 @@ function LoginInner() {
         if (data.token) {
           setToken(data.token);
           await startChallengeIfNeeded(data.token);
-          router.push("/dashboard");
+          router.push(planId ? `/checkout?planId=${planId}` : "/dashboard");
         } else setError(data.error ?? "Login failed");
       } else {
         if (form.password !== form.confirmPassword) { setError("Passwords do not match"); setLoading(false); return; }
@@ -81,7 +81,7 @@ function LoginInner() {
         if (data.token) {
           setToken(data.token);
           if (planId) {
-            router.push(`/login?planId=${planId}`);
+            router.push(`/checkout?planId=${planId}`);
           } else {
             router.push("/dashboard");
           }
