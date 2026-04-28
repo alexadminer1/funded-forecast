@@ -9,7 +9,8 @@ export async function GET(req: NextRequest) {
   const category = searchParams.get("category");
   const sort = searchParams.get("sort") ?? "volume";
   const search = searchParams.get("search");
-  const limit = Math.min(parseInt(searchParams.get("limit") ?? "50"), 100);
+  const limit = Math.min(parseInt(searchParams.get("limit") ?? "20"), 100);
+  const offset = parseInt(searchParams.get("offset") ?? "0");
 
   const where = {
     status: "live",
@@ -34,6 +35,7 @@ export async function GET(req: NextRequest) {
       where,
       orderBy,
       take: limit,
+      skip: offset,
       select: {
         id: true,
         title: true,
@@ -48,7 +50,8 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ success: true, markets });
+    const total = await prisma.market.count({ where });
+    return NextResponse.json({ success: true, markets, total, hasMore: offset + limit < total });
 
   } catch (error) {
     console.error("[MARKETS] Error:", error);
