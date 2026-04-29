@@ -85,7 +85,11 @@ export default function MarketsPage() {
   const visibleCategories = [
     "all",
     ...Object.entries(stats.byCategory)
-      .sort(([, a], [, b]) => b - a)
+      .sort(([catA, a], [catB, b]) => {
+        if (catA === "other") return 1;
+        if (catB === "other") return -1;
+        return b - a;
+      })
       .map(([cat]) => cat),
   ];
 
