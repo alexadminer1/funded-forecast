@@ -30,7 +30,8 @@ export async function apiFetch<T>(
 
   if (res.status === 401) {
     removeToken();
-    window.location.href = "/login";
+    const next = encodeURIComponent(window.location.pathname + window.location.search);
+    window.location.href = `/login?next=${next}`;
     throw new Error("Unauthorized");
   }
 
