@@ -66,6 +66,8 @@ function MarketCard({ market }: { market: Market }) {
   );
 }
 
+type Stats = { total: number; byCategory: Record<string, number> };
+
 export default function MarketsPage() {
   const [markets, setMarkets] = useState<Market[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,22 +77,25 @@ export default function MarketsPage() {
   const [sort, setSort] = useState("volume");
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
+  const [stats, setStats] = useState<Stats>({ total: 0, byCategory: {} });
   const offsetRef = useRef(0);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
-  const [allMarkets, setAllMarkets] = useState<Market[]>([]);
-  const categoryCounts = allMarkets.reduce((acc, m) => {
-    const cat = normalizeCategory(m.category);
-    acc[cat] = (acc[cat] ?? 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
   const visibleCategories = [
     "all",
-    ...Object.entries(categoryCounts)
+    ...Object.entries(stats.byCategory)
       .sort(([, a], [, b]) => b - a)
       .map(([cat]) => cat),
   ];
+
+  useEffect(() => {
+    apiFetch<Stats & { success: boolean }>("/api/markets/stats")
+      .then(data => {
+        if (data.success) setStats({ total: data.total, byCategory: data.byCategory });
+      })
+      .catch(err => console.error("Failed to load stats:", err));
+  }, []);
 
   const fetchMarkets = useCallback(async (reset = false) => {
     const offset = reset ? 0 : offsetRef.current;
@@ -108,11 +113,6 @@ export default function MarketsPage() {
 
     if (data.success) {
       setMarkets(prev => reset ? data.markets : [...prev, ...data.markets]);
-      setAllMarkets(prev => {
-        const existingIds = new Set(prev.map((m: Market) => m.id));
-        const newOnes = data.markets.filter((m: Market) => !existingIds.has(m.id));
-        return [...prev, ...newOnes];
-      });
       setHasMore(data.hasMore);
       offsetRef.current = offset + data.markets.length;
     }
@@ -165,7 +165,7 @@ export default function MarketsPage() {
               color: category === c ? "#22C55E" : "var(--text-muted)",
               fontSize: 12, fontWeight: 600, cursor: "pointer", textTransform: "capitalize",
             }}>
-              {c === "all" ? `All (${allMarkets.length})` : `${c} (${categoryCounts[c] ?? 0})`}
+              {c === "all" ? `All (${stats.total})` : `${c} (${stats.byCategory[c] ?? 0})`}
             </button>
           ))}
         </div>
