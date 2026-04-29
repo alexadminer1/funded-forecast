@@ -325,3 +325,19 @@ model Payment {
   @@index([userId])
   @@index([orderId])
 }
+
+model LeaderboardEntry {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  plan      String
+  totalPnl  Float
+  winRate   Int
+  trades    Int
+  avatarUrl String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([totalPnl])
+}

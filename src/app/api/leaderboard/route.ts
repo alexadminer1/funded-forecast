@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
     ? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
     : null;
 
-  // Get completed challenges only
+  // Real users
   const challenges = await prisma.challenge.findMany({
     where: {
       status: "passed",
@@ -28,9 +28,7 @@ export async function GET(req: NextRequest) {
     },
   });
 
-  // Aggregate per user
   const userMap = new Map<number, {
-    userId: number;
     username: string;
     plan: string;
     totalPnl: number;
@@ -40,7 +38,7 @@ export async function GET(req: NextRequest) {
 
   for (const c of challenges) {
     const closed = c.positions.filter(p => p.realizedPnl !== null);
-    if (closed.length < 5) continue; // min 5 trades
+    if (closed.length < 5) continue;
 
     const pnl = closed.reduce((s, p) => s + (p.realizedPnl ?? 0), 0);
     const wins = closed.filter(p => (p.realizedPnl ?? 0) > 0).length;
@@ -52,7 +50,6 @@ export async function GET(req: NextRequest) {
       existing.trades += closed.length;
     } else {
       userMap.set(c.userId, {
-        userId: c.userId,
         username: c.user.username,
         plan: c.plan?.name ?? "Starter",
         totalPnl: pnl,
@@ -62,17 +59,37 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const leaderboard = Array.from(userMap.values())
-    .sort((a, b) => b.totalPnl - a.totalPnl)
-    .slice(0, limit)
-    .map((u, i) => ({
-      rank: i + 1,
-      username: u.username,
-      plan: u.plan,
-      totalPnl: parseFloat(u.totalPnl.toFixed(2)),
-      winRate: u.trades > 0 ? Math.round((u.wins / u.trades) * 100) : 0,
-      trades: u.trades,
-    }));
+  const realEntries = Array.from(userMap.values()).map(u => ({
+    username: u.username,
+    plan: u.plan,
+    totalPnl: parseFloat(u.totalPnl.toFixed(2)),
+    winRate: u.trades > 0 ? Math.round((u.wins / u.trades) * 100) : 0,
+    trades: u.trades,
+  }));
+
+  // Showcase entries (active only)
+  const showcase = await prisma.leaderboardEntry.findMany({
+    where: { isActive: true },
+    select: {
+      username: true,
+      plan: true,
+      totalPnl: true,
+      winRate: true,
+      trades: true,
+    },
+  });
+
+  // Merge and sort by totalPnl DESC
+  const merged = [...realEntries, ...showcase].sort((a, b) => b.totalPnl - a.totalPnl);
+
+  const leaderboard = merged.slice(0, limit).map((u, i) => ({
+    rank: i + 1,
+    username: u.username,
+    plan: u.plan,
+    totalPnl: parseFloat(u.totalPnl.toFixed(2)),
+    winRate: u.winRate,
+    trades: u.trades,
+  }));
 
   return NextResponse.json({ success: true, leaderboard });
 }

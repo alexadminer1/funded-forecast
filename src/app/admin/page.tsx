@@ -8,7 +8,7 @@ const BLOCKED_KEY = "adminBlockedUntil";
 const MAX_ATTEMPTS = 3;
 const BLOCK_MS = 5 * 60 * 1000;
 
-type Section = "dashboard" | "users" | "challenges" | "trades" | "balance-logs" | "markets" | "plans" | "content" | "faq" | "reviews" | "payouts" | "system";
+type Section = "dashboard" | "users" | "challenges" | "trades" | "balance-logs" | "markets" | "plans" | "content" | "faq" | "reviews" | "leaderboard" | "payouts" | "system";
 
 export default function AdminPage() {
   const [authed, setAuthed] = useState(false);
@@ -111,6 +111,7 @@ function AdminDashboard({ onInvalidKey }: { onInvalidKey: () => void }) {
         { key: "plans", label: "Plans" },
         { key: "faq", label: "FAQ" },
         { key: "reviews", label: "Reviews" },
+        { key: "leaderboard", label: "Leaderboard" },
         { key: "content", label: "Content" },
       ],
     },
@@ -247,6 +248,7 @@ function AdminDashboard({ onInvalidKey }: { onInvalidKey: () => void }) {
         {section === "content" && <ContentSection apiFetch={apiFetch} />}
         {section === "faq" && <FAQSection apiFetch={apiFetch} />}
         {section === "reviews" && <ReviewsSection apiFetch={apiFetch} />}
+        {section === "leaderboard" && <LeaderboardSection apiFetch={apiFetch} />}
         {section === "payouts" && <PayoutsSection apiFetch={apiFetch} />}
         {section === "system" && <SystemSection apiFetch={apiFetch} adminKey={adminKey} />}
       </div>
@@ -1311,6 +1313,169 @@ function PayoutsSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestIn
             )}
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Leaderboard ──────────────────────────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function LeaderboardSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestInit) => Promise<any> }) {
+  const [entries, setEntries] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editData, setEditData] = useState<Record<string, string | number | boolean>>({});
+  const [saving, setSaving] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newEntry, setNewEntry] = useState({ username: "", plan: "Starter", totalPnl: "", winRate: "65", trades: "20", avatarUrl: "" });
+  const [confirm, setConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const d = await apiFetch("/api/admin/leaderboard");
+    if (d.success) setEntries(d.entries);
+    setLoading(false);
+  }, []);
+  useEffect(() => { load(); }, []);
+
+  function startEdit(e: any) {
+    setEditId(e.id);
+    setEditData({
+      username: e.username, plan: e.plan, totalPnl: e.totalPnl, winRate: e.winRate,
+      trades: e.trades, avatarUrl: e.avatarUrl ?? "", isActive: e.isActive,
+    });
+  }
+
+  async function saveEdit() {
+    if (!editId) return;
+    setSaving(true); setError(null);
+    const r = await apiFetch(`/api/admin/leaderboard/${editId}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        username: editData.username,
+        plan: editData.plan,
+        totalPnl: Number(editData.totalPnl),
+        winRate: Number(editData.winRate),
+        trades: Number(editData.trades),
+        avatarUrl: editData.avatarUrl || null,
+        isActive: editData.isActive,
+      }),
+    });
+    setSaving(false);
+    if (r.error) { setError(r.error); return; }
+    setEditId(null); load();
+  }
+
+  async function addEntry() {
+    setSaving(true); setError(null);
+    const r = await apiFetch("/api/admin/leaderboard", {
+      method: "POST",
+      body: JSON.stringify({
+        username: newEntry.username,
+        plan: newEntry.plan,
+        totalPnl: Number(newEntry.totalPnl),
+        winRate: Number(newEntry.winRate),
+        trades: Number(newEntry.trades),
+        avatarUrl: newEntry.avatarUrl || null,
+        isActive: true,
+      }),
+    });
+    setSaving(false);
+    if (r.error) { setError(r.error); return; }
+    setShowAdd(false);
+    setNewEntry({ username: "", plan: "Starter", totalPnl: "", winRate: "65", trades: "20", avatarUrl: "" });
+    load();
+  }
+
+  async function deleteEntry(id: number) {
+    await apiFetch(`/api/admin/leaderboard/${id}`, { method: "DELETE" });
+    load();
+  }
+
+  async function toggleActive(e: any) {
+    await apiFetch(`/api/admin/leaderboard/${e.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ isActive: !e.isActive }),
+    });
+    load();
+  }
+
+  const inpS: React.CSSProperties = { padding: "4px 8px", borderRadius: 5, border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 11, outline: "none", width: "100%" };
+
+  return (
+    <div>
+      {confirm && <ConfirmDialog title={confirm.title} message={confirm.message} onConfirm={confirm.onConfirm} onCancel={() => setConfirm(null)} />}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+        <SH>Leaderboard (showcase)</SH>
+        <Btn label="+ Add Entry" bg="#22C55E" color="#071A0E" onClick={() => { setError(null); setShowAdd(true); }} />
+      </div>
+
+      {error && <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid #EF4444", borderRadius: 8, padding: "10px 14px", color: "#EF4444", fontSize: 12, marginBottom: 14 }}>{error}</div>}
+
+      {showAdd && (
+        <div style={{ background: "#1E293B", border: "1px solid #22C55E", borderRadius: 10, padding: "16px 18px", marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#22C55E", marginBottom: 12 }}>New Showcase Entry</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 10 }}>
+            <div><div style={{ fontSize: 10, color: "#475569", marginBottom: 3 }}>username</div><input style={inpS} value={newEntry.username} onChange={e => setNewEntry(p => ({ ...p, username: e.target.value }))} /></div>
+            <div><div style={{ fontSize: 10, color: "#475569", marginBottom: 3 }}>plan</div>
+              <select style={inpS} value={newEntry.plan} onChange={e => setNewEntry(p => ({ ...p, plan: e.target.value }))}>
+                <option value="Starter">Starter</option><option value="Pro">Pro</option><option value="Elite">Elite</option>
+              </select>
+            </div>
+            <div><div style={{ fontSize: 10, color: "#475569", marginBottom: 3 }}>totalPnl</div><input style={inpS} value={newEntry.totalPnl} onChange={e => setNewEntry(p => ({ ...p, totalPnl: e.target.value }))} /></div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 12 }}>
+            <div><div style={{ fontSize: 10, color: "#475569", marginBottom: 3 }}>winRate (0-100)</div><input style={inpS} value={newEntry.winRate} onChange={e => setNewEntry(p => ({ ...p, winRate: e.target.value }))} /></div>
+            <div><div style={{ fontSize: 10, color: "#475569", marginBottom: 3 }}>trades</div><input style={inpS} value={newEntry.trades} onChange={e => setNewEntry(p => ({ ...p, trades: e.target.value }))} /></div>
+            <div><div style={{ fontSize: 10, color: "#475569", marginBottom: 3 }}>avatarUrl (optional)</div><input style={inpS} value={newEntry.avatarUrl} onChange={e => setNewEntry(p => ({ ...p, avatarUrl: e.target.value }))} /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn label="Save" bg="#22C55E" color="#071A0E" onClick={addEntry} loading={saving} />
+            <Btn label="Cancel" bg="#334155" color="#94A3B8" onClick={() => setShowAdd(false)} />
+          </div>
+        </div>
+      )}
+
+      <div style={tableWrap}>
+        <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr 1fr 2fr", padding: "9px 16px", borderBottom: "1px solid #334155", background: "rgba(255,255,255,0.02)" }}>
+          {["Username", "Plan", "PnL", "Win %", "Trades", "Active", "Actions"].map(h => <div key={h} style={thStyle}>{h}</div>)}
+        </div>
+        {loading ? <div style={{ padding: 32, textAlign: "center", color: "#475569" }}>Loading...</div> :
+          entries.length === 0 ? <div style={{ padding: 32, textAlign: "center", color: "#475569" }}>No showcase entries yet</div> :
+          entries.map((e, i) => editId === e.id ? (
+            <div key={e.id} style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr 1fr 2fr", padding: "8px 16px", alignItems: "center", gap: 4, borderBottom: "1px solid #22C55E40", background: "rgba(34,197,94,0.04)" }}>
+              <input style={inpS} value={String(editData.username)} onChange={ev => setEditData(d => ({ ...d, username: ev.target.value }))} />
+              <select style={inpS} value={String(editData.plan)} onChange={ev => setEditData(d => ({ ...d, plan: ev.target.value }))}>
+                <option value="Starter">Starter</option><option value="Pro">Pro</option><option value="Elite">Elite</option>
+              </select>
+              <input style={inpS} value={String(editData.totalPnl)} onChange={ev => setEditData(d => ({ ...d, totalPnl: Number(ev.target.value) }))} />
+              <input style={inpS} value={String(editData.winRate)} onChange={ev => setEditData(d => ({ ...d, winRate: Number(ev.target.value) }))} />
+              <input style={inpS} value={String(editData.trades)} onChange={ev => setEditData(d => ({ ...d, trades: Number(ev.target.value) }))} />
+              <select style={inpS} value={String(editData.isActive)} onChange={ev => setEditData(d => ({ ...d, isActive: ev.target.value === "true" }))}>
+                <option value="true">Yes</option><option value="false">No</option>
+              </select>
+              <div style={{ display: "flex", gap: 5 }}>
+                <Btn label="Save" bg="#22C55E" color="#071A0E" onClick={saveEdit} loading={saving} />
+                <Btn label="Cancel" bg="#334155" color="#94A3B8" onClick={() => { setEditId(null); setError(null); }} />
+              </div>
+            </div>
+          ) : (
+            <div key={e.id} style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr 1fr 2fr", padding: "9px 16px", alignItems: "center", borderBottom: i < entries.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
+              <div style={{ ...tdStyle, color: "#F1F5F9", fontWeight: 600 }}>@{e.username}</div>
+              <div style={tdStyle}>{e.plan}</div>
+              <div style={{ ...tdStyle, color: e.totalPnl >= 0 ? "#22C55E" : "#EF4444", fontWeight: 700 }}>{e.totalPnl >= 0 ? "+" : ""}${e.totalPnl.toLocaleString()}</div>
+              <div style={tdStyle}>{e.winRate}%</div>
+              <div style={tdStyle}>{e.trades}</div>
+              <div style={tdStyle}><Badge label={e.isActive ? "Yes" : "No"} color={e.isActive ? "#22C55E" : "#64748B"} /></div>
+              <div style={{ display: "flex", gap: 5, padding: "0 16px" }}>
+                <Btn label="Edit" bg="#3B82F6" onClick={() => startEdit(e)} />
+                <Btn label={e.isActive ? "Hide" : "Show"} bg="#334155" color="#94A3B8" onClick={() => toggleActive(e)} />
+                <Btn label="Delete" bg="#EF4444" color="#FFF" onClick={() => setConfirm({ title: "Delete Entry", message: `Permanently delete @${e.username}?`, onConfirm: () => deleteEntry(e.id) })} />
+              </div>
+            </div>
+          ))
+        }
       </div>
     </div>
   );
