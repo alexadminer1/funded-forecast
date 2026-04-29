@@ -910,9 +910,10 @@ function SystemSection({ apiFetch, adminKey }: { apiFetch: (url: string, opts?: 
           method: "POST",
           body: JSON.stringify({ offset: i * 30 }),
         });
-        totalCreated += data.created ?? 0;
-        totalUpdated += data.updated ?? 0;
-        totalSkipped += data.skipped ?? 0;
+        const d = data as any;
+        totalCreated += d.created ?? 0;
+        totalUpdated += d.updated ?? 0;
+        totalSkipped += d.skipped ?? 0;
         if (i < 4) await new Promise(r => setTimeout(r, 2000));
       }
       setSyncMarketsResult(JSON.stringify({ success: true, created: totalCreated, updated: totalUpdated, skipped: totalSkipped, total: totalCreated + totalUpdated + totalSkipped }, null, 2));
