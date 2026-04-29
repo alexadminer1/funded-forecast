@@ -901,10 +901,21 @@ function SystemSection({ apiFetch, adminKey }: { apiFetch: (url: string, opts?: 
   const [syncMarketsResult, setSyncMarketsResult] = useState<string>("");
 
   async function syncMarkets() {
-    setSyncMarketsResult("Syncing...");
+    setSyncMarketsResult("Syncing batch 1/5...");
     try {
-      const data = await apiFetch("/api/admin/sync-markets", { method: "POST" });
-      setSyncMarketsResult(JSON.stringify(data, null, 2));
+      let totalCreated = 0, totalUpdated = 0, totalSkipped = 0;
+      for (let i = 0; i < 5; i++) {
+        setSyncMarketsResult(`Syncing batch ${i + 1}/5...`);
+        const data = await apiFetch("/api/admin/sync-markets", {
+          method: "POST",
+          body: JSON.stringify({ offset: i * 30 }),
+        });
+        totalCreated += data.created ?? 0;
+        totalUpdated += data.updated ?? 0;
+        totalSkipped += data.skipped ?? 0;
+        if (i < 4) await new Promise(r => setTimeout(r, 2000));
+      }
+      setSyncMarketsResult(JSON.stringify({ success: true, created: totalCreated, updated: totalUpdated, skipped: totalSkipped, total: totalCreated + totalUpdated + totalSkipped }, null, 2));
     } catch (e) {
       setSyncMarketsResult("Error: " + String(e));
     }
@@ -936,11 +947,11 @@ function SystemSection({ apiFetch, adminKey }: { apiFetch: (url: string, opts?: 
         <div style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 10, padding: "16px 20px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: syncMarketsResult ? 12 : 0 }}>
             <div style={{ flex: 1, fontWeight: 600, fontSize: 14 }}>Sync Markets</div>
-            <button onClick={syncMarkets} disabled={syncMarketsResult === "Syncing..."} style={{ padding: "6px 14px", borderRadius: 7, border: "1px solid #334155", background: "#334155", color: syncMarketsResult === "Syncing..." ? "#64748B" : "#94A3B8", fontSize: 12, fontWeight: 600, cursor: syncMarketsResult === "Syncing..." ? "not-allowed" : "pointer" }}>
-              {syncMarketsResult === "Syncing..." ? "⏳ Syncing..." : "Sync Markets"}
+            <button onClick={syncMarkets} disabled={syncMarketsResult.startsWith("Syncing batch")} style={{ padding: "6px 14px", borderRadius: 7, border: "1px solid #334155", background: "#334155", color: syncMarketsResult.startsWith("Syncing batch") ? "#64748B" : "#94A3B8", fontSize: 12, fontWeight: 600, cursor: syncMarketsResult.startsWith("Syncing batch") ? "not-allowed" : "pointer" }}>
+              {syncMarketsResult.startsWith("Syncing batch") ? `⏳ ${syncMarketsResult}` : "Sync Markets"}
             </button>
           </div>
-          {syncMarketsResult && syncMarketsResult !== "Syncing..." && (
+          {syncMarketsResult && !syncMarketsResult.startsWith("Syncing batch") && (
             <pre style={{ fontSize: 11, color: "#64748B", background: "#0F172A", padding: "8px 10px", borderRadius: 6, overflow: "auto", margin: 0 }}>
               {syncMarketsResult}
             </pre>
