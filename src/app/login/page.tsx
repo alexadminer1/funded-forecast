@@ -19,6 +19,7 @@ function LoginInner() {
   const searchParams = useSearchParams();
   const [mode, setMode] = useState<"login" | "register">("login");
   const planId = searchParams.get("planId");
+  const next = searchParams.get("next");
 
   useEffect(() => {
     if (searchParams.get("mode") === "register") setMode("register");
@@ -66,7 +67,7 @@ function LoginInner() {
         if (data.token) {
           setToken(data.token);
           await startChallengeIfNeeded(data.token);
-          router.push(planId ? `/checkout?planId=${planId}` : "/dashboard");
+          router.push(next ?? (planId ? `/checkout?planId=${planId}` : "/dashboard"));
         } else setError(data.error ?? "Login failed");
       } else {
         if (form.password !== form.confirmPassword) { setError("Passwords do not match"); setLoading(false); return; }
@@ -80,11 +81,7 @@ function LoginInner() {
         });
         if (data.token) {
           setToken(data.token);
-          if (planId) {
-            router.push(`/checkout?planId=${planId}`);
-          } else {
-            router.push("/dashboard");
-          }
+          router.push(next ?? (planId ? `/checkout?planId=${planId}` : "/dashboard"));
         } else setError(data.error ?? "Registration failed");
       }
     } catch { setError("Request failed"); }
