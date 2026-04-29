@@ -79,15 +79,18 @@ export default function MarketsPage() {
   const observerRef = useRef<IntersectionObserver | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
-  // Category counts from loaded markets
   const [allMarkets, setAllMarkets] = useState<Market[]>([]);
-  const [categoryIndex, setCategoryIndex] = useState<Record<string, number>>({});
   const categoryCounts = allMarkets.reduce((acc, m) => {
     const cat = normalizeCategory(m.category);
     acc[cat] = (acc[cat] ?? 0) + 1;
     return acc;
   }, {} as Record<string, number>);
-  const visibleCategories = ["all", ...Object.entries(categoryCounts).filter(([, count]) => count >= 5).map(([cat]) => cat)];
+  const visibleCategories = [
+    "all",
+    ...Object.entries(categoryCounts)
+      .sort(([, a], [, b]) => b - a)
+      .map(([cat]) => cat),
+  ];
 
   const fetchMarkets = useCallback(async (reset = false) => {
     const offset = reset ? 0 : offsetRef.current;
@@ -105,7 +108,6 @@ export default function MarketsPage() {
 
     if (data.success) {
       setMarkets(prev => reset ? data.markets : [...prev, ...data.markets]);
-      // Accumulate all markets for category counts — never reset
       setAllMarkets(prev => {
         const existingIds = new Set(prev.map((m: Market) => m.id));
         const newOnes = data.markets.filter((m: Market) => !existingIds.has(m.id));
@@ -142,7 +144,6 @@ export default function MarketsPage() {
           <p style={{ color: "var(--text-muted)", fontSize: 14 }}>Trade event contracts and build your track record.</p>
         </div>
 
-        {/* Search + Sort */}
         <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
           <div style={{ flex: 1, position: "relative" }}>
             <input value={searchInput} onChange={e => setSearchInput(e.target.value)} placeholder="Search markets…"
@@ -155,7 +156,6 @@ export default function MarketsPage() {
           </select>
         </div>
 
-        {/* Categories — only show if 5+ markets */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 28 }}>
           {visibleCategories.map(c => (
             <button key={c} onClick={() => setCategory(c)} style={{
@@ -170,7 +170,6 @@ export default function MarketsPage() {
           ))}
         </div>
 
-        {/* Grid */}
         {loading ? (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 12 }}>
             {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
