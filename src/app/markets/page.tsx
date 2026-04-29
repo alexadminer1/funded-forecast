@@ -81,6 +81,7 @@ export default function MarketsPage() {
 
   // Category counts from loaded markets
   const [allMarkets, setAllMarkets] = useState<Market[]>([]);
+  const [categoryIndex, setCategoryIndex] = useState<Record<string, number>>({});
   const categoryCounts = allMarkets.reduce((acc, m) => {
     const cat = normalizeCategory(m.category);
     acc[cat] = (acc[cat] ?? 0) + 1;
@@ -104,8 +105,12 @@ export default function MarketsPage() {
 
     if (data.success) {
       setMarkets(prev => reset ? data.markets : [...prev, ...data.markets]);
-      if (reset) setAllMarkets(data.markets);
-      else setAllMarkets(prev => [...prev, ...data.markets]);
+      // Accumulate all markets for category counts — never reset
+      setAllMarkets(prev => {
+        const existingIds = new Set(prev.map((m: Market) => m.id));
+        const newOnes = data.markets.filter((m: Market) => !existingIds.has(m.id));
+        return [...prev, ...newOnes];
+      });
       setHasMore(data.hasMore);
       offsetRef.current = offset + data.markets.length;
     }
