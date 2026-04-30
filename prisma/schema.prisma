@@ -192,6 +192,7 @@ model Challenge {
   drawdownViolated    Boolean   @default(false)
   dayStartBalance     Float?
   dayStartDate        DateTime?
+  lastTradingDay      DateTime?
   violationReason     String?
   startedAt           DateTime  @default(now())
   endedAt             DateTime?

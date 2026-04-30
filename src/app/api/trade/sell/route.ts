@@ -221,6 +221,23 @@ export async function POST(req: NextRequest) {
             },
           });
         }
+
+        // Counting trading days (race-safe via conditional update)
+        const todayUtcStart = new Date();
+        todayUtcStart.setUTCHours(0, 0, 0, 0);
+        await tx.challenge.updateMany({
+          where: {
+            id: challengeId,
+            OR: [
+              { lastTradingDay: null },
+              { lastTradingDay: { lt: todayUtcStart } },
+            ],
+          },
+          data: {
+            tradingDaysCount: { increment: 1 },
+            lastTradingDay: todayUtcStart,
+          },
+        });
       }
 
       await tx.user.update({ where: { id: userId }, data: { lastTradeAt: new Date() } });

@@ -186,9 +186,6 @@ export async function POST(req: NextRequest) {
                       violationReason: `Drawdown ${totalDrawdownPct}% after market resolve`,
                       endedAt: new Date(),
                     } : {}),
-                    ...(profitTargetMet && !challenge.profitTargetMet ? {
-                      tradingDaysCount: { increment: 0 },
-                    } : {}),
                   },
                 });
               }
