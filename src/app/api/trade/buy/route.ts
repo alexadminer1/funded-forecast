@@ -7,6 +7,14 @@ import { verifyToken } from "@/lib/auth";
 const MAX_SLIPPAGE = 0.02;
 const SANDBOX_MAX_POSITION_PCT = 2;
 
+class PriceMovedError extends Error {
+  currentPrice: number;
+  constructor(currentPrice: number) {
+    super("PRICE_MOVED");
+    this.currentPrice = currentPrice;
+  }
+}
+
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
@@ -63,10 +71,11 @@ export async function POST(req: NextRequest) {
       const market = await tx.market.findUnique({ where: { id: marketId } });
       if (!market) throw new Error("MARKET_NOT_FOUND");
       if (market.status !== "live") throw new Error("MARKET_NOT_LIVE");
-      if (market.negRisk) throw new Error("NEG_RISK_NOT_SUPPORTED");
 
       const currentPrice = side === "yes" ? market.yesPrice : market.noPrice;
-      if (Math.abs(clientPrice - currentPrice) > MAX_SLIPPAGE) throw new Error("PRICE_MOVED");
+      if (Math.abs(clientPrice - currentPrice) > MAX_SLIPPAGE) {
+        throw new PriceMovedError(currentPrice);
+      }
 
       const executionPrice = currentPrice;
       const cost = parseFloat((amount * executionPrice).toFixed(2));
@@ -149,6 +158,7 @@ export async function POST(req: NextRequest) {
         },
       });
 
+
       // Update challenge balance and check drawdown
       if (activeChallenge && challengeId) {
         const newRealizedBalance = parseFloat((activeChallenge.realizedBalance - cost).toFixed(2));
@@ -183,6 +193,7 @@ export async function POST(req: NextRequest) {
       return { trade, position, balanceAfter: newBalance };
     }, { timeout: 15000 });
 
+
     return NextResponse.json({
       success: true,
       tradeId: result.trade.id,
@@ -191,12 +202,20 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error: unknown) {
+    if (error instanceof PriceMovedError) {
+      return NextResponse.json(
+        {
+          error: "Price moved beyond slippage tolerance. Please retry.",
+          currentPrice: error.currentPrice,
+        },
+        { status: 409 }
+      );
+    }
+
     const message = error instanceof Error ? error.message : "UNKNOWN_ERROR";
     const clientErrors: Record<string, { status: number; error: string }> = {
       MARKET_NOT_FOUND:             { status: 404, error: "Market not found" },
       MARKET_NOT_LIVE:              { status: 400, error: "Market is not live" },
-      NEG_RISK_NOT_SUPPORTED:       { status: 400, error: "This market type is not supported" },
-      PRICE_MOVED:                  { status: 409, error: "Price moved beyond slippage tolerance. Please retry." },
       INSUFFICIENT_BALANCE:         { status: 400, error: "Insufficient balance" },
       POSITION_SIZE_EXCEEDED:       { status: 400, error: "Position size exceeds limit" },
       POSITION_NOT_OPEN:            { status: 400, error: "Position is not open" },

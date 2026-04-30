@@ -6,6 +6,14 @@ import { verifyToken } from "@/lib/auth";
 
 const MAX_SLIPPAGE = 0.02;
 
+class PriceMovedError extends Error {
+  currentPrice: number;
+  constructor(currentPrice: number) {
+    super("PRICE_MOVED");
+    this.currentPrice = currentPrice;
+  }
+}
+
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
@@ -62,10 +70,11 @@ export async function POST(req: NextRequest) {
       const market = await tx.market.findUnique({ where: { id: marketId } });
       if (!market) throw new Error("MARKET_NOT_FOUND");
       if (market.status !== "live") throw new Error("MARKET_NOT_LIVE");
-      if (market.negRisk) throw new Error("NEG_RISK_NOT_SUPPORTED");
 
       const currentPrice = side === "yes" ? market.yesPrice : market.noPrice;
-      if (Math.abs(clientPrice - currentPrice) > MAX_SLIPPAGE) throw new Error("PRICE_MOVED");
+      if (Math.abs(clientPrice - currentPrice) > MAX_SLIPPAGE) {
+        throw new PriceMovedError(currentPrice);
+      }
 
       const executionPrice = currentPrice;
 
@@ -107,6 +116,7 @@ export async function POST(req: NextRequest) {
         },
       });
 
+
       // Balance scoped to mode
       const lastLog = await tx.balanceLog.findFirst({
         where: challengeId !== null
@@ -135,6 +145,7 @@ export async function POST(req: NextRequest) {
         const newPeakBalance = Math.max(activeChallenge.peakBalance, newRealizedBalance);
         const profitPct = parseFloat(
           (((newRealizedBalance - activeChallenge.startBalance) / activeChallenge.startBalance) * 100).toFixed(2)
+
         );
         const profitTargetMet = profitPct >= activeChallenge.profitTargetPct;
 
@@ -173,12 +184,20 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error: unknown) {
+    if (error instanceof PriceMovedError) {
+      return NextResponse.json(
+        {
+          error: "Price moved beyond slippage tolerance. Please retry.",
+          currentPrice: error.currentPrice,
+        },
+        { status: 409 }
+      );
+    }
+
     const message = error instanceof Error ? error.message : "UNKNOWN_ERROR";
     const clientErrors: Record<string, { status: number; error: string }> = {
       MARKET_NOT_FOUND:       { status: 404, error: "Market not found" },
       MARKET_NOT_LIVE:        { status: 400, error: "Market is not live" },
-      NEG_RISK_NOT_SUPPORTED: { status: 400, error: "This market type is not supported" },
-      PRICE_MOVED:            { status: 409, error: "Price moved beyond slippage tolerance. Please retry." },
       POSITION_NOT_FOUND:     { status: 404, error: "No open position found for this market and side" },
       INSUFFICIENT_SHARES:    { status: 400, error: "Not enough shares to sell" },
     };

@@ -22,15 +22,22 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // 1. Get our live markets
+    // 1. Get our live markets (skip negRisk — those resolve manually via force_resolve)
     const liveMarkets = await prisma.market.findMany({
       where: { status: "live" },
-      select: { id: true, conditionId: true },
+      select: { id: true, conditionId: true, negRisk: true },
     });
 
     if (liveMarkets.length === 0) {
       return NextResponse.json({ success: true, resolved: 0, message: "No live markets" });
     }
+
+    const negRiskIds = new Set(
+      liveMarkets.filter((m) => m.negRisk).map((m) => m.id)
+    );
+    const eligibleMarketIds = new Set(
+      liveMarkets.filter((m) => !m.negRisk).map((m) => m.id)
+    );
 
     // 2. Fetch from Polymarket
     const res = await fetch(
@@ -44,12 +51,16 @@ export async function POST(req: NextRequest) {
 
     const markets: PolymarketMarket[] = await res.json();
 
-    // Filter only markets we have in DB
-    const ourMarketIds = new Set(liveMarkets.map((m) => m.id));
+    let skippedNegRisk = 0;
 
-    // 3. Filter resolved markets
+    // 3. Filter resolved markets (negRisk excluded — handled manually)
     const resolvedMarkets = markets.filter((m) => {
-      if (!ourMarketIds.has(m.id)) return false;
+      if (negRiskIds.has(m.id)) {
+        console.warn(`[RESOLVE] negRisk skipped auto-resolve: ${m.id}`);
+        skippedNegRisk++;
+        return false;
+      }
+      if (!eligibleMarketIds.has(m.id)) return false;
       if (!m.closed) return false;
       try {
         const prices = JSON.parse(m.outcomePrices);
@@ -146,6 +157,7 @@ export async function POST(req: NextRequest) {
                 where: { id: fresh.challengeId },
               });
 
+
               if (challenge && challenge.status === "active") {
                 const newRealizedBalance = parseFloat(
                   (challenge.realizedBalance + payout).toFixed(2)
@@ -212,6 +224,7 @@ export async function POST(req: NextRequest) {
       resolved: totalResolved,
       positionsProcessed: totalPositionsProcessed,
       checkedMarkets: markets.length,
+      skippedNegRisk,
     });
 
   } catch (error) {
