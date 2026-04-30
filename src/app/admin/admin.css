@@ -1,0 +1,13 @@
+:root {
+  --admin-bg-page:     #0F172A;
+  --admin-bg-surface:  #1E293B;
+  --admin-bg-elevated: #0D1521;
+  --admin-border:      #334155;
+  --admin-text:        #F1F5F9;
+  --admin-text-muted:  #94A3B8;
+  --admin-text-dim:    #475569;
+  --admin-accent:      #22C55E;
+  --admin-accent-dark: #071A0E;
+  --admin-red:         #EF4444;
+  --admin-blue:        #3B82F6;
+}
