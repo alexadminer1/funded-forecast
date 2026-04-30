@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { resolveMarketPositions } from "@/lib/marketResolve";
 
 const ADMIN_KEY = process.env.ADMIN_API_KEY;
 
@@ -79,7 +80,7 @@ export async function POST(req: NextRequest) {
       // Determine winner
       const prices = JSON.parse(polyMarket.outcomePrices);
       const yesPrice = parseFloat(prices[0]);
-      const winningOutcome = yesPrice > 0.99 ? "yes" : "no";
+      const winningOutcome: "yes" | "no" = yesPrice > 0.99 ? "yes" : "no";
 
       // Update market status
       await prisma.market.update({
@@ -92,111 +93,13 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // Get all open positions for this market
-      const openPositions = await prisma.position.findMany({
-        where: {
-          marketId: polyMarket.id,
-          status: "open",
-          resolvedAt: null,
-        },
-      });
+      // Resolve open positions via shared lib
+      const { positionsProcessed } = await resolveMarketPositions(
+        polyMarket.id,
+        winningOutcome
+      );
 
-      // Process each position in its own transaction
-      for (const position of openPositions) {
-        try {
-          await prisma.$transaction(async (tx) => {
-            // Idempotency check
-            const fresh = await tx.position.findUnique({
-              where: { id: position.id },
-            });
-
-            if (!fresh || fresh.resolvedAt !== null) return;
-
-            const isWinner = fresh.side === winningOutcome;
-            const payout = isWinner ? parseFloat((fresh.shares * 1.0).toFixed(2)) : 0;
-            const profit = parseFloat((payout - fresh.costBasis).toFixed(2));
-
-            // Get current balance
-            const lastLog = await tx.balanceLog.findFirst({
-              where: { userId: fresh.userId },
-              orderBy: { createdAt: "desc" },
-              select: { runningBalance: true },
-            });
-
-            const currentBalance = lastLog?.runningBalance ?? 0;
-            const newBalance = parseFloat((currentBalance + payout).toFixed(2));
-
-            // Insert balance log
-            await tx.balanceLog.create({
-              data: {
-                userId: fresh.userId,
-                challengeId: fresh.challengeId,
-                type: "market_resolve",
-                amount: payout,
-                balanceBefore: currentBalance,
-                balanceAfter: newBalance,
-                runningBalance: newBalance,
-              },
-            });
-
-            // Update position
-            await tx.position.update({
-              where: { id: fresh.id },
-              data: {
-                status: "resolved",
-                resolvedAt: new Date(),
-                shares: 0,
-                realizedPnl: parseFloat((fresh.realizedPnl + profit).toFixed(2)),
-                closedAt: new Date(),
-              },
-            });
-
-            // Update challenge if applicable
-            if (fresh.challengeId) {
-              const challenge = await tx.challenge.findUnique({
-                where: { id: fresh.challengeId },
-              });
-
-
-              if (challenge && challenge.status === "active") {
-                const newRealizedBalance = parseFloat(
-                  (challenge.realizedBalance + payout).toFixed(2)
-                );
-                const newPeakBalance = Math.max(challenge.peakBalance, newRealizedBalance);
-
-                const profitPct = parseFloat(
-                  (((newRealizedBalance - challenge.startBalance) / challenge.startBalance) * 100).toFixed(2)
-                );
-                const profitTargetMet = profitPct >= challenge.profitTargetPct;
-
-                const totalDrawdownPct = parseFloat(
-                  (((challenge.startBalance - newRealizedBalance) / challenge.startBalance) * 100).toFixed(2)
-                );
-                const drawdownViolated = totalDrawdownPct >= challenge.maxTotalDdPct;
-
-                await tx.challenge.update({
-                  where: { id: fresh.challengeId },
-                  data: {
-                    realizedBalance: newRealizedBalance,
-                    peakBalance: newPeakBalance,
-                    profitTargetMet,
-                    ...(drawdownViolated ? {
-                      drawdownViolated: true,
-                      status: "failed",
-                      violationReason: `Drawdown ${totalDrawdownPct}% after market resolve`,
-                      endedAt: new Date(),
-                    } : {}),
-                  },
-                });
-              }
-            }
-          }, { timeout: 15000 });
-
-          totalPositionsProcessed++;
-        } catch (err) {
-          console.error(`[RESOLVE] Position ${position.id} failed:`, err);
-        }
-      }
+      totalPositionsProcessed += positionsProcessed;
 
       // Audit log
       await prisma.auditLog.create({
@@ -208,7 +111,7 @@ export async function POST(req: NextRequest) {
           action: "market_resolved",
           metadata: {
             winningOutcome,
-            positionsProcessed: openPositions.length,
+            positionsProcessed,
           },
         },
       });
