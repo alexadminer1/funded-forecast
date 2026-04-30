@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
         data: {
           actorId: user.id,
           targetType: 'user',
-          targetId: user.id,
+          targetId: String(user.id),
           category: 'user',
           action: 'user_registered',
           metadata: { provider: 'email' },

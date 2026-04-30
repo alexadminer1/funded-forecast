@@ -262,7 +262,7 @@ model AuditLog {
   id         Int      @id @default(autoincrement())
   actorId    Int?
   targetType String
-  targetId   Int
+  targetId   String
   category   String
   action     String
   metadata   Json?

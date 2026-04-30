@@ -214,7 +214,7 @@ export async function POST(req: NextRequest) {
             data: {
               actorId: userId,
               targetType: "challenge",
-              targetId: challengeId,
+              targetId: String(challengeId),
               category: "challenge",
               action: "challenge_profit_target_met",
               metadata: { profitPct, target: activeChallenge.profitTargetPct, realizedBalance: newRealizedBalance },

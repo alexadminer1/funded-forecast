@@ -106,7 +106,7 @@ export async function POST(req: NextRequest) {
         data: {
           actorId: null,
           targetType: "market",
-          targetId: polyMarket.id as unknown as number,
+          targetId: polyMarket.id,
           category: "market",
           action: "market_resolved",
           metadata: {

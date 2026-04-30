@@ -77,7 +77,7 @@ export async function POST(
       data: {
         actorId: null,
         targetType: "market",
-        targetId: marketId as unknown as number,
+        targetId: marketId,
         category: "market",
         action: "market_force_resolved",
         metadata: {
