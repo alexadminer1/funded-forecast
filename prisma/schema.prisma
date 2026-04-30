@@ -190,6 +190,8 @@ model Challenge {
   tradingDaysCount    Int       @default(0)
   profitTargetMet     Boolean   @default(false)
   drawdownViolated    Boolean   @default(false)
+  dayStartBalance     Float?
+  dayStartDate        DateTime?
   violationReason     String?
   startedAt           DateTime  @default(now())
   endedAt             DateTime?

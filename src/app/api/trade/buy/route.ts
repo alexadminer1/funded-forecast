@@ -15,6 +15,20 @@ class PriceMovedError extends Error {
   }
 }
 
+class DrawdownViolatedError extends Error {
+  challengeId: number;
+  reason: string;
+  constructor(challengeId: number, reason: string) {
+    super("CHALLENGE_DRAWDOWN_VIOLATED");
+    this.challengeId = challengeId;
+    this.reason = reason;
+  }
+}
+
+function todayUtc(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
@@ -60,9 +74,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid price" }, { status: 400 });
   }
 
+  // === Lazy daily reset (outside transaction so it persists even on rollback) ===
+  const activeChallengePre = await prisma.challenge.findFirst({
+    where: { userId, status: "active" },
+  });
+
+  if (activeChallengePre) {
+    const today = todayUtc();
+    const stored = activeChallengePre.dayStartDate?.toISOString().slice(0, 10) ?? null;
+    if (stored !== today) {
+      await prisma.challenge.update({
+        where: { id: activeChallengePre.id },
+        data: {
+          dayStartBalance: activeChallengePre.realizedBalance,
+          dayStartDate: new Date(),
+        },
+      });
+    }
+  }
+
+  let drawdownFail: { challengeId: number; reason: string } | null = null;
+
   try {
     const result = await prisma.$transaction(async (tx) => {
-      // Determine active challenge server-side
       const activeChallenge = await tx.challenge.findFirst({
         where: { userId, status: "active" },
       });
@@ -80,7 +114,6 @@ export async function POST(req: NextRequest) {
       const executionPrice = currentPrice;
       const cost = parseFloat((amount * executionPrice).toFixed(2));
 
-      // Balance scoped to mode (challenge or sandbox)
       const lastLog = await tx.balanceLog.findFirst({
         where: challengeId !== null
           ? { userId, challengeId }
@@ -158,28 +191,34 @@ export async function POST(req: NextRequest) {
         },
       });
 
-
-      // Update challenge balance and check drawdown
+      // === Drawdown checks (challenge mode only) ===
       if (activeChallenge && challengeId) {
         const newRealizedBalance = parseFloat((activeChallenge.realizedBalance - cost).toFixed(2));
         const newPeakBalance = Math.max(activeChallenge.peakBalance, newRealizedBalance);
+
         const totalDrawdownPct = parseFloat(
           (((activeChallenge.startBalance - newRealizedBalance) / activeChallenge.startBalance) * 100).toFixed(2)
         );
 
         if (totalDrawdownPct >= activeChallenge.maxTotalDdPct) {
-          await tx.challenge.update({
-            where: { id: challengeId },
-            data: {
-              realizedBalance: newRealizedBalance,
-              peakBalance: newPeakBalance,
-              status: "failed",
-              drawdownViolated: true,
-              violationReason: `Total drawdown ${totalDrawdownPct}% exceeded limit ${activeChallenge.maxTotalDdPct}%`,
-              endedAt: new Date(),
-            },
-          });
-          throw new Error("CHALLENGE_DRAWDOWN_VIOLATED");
+          throw new DrawdownViolatedError(
+            challengeId,
+            `Total drawdown ${totalDrawdownPct}% exceeded limit ${activeChallenge.maxTotalDdPct}%`
+          );
+        }
+
+        // Daily drawdown check
+        const dayStart = activeChallenge.dayStartBalance ?? newRealizedBalance;
+        if (dayStart > 0) {
+          const dailyDrawdownPct = parseFloat(
+            (((dayStart - newRealizedBalance) / dayStart) * 100).toFixed(2)
+          );
+          if (dailyDrawdownPct >= activeChallenge.maxDailyDdPct) {
+            throw new DrawdownViolatedError(
+              challengeId,
+              `Daily drawdown ${dailyDrawdownPct}% exceeded limit ${activeChallenge.maxDailyDdPct}%`
+            );
+          }
         }
 
         await tx.challenge.update({
@@ -193,7 +232,6 @@ export async function POST(req: NextRequest) {
       return { trade, position, balanceAfter: newBalance };
     }, { timeout: 15000 });
 
-
     return NextResponse.json({
       success: true,
       tradeId: result.trade.id,
@@ -202,6 +240,10 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error: unknown) {
+    if (error instanceof DrawdownViolatedError) {
+      drawdownFail = { challengeId: error.challengeId, reason: error.reason };
+    }
+
     if (error instanceof PriceMovedError) {
       return NextResponse.json(
         {
@@ -212,6 +254,27 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (error instanceof DrawdownViolatedError) {
+      // Persist fail outside the rolled-back transaction
+      try {
+        await prisma.challenge.update({
+          where: { id: error.challengeId },
+          data: {
+            status: "failed",
+            drawdownViolated: true,
+            violationReason: error.reason,
+            endedAt: new Date(),
+          },
+        });
+      } catch (e) {
+        console.error("[BUY] Failed to persist challenge fail:", e);
+      }
+      return NextResponse.json(
+        { error: `Challenge failed: ${error.reason}` },
+        { status: 400 }
+      );
+    }
+
     const message = error instanceof Error ? error.message : "UNKNOWN_ERROR";
     const clientErrors: Record<string, { status: number; error: string }> = {
       MARKET_NOT_FOUND:             { status: 404, error: "Market not found" },
@@ -219,13 +282,12 @@ export async function POST(req: NextRequest) {
       INSUFFICIENT_BALANCE:         { status: 400, error: "Insufficient balance" },
       POSITION_SIZE_EXCEEDED:       { status: 400, error: "Position size exceeds limit" },
       POSITION_NOT_OPEN:            { status: 400, error: "Position is not open" },
-      CHALLENGE_DRAWDOWN_VIOLATED:  { status: 400, error: "Challenge failed: drawdown limit exceeded" },
     };
     if (message in clientErrors) {
       const { status, error } = clientErrors[message];
       return NextResponse.json({ error }, { status });
     }
-    console.error("[BUY] Unexpected error:", error);
+    console.error("[BUY] Unexpected error:", error, drawdownFail);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

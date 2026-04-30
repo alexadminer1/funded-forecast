@@ -14,6 +14,20 @@ class PriceMovedError extends Error {
   }
 }
 
+class DrawdownViolatedError extends Error {
+  challengeId: number;
+  reason: string;
+  constructor(challengeId: number, reason: string) {
+    super("CHALLENGE_DRAWDOWN_VIOLATED");
+    this.challengeId = challengeId;
+    this.reason = reason;
+  }
+}
+
+function todayUtc(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
@@ -59,9 +73,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid price" }, { status: 400 });
   }
 
+  // === Lazy daily reset (outside transaction so it persists even on rollback) ===
+  const activeChallengePre = await prisma.challenge.findFirst({
+    where: { userId, status: "active" },
+  });
+
+  if (activeChallengePre) {
+    const today = todayUtc();
+    const stored = activeChallengePre.dayStartDate?.toISOString().slice(0, 10) ?? null;
+    if (stored !== today) {
+      await prisma.challenge.update({
+        where: { id: activeChallengePre.id },
+        data: {
+          dayStartBalance: activeChallengePre.realizedBalance,
+          dayStartDate: new Date(),
+        },
+      });
+    }
+  }
+
   try {
     const result = await prisma.$transaction(async (tx) => {
-      // Determine active challenge server-side
       const activeChallenge = await tx.challenge.findFirst({
         where: { userId, status: "active" },
       });
@@ -116,7 +148,6 @@ export async function POST(req: NextRequest) {
         },
       });
 
-
       // Balance scoped to mode
       const lastLog = await tx.balanceLog.findFirst({
         where: challengeId !== null
@@ -139,15 +170,39 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // Update challenge realized balance and check profit target
+      // === Challenge balance update + drawdown checks ===
       if (activeChallenge && challengeId) {
         const newRealizedBalance = parseFloat((activeChallenge.realizedBalance + proceeds).toFixed(2));
         const newPeakBalance = Math.max(activeChallenge.peakBalance, newRealizedBalance);
         const profitPct = parseFloat(
           (((newRealizedBalance - activeChallenge.startBalance) / activeChallenge.startBalance) * 100).toFixed(2)
-
         );
         const profitTargetMet = profitPct >= activeChallenge.profitTargetPct;
+
+        // Total drawdown check (sell with loss can violate)
+        const totalDrawdownPct = parseFloat(
+          (((activeChallenge.startBalance - newRealizedBalance) / activeChallenge.startBalance) * 100).toFixed(2)
+        );
+        if (totalDrawdownPct >= activeChallenge.maxTotalDdPct) {
+          throw new DrawdownViolatedError(
+            challengeId,
+            `Total drawdown ${totalDrawdownPct}% exceeded limit ${activeChallenge.maxTotalDdPct}%`
+          );
+        }
+
+        // Daily drawdown check
+        const dayStart = activeChallenge.dayStartBalance ?? newRealizedBalance;
+        if (dayStart > 0) {
+          const dailyDrawdownPct = parseFloat(
+            (((dayStart - newRealizedBalance) / dayStart) * 100).toFixed(2)
+          );
+          if (dailyDrawdownPct >= activeChallenge.maxDailyDdPct) {
+            throw new DrawdownViolatedError(
+              challengeId,
+              `Daily drawdown ${dailyDrawdownPct}% exceeded limit ${activeChallenge.maxDailyDdPct}%`
+            );
+          }
+        }
 
         await tx.challenge.update({
           where: { id: challengeId },
@@ -191,6 +246,26 @@ export async function POST(req: NextRequest) {
           currentPrice: error.currentPrice,
         },
         { status: 409 }
+      );
+    }
+
+    if (error instanceof DrawdownViolatedError) {
+      try {
+        await prisma.challenge.update({
+          where: { id: error.challengeId },
+          data: {
+            status: "failed",
+            drawdownViolated: true,
+            violationReason: error.reason,
+            endedAt: new Date(),
+          },
+        });
+      } catch (e) {
+        console.error("[SELL] Failed to persist challenge fail:", e);
+      }
+      return NextResponse.json(
+        { error: `Challenge failed: ${error.reason}` },
+        { status: 400 }
       );
     }
 
