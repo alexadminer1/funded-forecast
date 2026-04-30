@@ -629,6 +629,15 @@ function MarketsSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestIn
   return (
     <div>
       <SH>Markets</SH>
+      {(() => {
+        const negRiskLive = markets.filter(m => m.negRisk && m.status === "live").length;
+        if (negRiskLive === 0) return null;
+        return (
+          <div style={{ background: "rgba(245, 158, 11, 0.1)", border: "1px solid #F59E0B", borderRadius: 8, padding: "12px 16px", marginBottom: 12, color: "#FCD34D", fontSize: 13 }}>
+            ⚠️ {negRiskLive} negRisk market{negRiskLive !== 1 ? "s" : ""} — auto-resolve disabled. Resolve manually via Force Resolve when closed on Polymarket.
+          </div>
+        );
+      })()}
       <div style={tableWrap}>
         <div style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 1fr 1fr 2fr", padding: "9px 16px", borderBottom: "1px solid #334155", background: "rgba(255,255,255,0.02)" }}>
           {["Title", "Category", "YES", "NO", "Status", "Actions"].map(h => <div key={h} style={thStyle}>{h}</div>)}
@@ -640,7 +649,10 @@ function MarketsSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestIn
               <div style={tdStyle}>{m.category}</div>
               <div style={{ ...tdStyle, color: "#22C55E", fontWeight: 700 }}>{(m.yesPrice * 100).toFixed(0)}¢</div>
               <div style={{ ...tdStyle, color: "#EF4444", fontWeight: 700 }}>{(m.noPrice * 100).toFixed(0)}¢</div>
-              <div style={tdStyle}><Badge label={m.status} color={m.status === "live" ? "#22C55E" : m.status === "resolved" ? "#3B82F6" : "#64748B"} /></div>
+              <div style={{ ...tdStyle, display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+                <Badge label={m.status} color={m.status === "live" ? "#22C55E" : m.status === "resolved" ? "#3B82F6" : "#64748B"} />
+                {m.negRisk && <Badge label="negRisk" color="#F59E0B" />}
+              </div>
               <div style={{ display: "flex", gap: 5, padding: "0 16px" }}>
                 {m.status === "live" && <Btn label="Disable" bg="#334155" color="#94A3B8" onClick={() => marketAction(m.id, "disable")} loading={actionLoading === `${m.id}-disable`} />}
                 {m.status === "live" && <Btn label="Force Resolve" bg="#F59E0B" color="#071A0E" onClick={() => setResolveModal(m.id)} />}
