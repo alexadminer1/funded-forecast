@@ -28,12 +28,10 @@ export default function Footer() {
               <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 16 }}>Quick Menu</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {[
-                  { label: "How it works", href: "/#how" },
-                  { label: "Pricing", href: "/#plans" },
+                  { label: "How it works", href: "/how-it-works" },
+                  { label: "About", href: "/about" },
                   { label: "FAQ", href: "/faq" },
-                  { label: "Leaderboard", href: "/leaderboard" },
                   { label: "Contact", href: "/contact" },
-                  { label: "Support", href: "mailto:support@fundedforecast.com" },
                 ].map(({ label, href }) => (
                   <a key={label} href={href} style={{ fontSize: 13, color: "#64748B", textDecoration: "none" }}>{label}</a>
                 ))}
