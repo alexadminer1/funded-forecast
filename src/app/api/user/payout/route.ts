@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyToken } from "@/lib/auth";
 
-const MIN_PAYOUT = 10;
 const ALLOWED_NETWORKS = ["TRC20", "ERC20", "BEP20", "POLYGON"] as const;
 type Network = typeof ALLOWED_NETWORKS[number];
 
@@ -31,7 +30,7 @@ export async function GET(req: NextRequest) {
   const requests = await prisma.payoutRequest.findMany({
     where: { userId },
     orderBy: { requestedAt: "desc" },
-    select: { id: true, amount: true, netAmount: true, status: true, requestedAt: true, processedAt: true, paidAt: true, walletAddress: true, walletNetwork: true, txHash: true, currency: true, rejectionReason: true },
+    select: { id: true, amount: true, netAmount: true, status: true, requestedAt: true, processedAt: true, paidAt: true, walletAddress: true, walletNetwork: true, txHash: true, currency: true, rejectionReason: true, baseAmountCents: true, refundableFeeBonusCents: true, finalAmountCents: true },
   });
   return NextResponse.json({ success: true, requests });
 }
@@ -57,12 +56,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid challengeId" }, { status: 400 });
   }
 
-  // amount: only number, finite, positive, min, max 2 decimals
+  // amount: only number, finite, positive, max 2 decimals
   if (typeof amount !== "number" || !Number.isFinite(amount)) {
     return NextResponse.json({ error: "Amount must be a finite number" }, { status: 400 });
-  }
-  if (amount < MIN_PAYOUT) {
-    return NextResponse.json({ error: `Minimum payout is $${MIN_PAYOUT}` }, { status: 400 });
   }
   if (Math.round(amount * 100) !== amount * 100) {
     return NextResponse.json({ error: "Amount cannot have more than 2 decimal places" }, { status: 400 });
@@ -84,8 +80,8 @@ export async function POST(req: NextRequest) {
   if (typeof walletAddress !== "string") {
     return NextResponse.json({ error: "Wallet address required" }, { status: 400 });
   }
-  const address = walletAddress.trim();
-  if (!ADDRESS_REGEX[network].test(address)) {
+  const addr = walletAddress.trim();
+  if (!ADDRESS_REGEX[network].test(addr)) {
     return NextResponse.json(
       { error: `Invalid ${network} wallet address format` },
       { status: 400 }
@@ -100,6 +96,43 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Challenge not found or not passed" }, { status: 400 });
   }
 
+  // 1. Min payout check (plan-level or fallback $10)
+  const minPayout = challenge.minPayoutCents != null ? challenge.minPayoutCents / 100 : 10;
+  if (amount < minPayout) {
+    return NextResponse.json({ error: `Minimum payout is $${minPayout.toFixed(2)}` }, { status: 400 });
+  }
+
+  // 2. Max payout cap check
+  if (challenge.payoutCapCents != null) {
+    const maxCap = challenge.payoutCapCents / 100;
+    if (amount > maxCap) {
+      return NextResponse.json({ error: `Maximum payout per request is $${maxCap.toFixed(2)}` }, { status: 400 });
+    }
+  }
+
+  // 3. Cooldown check
+  if (challenge.lastApprovedPayoutAt) {
+    const cooldownMs = (challenge.payoutCooldownDays ?? 14) * 24 * 60 * 60 * 1000;
+    const eligibleAt = new Date(challenge.lastApprovedPayoutAt.getTime() + cooldownMs);
+    if (new Date() < eligibleAt) {
+      return NextResponse.json(
+        { error: `Next payout available on ${eligibleAt.toISOString().slice(0, 10)}` },
+        { status: 400 }
+      );
+    }
+  }
+
+  // 4. Profit share calculation
+  const profitShare = challenge.profitSharePct ?? 80;
+  const profit = round2(challenge.realizedBalance - challenge.startBalance);
+  const baseAmount = round2(profit * profitShare / 100);
+  if (baseAmount <= 0) {
+    return NextResponse.json({ error: "Insufficient profit for payout" }, { status: 400 });
+  }
+  if (amount > baseAmount) {
+    return NextResponse.json({ error: `Available payout is $${baseAmount.toFixed(2)}` }, { status: 400 });
+  }
+
   // Check no pending payout for this challenge
   const existing = await prisma.payoutRequest.findFirst({
     where: { challengeId, status: { in: ["pending", "approved"] } },
@@ -108,17 +141,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Payout already requested for this challenge" }, { status: 400 });
   }
 
-  const maxPayoutAmount = round2(challenge.realizedBalance - challenge.startBalance);
-  if (maxPayoutAmount < MIN_PAYOUT) {
-    return NextResponse.json({ error: "Insufficient profit for payout" }, { status: 400 });
-  }
-  if (amount > maxPayoutAmount) {
-    return NextResponse.json({ error: `Max payout is $${maxPayoutAmount.toFixed(2)}` }, { status: 400 });
-  }
+  // 5. Refundable fee bonus (only on first payout — no prior paid requests)
+  const priorPaid = await prisma.payoutRequest.findFirst({
+    where: { challengeId, status: "paid" },
+  });
+  const bonus = (priorPaid === null && challenge.refundableFeeCents != null)
+    ? challenge.refundableFeeCents / 100
+    : 0;
+  const finalAmount = round2(amount + bonus);
 
-  const feePct = 20;
-  const platformFee = round2(amount * feePct / 100);
-  const netAmount = round2(amount - platformFee);
+  const maxPayoutAmount = baseAmount;
+  const feePct = 0;
+  const platformFee = 0;
+  const netAmount = finalAmount;
 
   const payout = await prisma.payoutRequest.create({
     data: {
@@ -129,9 +164,12 @@ export async function POST(req: NextRequest) {
       feePct,
       platformFee,
       netAmount,
-      walletAddress: address,
+      walletAddress: addr,
       walletNetwork: network,
       currency: "USDT",
+      baseAmountCents: Math.round(amount * 100),
+      refundableFeeBonusCents: Math.round(bonus * 100),
+      finalAmountCents: Math.round(finalAmount * 100),
     },
   });
 

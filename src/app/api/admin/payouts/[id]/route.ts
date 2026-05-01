@@ -97,6 +97,20 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
   }
 
+  // For paid transition: update challenge tracking fields in same transaction
+  if (newStatus === "paid") {
+    const now = new Date();
+    const challengeUpdates: Record<string, unknown> = { lastApprovedPayoutAt: now };
+    if ((current.refundableFeeBonusCents ?? 0) > 0) {
+      challengeUpdates.refundableFeePaidAt = now;
+    }
+    const [payout] = await prisma.$transaction([
+      prisma.payoutRequest.update({ where: { id }, data }),
+      prisma.challenge.update({ where: { id: current.challengeId }, data: challengeUpdates }),
+    ]);
+    return NextResponse.json(payout);
+  }
+
   const payout = await prisma.payoutRequest.update({ where: { id }, data });
   return NextResponse.json(payout);
 }
