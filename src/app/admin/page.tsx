@@ -513,22 +513,25 @@ function ChallengesSection({ apiFetch }: { apiFetch: (url: string, opts?: Reques
       {confirm && <ConfirmDialog title={confirm.title} message={confirm.message} onConfirm={confirm.onConfirm} onCancel={() => setConfirm(null)} />}
       <SH>Challenges</SH>
       <div style={{ display: "flex", gap: 6, marginTop: 16, marginBottom: 4 }}>
-        {["all", "active", "passed", "failed"].map(f => (
+        {["all", "active", "passed", "failed", "expired", "frozen"].map(f => (
           <button key={f} onClick={() => setFilter(f)} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid #334155", background: filter === f ? "#334155" : "transparent", color: filter === f ? "#F1F5F9" : "#475569", fontSize: 12, cursor: "pointer", textTransform: "capitalize" }}>{f}</button>
         ))}
       </div>
       <div style={tableWrap}>
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr 1fr", padding: "9px 16px", borderBottom: "1px solid #334155", background: "rgba(255,255,255,0.02)" }}>
-          {["User", "Stage", "Status", "Start Bal", "Current Bal", "Started", "Actions"].map(h => <div key={h} style={thStyle}>{h}</div>)}
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr", padding: "9px 16px", borderBottom: "1px solid #334155", background: "rgba(255,255,255,0.02)" }}>
+          {["User", "Stage", "Status", "Start Bal", "Current Bal", "Expires", "Share%", "Fee Back", "Started", "Actions"].map(h => <div key={h} style={thStyle}>{h}</div>)}
         </div>
         {loading ? <div style={{ padding: 32, textAlign: "center", color: "#475569" }}>Loading...</div> :
           challenges.map((c, i) => (
-            <div key={c.id} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr 1fr", padding: "10px 16px", alignItems: "center", borderBottom: i < challenges.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
+            <div key={c.id} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr", padding: "10px 16px", alignItems: "center", borderBottom: i < challenges.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
               <div style={tdStyle}>{c.user.email}</div>
               <div style={tdStyle}>{c.stage}</div>
-              <div style={tdStyle}><Badge label={c.status} color={c.status === "active" ? "#22C55E" : c.status === "passed" ? "#3B82F6" : "#EF4444"} /></div>
+              <div style={tdStyle}><Badge label={c.status} color={c.status === "active" ? "#22C55E" : c.status === "passed" ? "#3B82F6" : c.status === "expired" ? "#F59E0B" : c.status === "frozen" ? "#8B5CF6" : "#EF4444"} /></div>
               <div style={{ ...tdStyle, color: "#F1F5F9" }}>${c.startBalance}</div>
               <div style={{ ...tdStyle, color: "#22C55E", fontWeight: 700 }}>${c.realizedBalance.toFixed(2)}</div>
+              <div style={{ ...tdStyle, fontSize: 11 }}>{c.expiresAt ? new Date(c.expiresAt).toLocaleDateString() : "—"}</div>
+              <div style={{ ...tdStyle, fontSize: 11 }}>{c.profitSharePct != null ? `${c.profitSharePct}%` : "—"}</div>
+              <div style={{ ...tdStyle, fontSize: 11 }}>{c.refundableFeePaidAt ? <span style={{ color: "#22C55E" }}>paid</span> : c.refundableFeeCents ? <span style={{ color: "#F59E0B" }}>pending</span> : "—"}</div>
               <div style={{ ...tdStyle, fontSize: 11 }}>{fmt(c.createdAt ?? c.startedAt)}</div>
               <div style={{ display: "flex", gap: 5, padding: "0 16px" }}>
                 {c.status === "active" && <Btn label="Fail" bg="#EF4444" onClick={() => confirmAction("Fail Challenge", "This will permanently fail the user's active challenge. Are you sure?", () => action(c.id, c.userId, "fail_challenge"))} loading={actionLoading === `${c.id}-fail_challenge`} />}
@@ -1279,8 +1282,10 @@ function PayoutsSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestIn
                   <span style={{ fontSize: 11, color: "#475569" }}>{item.user?.email}</span>
                   <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: `${STATUS_COLOR[item.status]}18`, color: STATUS_COLOR[item.status] }}>{item.status.toUpperCase()}</span>
                 </div>
-                <div style={{ fontSize: 12, color: "#475569", display: "flex", gap: 16 }}>
-                  <span>Amount: <span style={{ color: "#22C55E", fontWeight: 700 }}>${item.netAmount}</span></span>
+                <div style={{ fontSize: 12, color: "#475569", display: "flex", gap: 16, flexWrap: "wrap" }}>
+                  <span>Base: <span style={{ color: "#22C55E", fontWeight: 700 }}>${item.baseAmountCents != null ? (item.baseAmountCents / 100).toFixed(2) : item.amount}</span></span>
+                  {(item.refundableFeeBonusCents ?? 0) > 0 && <span>Fee bonus: <span style={{ color: "#F59E0B", fontWeight: 700 }}>+${(item.refundableFeeBonusCents / 100).toFixed(2)}</span> <span style={{ color: "#22C55E", fontSize: 10 }}>1st</span></span>}
+                  <span>Final: <span style={{ color: "#F1F5F9", fontWeight: 700 }}>${item.finalAmountCents != null ? (item.finalAmountCents / 100).toFixed(2) : item.netAmount}</span></span>
                   <span>Network: <span style={{ color: "#94A3B8" }}>{item.walletNetwork}</span></span>
                   <span>Wallet: <span style={{ color: "#94A3B8", fontFamily: "monospace" }}>{item.walletAddress?.slice(0, 12)}...</span></span>
                   <span>Requested: {new Date(item.requestedAt).toLocaleDateString()}</span>
