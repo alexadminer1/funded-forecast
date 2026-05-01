@@ -165,6 +165,13 @@ model ChallengePlan {
   maxPositionSizePct Float
   minTradingDays     Int
   payoutCap          Float?
+  priceCents             Int     @default(0)
+  refundableFeeCents     Int     @default(0)
+  maxPayoutCapCents      Int     @default(0)
+  minPayoutCents         Int     @default(5000)
+  profitSharePct         Float   @default(80)
+  challengePeriodDays    Int     @default(30)
+  payoutCooldownDays     Int     @default(14)
   isActive           Boolean    @default(true)
   isPopular          Boolean    @default(false)
   order              Int        @default(0)
@@ -194,6 +201,14 @@ model Challenge {
   dayStartDate        DateTime?
   lastTradingDay      DateTime?
   violationReason     String?
+  expiresAt              DateTime?
+  payoutCapCents         Int?
+  minPayoutCents         Int?
+  profitSharePct         Float?
+  refundableFeeCents     Int?
+  payoutCooldownDays     Int?
+  refundableFeePaidAt    DateTime?
+  lastApprovedPayoutAt   DateTime?
   startedAt           DateTime  @default(now())
   endedAt             DateTime?
 
@@ -250,6 +265,9 @@ model PayoutRequest {
   walletNetwork   String?
   txHash          String?
   currency        String    @default("USDT")
+  baseAmountCents         Int?
+  refundableFeeBonusCents Int?
+  finalAmountCents        Int?
 
   user      User      @relation(fields: [userId], references: [id])
   challenge Challenge @relation(fields: [challengeId], references: [id])
