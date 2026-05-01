@@ -203,13 +203,25 @@ export default async function Home() {
             <h2 style={h2}>Choose your challenge</h2>
             <div className="ff-grid-plans" style={{ display: "grid", gridTemplateColumns: `repeat(${plans.length}, 1fr)`, gap: 16 }}>
               {plans.map((plan) => {
+                const displayPrice = plan.priceCents > 0 ? (plan.priceCents / 100).toFixed(2) : plan.price.toFixed(2);
+                const profitTarget = Math.round(plan.accountSize * plan.profitTargetPct / 100);
+                const maxLossDollar = Math.round(plan.accountSize * plan.maxLossPct / 100);
+                const dailyLossDollar = Math.round(plan.accountSize * plan.dailyLossPct / 100);
+                const payoutCap = plan.maxPayoutCapCents > 0 ? `$${Math.round(plan.maxPayoutCapCents / 100).toLocaleString()}` : "—";
+                const refundableFee = plan.priceCents > 0 ? `$${(plan.priceCents / 100).toFixed(2)}` : `$${plan.price.toFixed(2)}`;
+                const profitShareDisplay = plan.profitSharePct > 0 ? `${plan.profitSharePct}%` : "80%";
                 const params = [
-                  { label: "Profit Target", value: `${plan.profitTargetPct}%` },
-                  { label: "Max Loss Limit", value: `${plan.maxLossPct}%` },
-                  { label: "Daily Loss Limit", value: `${plan.dailyLossPct}%` },
-                  { label: "Min Trading Days", value: String(plan.minTradingDays) },
-                  { label: "Profit Share", value: "80%" },
-                  { label: "Refundable Fee", value: `$${plan.price}` },
+                  { label: "Profit Target", value: `$${profitTarget.toLocaleString()} (${plan.profitTargetPct}%)` },
+                  { label: "Maximum Loss Limit", value: `${plan.maxLossPct}% ($${maxLossDollar})` },
+                  { label: "Daily Loss Limit", value: `${plan.dailyLossPct}% ($${dailyLossDollar})` },
+                  { label: "Max Payout Cap", value: `${payoutCap} / request` },
+                  { label: "Challenge Period", value: `${plan.challengePeriodDays ?? 30} Days` },
+                  { label: "Rewards %", value: "70–90%" },
+                  { label: "Payout Frequency", value: "Bi-Weekly" },
+                  { label: "Priority Support", value: "✓" },
+                  { label: "All Markets", value: "✓" },
+                  { label: "Refundable Fee", value: refundableFee },
+                  { label: "Profit Share", value: profitShareDisplay },
                 ];
                 return (
                 <div key={plan.id} style={{
@@ -223,14 +235,6 @@ export default async function Home() {
                   flexDirection: "column",
                   gap: 0,
                 }}>
-                  {/* -50% badge top right */}
-                  <div style={{
-                    position: "absolute", top: 14, right: 14,
-                    background: "#F59E0B", color: "#000",
-                    fontSize: 10, fontWeight: 800, letterSpacing: "0.06em",
-                    padding: "3px 8px", borderRadius: 6,
-                  }}>-50%</div>
-
                   {/* Best value badge */}
                   {plan.isPopular && (
                     <div style={{
@@ -260,8 +264,7 @@ export default async function Home() {
 
                   {/* Price row */}
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, justifyContent: "center" }}>
-                    <span style={{ fontSize: 20, fontWeight: 800, color: "#F1F5F9" }}>${plan.price}</span>
-                    <span style={{ fontSize: 14, color: "#475569", textDecoration: "line-through" }}>${plan.price * 2}</span>
+                    <span style={{ fontSize: 20, fontWeight: 800, color: "#F1F5F9" }}>${displayPrice}</span>
                   </div>
 
                   {/* Params list */}
