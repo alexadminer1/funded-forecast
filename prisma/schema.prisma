@@ -363,3 +363,268 @@ model LeaderboardEntry {
   @@index([isActive])
   @@index([totalPnl])
 }
+
+
+// ─────────────────────────────────────────────────────────────
+// AFFILIATE PROGRAM — Phase 1 MVP
+// Added 2026-05-01. Do not modify existing models above.
+// ─────────────────────────────────────────────────────────────
+
+enum AffiliateStatus {
+  pending
+  approved
+  rejected
+  banned
+}
+
+enum AffiliateConversionStatus {
+  pending
+  pending_review
+  approved
+  paid
+  rejected
+  clawback
+  frozen
+}
+
+enum AffiliatePayoutStatus {
+  requested
+  approved
+  processing
+  completed
+  failed
+  cancelled
+}
+
+enum AffiliateLedgerBucket {
+  pending
+  available
+  frozen
+  negative
+}
+
+enum AffiliateLedgerType {
+  commission_pending
+  commission_approved
+  commission_rejected
+  commission_frozen
+  commission_unfrozen
+  payout_paid
+  clawback
+  negative_offset
+  adjustment_credit
+  adjustment_debit
+}
+
+enum KycStatus {
+  not_required
+  required
+  submitted
+  verified
+  rejected
+}
+
+enum AffiliatePaymentMethod {
+  usdt_trc20
+  usdc_polygon
+  usdt_erc20
+  usdc_erc20
+}
+
+enum AffiliateRejectionReason {
+  refund
+  chargeback
+  inactivity
+  fraud
+  manual
+  manual_fraud
+  wallet_collision
+  referred_user_banned
+}
+
+model Affiliate {
+  id                       Int                     @id @default(autoincrement())
+  userId                   Int                     @unique
+  refCode                  String                  @unique
+  status                   AffiliateStatus         @default(pending)
+  tier                     String                  @default("starter")
+  applicationData          Json
+  approvedAt               DateTime?
+  approvedBy               String?
+  rejectionReason          String?
+  isVerified               Boolean                 @default(false)
+  suspiciousFlag           Boolean                 @default(false)
+  suspiciousReason         String?
+  paymentMethod            AffiliatePaymentMethod?
+  paymentWallet            String?
+  paymentWalletVerifiedAt  DateTime?
+  walletChangedAt          DateTime?
+  walletLockUntil          DateTime?
+  walletRequiresReview     Boolean                 @default(false)
+  kycStatus                KycStatus               @default(not_required)
+  kycVerifiedAt            DateTime?
+  kycCountry               String?
+  kycAdminNote             String?
+  balancePending           Float                   @default(0)
+  balanceAvailable         Float                   @default(0)
+  balanceFrozen            Float                   @default(0)
+  balanceNegative          Float                   @default(0)
+  lifetimeEarned           Float                   @default(0)
+  lifetimePaid             Float                   @default(0)
+  lifetimeClawedBack       Float                   @default(0)
+  salesCount30d            Int                     @default(0)
+  parentAffiliateId        Int?
+  customCommissionRate     Float?
+  notificationsEnabled     Boolean                 @default(false)
+  acceptedTermsVersion     String                  @default("1.0")
+  acceptedTermsAt          DateTime
+  programVersion           String                  @default("1.0")
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+
+  parent      Affiliate?            @relation("AffiliateParent", fields: [parentAffiliateId], references: [id], onDelete: SetNull)
+  children    Affiliate[]           @relation("AffiliateParent")
+  clicks      AffiliateClick[]
+  conversions AffiliateConversion[]
+  ledger      AffiliateLedger[]
+  payouts     AffiliatePayout[]
+
+  @@index([status])
+  @@index([tier])
+  @@index([suspiciousFlag])
+  @@index([createdAt])
+}
+
+model AffiliateClick {
+  id                Int      @id @default(autoincrement())
+  affiliateId       Int
+  refCode           String
+  ipHash            String
+  ipSalt            String?
+  countryCode       String?
+  userAgent         String?
+  referer           String?
+  landingUrl        String?
+  utmSource         String?
+  utmMedium         String?
+  utmCampaign       String?
+  utmContent        String?
+  cookieId          String
+  convertedToUserId Int?
+  createdAt         DateTime @default(now())
+  expiresAt         DateTime
+
+  affiliate   Affiliate             @relation(fields: [affiliateId], references: [id], onDelete: Restrict)
+  conversions AffiliateConversion[]
+
+  @@index([expiresAt])
+  @@index([cookieId])
+  @@index([convertedToUserId, createdAt])
+  @@index([affiliateId, createdAt])
+}
+
+model AffiliateConversion {
+  id                          Int                        @id @default(autoincrement())
+  affiliateId                 Int
+  referredUserId              Int
+  paymentId                   Int                        @unique
+  planId                      Int
+  clickId                     Int?
+  grossAmount                 Float
+  discountAmount              Float                      @default(0)
+  processorFeeAmount          Float                      @default(0)
+  netAmount                   Float
+  commissionRate              Float
+  commissionAmount            Float
+  status                      AffiliateConversionStatus  @default(pending)
+  previousStatus              AffiliateConversionStatus?
+  pendingUntil                DateTime
+  paymentStatusAtCreation     String
+  paymentStatusLastChecked    String?
+  paymentStatusLastCheckedAt  DateTime?
+  approvedAt                  DateTime?
+  rejectedAt                  DateTime?
+  rejectionReason             AffiliateRejectionReason?
+  reviewedBy                  String?
+  reviewNote                  String?
+  reviewRequiredAt            DateTime?
+  paidAt                      DateTime?
+  payoutId                    Int?
+  activityCheckedAt           DateTime?
+  referralActivityDays        Int                        @default(0)
+  referralTradesCount         Int                        @default(0)
+  frozenFromBucket            AffiliateLedgerBucket?
+  lastStatusChangeAt          DateTime
+  createdAt                   DateTime                   @default(now())
+  updatedAt                   DateTime                   @updatedAt
+
+  affiliate     Affiliate        @relation(fields: [affiliateId], references: [id], onDelete: Restrict)
+  click         AffiliateClick?  @relation(fields: [clickId], references: [id], onDelete: SetNull)
+  payout        AffiliatePayout? @relation(fields: [payoutId], references: [id], onDelete: SetNull)
+  ledgerEntries AffiliateLedger[]
+
+  @@index([affiliateId, status])
+  @@index([referredUserId])
+  @@index([status, pendingUntil])
+  @@index([reviewRequiredAt])
+  @@index([payoutId])
+}
+
+model AffiliateLedger {
+  id               Int                   @id @default(autoincrement())
+  affiliateId      Int
+  conversionId     Int?
+  payoutId         Int?
+  type             AffiliateLedgerType
+  bucket           AffiliateLedgerBucket
+  amount           Float
+  balanceAfter     Float
+  operationGroupId String
+  reason           String?
+  createdByAdmin   String?
+  createdAt        DateTime              @default(now())
+
+  affiliate  Affiliate            @relation(fields: [affiliateId], references: [id], onDelete: Restrict)
+  conversion AffiliateConversion? @relation(fields: [conversionId], references: [id], onDelete: Restrict)
+  payout     AffiliatePayout?     @relation(fields: [payoutId], references: [id], onDelete: Restrict)
+
+  @@index([affiliateId, bucket])
+  @@index([operationGroupId])
+  @@index([createdAt])
+  @@index([conversionId])
+  @@index([payoutId])
+}
+
+model AffiliatePayout {
+  id                    Int                    @id @default(autoincrement())
+  affiliateId           Int
+  status                AffiliatePayoutStatus  @default(requested)
+  amount                Float
+  networkFee            Float                  @default(0)
+  amountAfterFee        Float
+  paymentMethod         AffiliatePaymentMethod
+  paymentWallet         String
+  network               String
+  includedConversionIds Json
+  transactionHash       String?                @unique
+  nowpaymentsBatchId    String?
+  requestedAt           DateTime
+  approvedAt            DateTime?
+  approvedBy            String?
+  processedAt           DateTime?
+  completedAt           DateTime?
+  failedAt              DateTime?
+  cancelledAt           DateTime?
+  failureReason         String?
+  adminNote             String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  affiliate     Affiliate             @relation(fields: [affiliateId], references: [id], onDelete: Restrict)
+  conversions   AffiliateConversion[]
+  ledgerEntries AffiliateLedger[]
+
+  @@index([affiliateId, status])
+  @@index([status])
+  @@index([requestedAt])
+}
