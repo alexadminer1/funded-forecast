@@ -82,6 +82,12 @@ export async function POST(req: NextRequest) {
             maxTotalDdPct: plan.maxLossPct,
             maxPositionSizePct: plan.maxPositionSizePct,
             minTradingDays: plan.minTradingDays,
+            expiresAt: new Date(Date.now() + plan.challengePeriodDays * 24 * 60 * 60 * 1000),
+            payoutCapCents: plan.maxPayoutCapCents,
+            minPayoutCents: plan.minPayoutCents,
+            profitSharePct: plan.profitSharePct,
+            refundableFeeCents: plan.refundableFeeCents,
+            payoutCooldownDays: plan.payoutCooldownDays,
           },
         });
         await prisma.balanceLog.create({

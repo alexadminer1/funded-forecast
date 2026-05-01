@@ -99,6 +99,10 @@ export async function POST(req: NextRequest) {
       });
       const challengeId = activeChallenge ? activeChallenge.id : null;
 
+      if (activeChallenge && activeChallenge.expiresAt && new Date() > activeChallenge.expiresAt) {
+        throw new Error("CHALLENGE_EXPIRED");
+      }
+
       const market = await tx.market.findUnique({ where: { id: marketId } });
       if (!market) throw new Error("MARKET_NOT_FOUND");
       if (market.status !== "live") throw new Error("MARKET_NOT_LIVE");
@@ -292,6 +296,7 @@ export async function POST(req: NextRequest) {
       MARKET_NOT_LIVE:        { status: 400, error: "Market is not live" },
       POSITION_NOT_FOUND:     { status: 404, error: "No open position found for this market and side" },
       INSUFFICIENT_SHARES:    { status: 400, error: "Not enough shares to sell" },
+      CHALLENGE_EXPIRED:      { status: 400, error: "Challenge period has ended" },
     };
     if (message in clientErrors) {
       const { status, error } = clientErrors[message];

@@ -102,6 +102,10 @@ export async function POST(req: NextRequest) {
       });
       const challengeId = activeChallenge ? activeChallenge.id : null;
 
+      if (activeChallenge && activeChallenge.expiresAt && new Date() > activeChallenge.expiresAt) {
+        throw new Error("CHALLENGE_EXPIRED");
+      }
+
       const market = await tx.market.findUnique({ where: { id: marketId } });
       if (!market) throw new Error("MARKET_NOT_FOUND");
       if (market.status !== "live") throw new Error("MARKET_NOT_LIVE");
@@ -299,6 +303,7 @@ export async function POST(req: NextRequest) {
       INSUFFICIENT_BALANCE:         { status: 400, error: "Insufficient balance" },
       POSITION_SIZE_EXCEEDED:       { status: 400, error: "Position size exceeds limit" },
       POSITION_NOT_OPEN:            { status: 400, error: "Position is not open" },
+      CHALLENGE_EXPIRED:            { status: 400, error: "Challenge period has ended" },
     };
     if (message in clientErrors) {
       const { status, error } = clientErrors[message];
