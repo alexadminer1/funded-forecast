@@ -4,6 +4,8 @@ import LandingHeader from "@/components/LandingHeader";
 import ReviewsCarousel from "@/components/ReviewsCarousel";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = 'force-dynamic'
+
 async function getContent(): Promise<Record<string, string>> {
   try {
     const blocks = await prisma.contentBlock.findMany();
