@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyToken } from "@/lib/auth";
 import crypto from "crypto";
+import { attachAffiliateClickIfNeeded } from "@/lib/affiliate/attribution";
 
 function auth(req: NextRequest) {
   const token = req.headers.get("authorization")?.slice(7);
@@ -22,6 +23,13 @@ export async function POST(req: NextRequest) {
   if (!plan) return NextResponse.json({ error: "Plan not found" }, { status: 404 });
 
   const orderId = `FF-${userId}-${planId}-${crypto.randomBytes(6).toString("hex").toUpperCase()}`;
+
+  try {
+    const affCookieId = req.cookies.get("aff_id")?.value;
+    await attachAffiliateClickIfNeeded(userId, affCookieId);
+  } catch (err) {
+    console.warn("[AFFILIATE_ATTACH] payment/create attach failed", err);
+  }
 
   // Create payment record
   const payment = await prisma.payment.create({
