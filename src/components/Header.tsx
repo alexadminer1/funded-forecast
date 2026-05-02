@@ -41,6 +41,7 @@ export default function Header() {
     { href: "/history", label: "History" },
     { href: "/faq", label: "FAQ" },
     { href: "/leaderboard", label: "Leaderboard" },
+    { href: "/affiliates", label: "Affiliates" },
   ];
 
   const isLoggedIn = !!user;
