@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { getToken } from "@/lib/api";
+import LandingHeader from "@/components/LandingHeader";
 
 const TIERS = [
   { name: "Starter", pct: "10%", color: "#475569" },
@@ -68,13 +69,14 @@ export default function AffiliatesPage() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#080c14", color: "#F1F5F9", fontFamily: "'Inter',-apple-system,sans-serif" }}>
+      <LandingHeader />
 
       {/* Hero */}
       <section style={{ maxWidth: 900, margin: "0 auto", padding: "96px 24px 80px", textAlign: "center" }}>
         <div style={{ display: "inline-block", fontSize: 11, fontWeight: 700, color: "#22C55E", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 20, padding: "4px 14px", borderRadius: 20, background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.2)" }}>
           Affiliate Program
         </div>
-        <h1 style={{ fontSize: 52, fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1.1, marginBottom: 20, marginTop: 0 }}>
+        <h1 style={{ fontSize: 52, fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1.1, marginBottom: 20, marginTop: 0, background: "linear-gradient(180deg, #F1F5F9 0%, #94A3B8 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
           Earn with FundedForecast
         </h1>
         <p style={{ fontSize: 18, color: "#94A3B8", lineHeight: 1.7, maxWidth: 560, margin: "0 auto 40px" }}>
