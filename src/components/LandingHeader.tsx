@@ -32,9 +32,9 @@ export default function LandingHeader() {
 
       {/* Center nav */}
       <nav className="ff-nav" style={{ display: "flex", gap: 32, alignItems: "center", position: "absolute", left: "50%", transform: "translateX(-50%)" }}>
-        <a href="#how" style={{ fontSize: 14, color: "#94A3B8", textDecoration: "none", fontWeight: 500 }}>How it works</a>
-        <a href="#plans" style={{ fontSize: 14, color: "#94A3B8", textDecoration: "none", fontWeight: 500 }}>Pricing</a>
-        <a href="#faq" style={{ fontSize: 14, color: "#94A3B8", textDecoration: "none", fontWeight: 500 }}>FAQ</a>
+        <a href="/#how" style={{ fontSize: 14, color: "#94A3B8", textDecoration: "none", fontWeight: 500 }}>How it works</a>
+        <a href="/#plans" style={{ fontSize: 14, color: "#94A3B8", textDecoration: "none", fontWeight: 500 }}>Pricing</a>
+        <a href="/#faq" style={{ fontSize: 14, color: "#94A3B8", textDecoration: "none", fontWeight: 500 }}>FAQ</a>
         <a href="/affiliates" style={{ fontSize: 14, color: "#94A3B8", textDecoration: "none", fontWeight: 500 }}>Affiliates</a>
       </nav>
 
@@ -70,9 +70,9 @@ export default function LandingHeader() {
           display: "flex", flexDirection: "column", padding: "16px 24px", gap: 4,
         }}>
           {[
-            { label: "How it works", href: "#how" },
-            { label: "Pricing", href: "#plans" },
-            { label: "FAQ", href: "#faq" },
+            { label: "How it works", href: "/#how" },
+            { label: "Pricing", href: "/#plans" },
+            { label: "FAQ", href: "/#faq" },
             { label: "Affiliates", href: "/affiliates" },
           ].map(({ label, href }) => (
             <a key={label} href={href} onClick={() => setMenuOpen(false)} style={{
