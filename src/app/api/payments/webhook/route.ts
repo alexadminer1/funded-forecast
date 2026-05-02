@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
+import { recordAffiliateConversionFromPayment } from "@/lib/affiliate/conversions";
 
 function verifySignature(body: string, signature: string): boolean {
   const hmac = crypto.createHmac("sha512", process.env.NOWPAYMENTS_IPN_SECRET!);
@@ -100,6 +101,11 @@ export async function POST(req: NextRequest) {
             runningBalance: startBalance,
           },
         });
+        try {
+          await recordAffiliateConversionFromPayment(payment.id);
+        } catch (err) {
+          console.warn("[AFFILIATE_CONVERSION] webhook hook failed", err);
+        }
       }
     }
   }
