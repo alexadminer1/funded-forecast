@@ -5,7 +5,7 @@
 Project: FundedForecast prop-firm platform
 Branch: feature/affiliate-program
 Started: 2026-04-30
-Last commit: a460ea3 (Step 5B-2)
+Last commit: ba84563 (Step 8)
 
 ---
 
@@ -33,6 +33,11 @@ Admin auth: x-admin-key header against ADMIN_API_KEY env
 | 5A | attribution + payment/create attach hook | 2274690 |
 | 5B-1 | conversions helper + isolated test (10 PASS) | a1f4978 |
 | 5B-2 | Webhook integration (1 try/catch) | a460ea3 |
+| 6 | /api/affiliate/apply + /me + admin approve/reject + applications list | 8673741 |
+| 7A | Affiliate apply UI (/affiliate/apply) + status page (/affiliate) | a99f9e1 |
+| 7B-1 | Read-only API endpoints: /api/affiliate/balances, /conversions, /ledger | 649f287 |
+| 7B-2 | Affiliate cabinet UI: overview (balances + reflink), conversions, ledger | 0fb09a8 |
+| 8 | Admin affiliate applications UI (/admin/affiliate) | ba84563 |
 
 Money flow wired end-to-end:
 click - cookie - attach - webhook - conversion + ledger + balance
@@ -41,9 +46,6 @@ click - cookie - attach - webhook - conversion + ledger + balance
 
 ## Remaining Steps
 
-- Step 6: /api/affiliate/apply + /me + admin approve/reject + applications list
-- Step 7: Affiliate cabinet UI
-- Step 8: Admin affiliate UI
 - Step 9: 5 cron jobs + GitHub Actions
 - Step 10: /affiliates landing + Terms/Privacy
 - Step 11: E2E full-flow test
@@ -162,6 +164,24 @@ Full schema: see prisma/schema prisma file
 
 All test data prefix: TEST_AFF_ or test-aff-asterisk
 Tests clean up after themselves.
+
+---
+
+## Known Technical Debt
+
+1. Lifetime counters (lifetimeEarned, lifetimePaid, lifetimeClawedBack, salesCount30d) are schema
+   columns but never updated in code. Deliberately excluded from /api/affiliate/balances response.
+   Needs a separate backend step before exposing in UI.
+
+2. Admin UI (Step 8) has no loading state on Approve/Reject buttons during requests. Risk of
+   double-click during slow responses. Fix: disable buttons or show spinner while fetch is in flight.
+
+3. AffiliateClick has FK to Affiliate without onDelete: Cascade. Cleanup of test affiliates
+   requires manual deleteMany on AffiliateClick first.
+
+4. Admin approve/reject has race condition: findUnique then update is non-atomic. Two concurrent
+   admin clicks could double-process. Acceptable for MVP. Fix: updateMany({ where: { id, status:
+   pending } }) and check count.
 
 ---
 
