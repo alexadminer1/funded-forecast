@@ -105,17 +105,16 @@ export default function Header() {
       <a
         href="/affiliates"
         style={{
-          color: pathname === "/affiliates" || pathname.startsWith("/affiliates/") ? "#F1F5F9" : "#64748B",
+          color: "#64748B",
           textDecoration: "none",
           fontSize: 13.5,
-          fontWeight: pathname === "/affiliates" || pathname.startsWith("/affiliates/") ? 600 : 400,
+          fontWeight: 400,
           padding: "5px 12px",
           borderRadius: 7,
-          background: pathname === "/affiliates" || pathname.startsWith("/affiliates/") ? "rgba(255,255,255,0.06)" : "transparent",
-          transition: "color 0.15s, background 0.15s",
+          transition: "color 0.15s",
         }}
-        onMouseEnter={(e) => { if (pathname !== "/affiliates" && !pathname.startsWith("/affiliates/")) (e.currentTarget as HTMLElement).style.color = "#94A3B8"; }}
-        onMouseLeave={(e) => { if (pathname !== "/affiliates" && !pathname.startsWith("/affiliates/")) (e.currentTarget as HTMLElement).style.color = "#64748B"; }}
+        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "#94A3B8"; }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "#64748B"; }}
       >
         Affiliates
       </a>
