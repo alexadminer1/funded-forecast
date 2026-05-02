@@ -1,8 +1,19 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { apiFetch, getToken } from "@/lib/api";
 
 export default function LandingHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [affiliateHref, setAffiliateHref] = useState("/affiliates");
+
+  useEffect(() => {
+    if (!getToken()) return;
+    apiFetch<{ affiliate: { id: number } | null }>("/api/affiliate/me")
+      .then((data) => {
+        if (data.affiliate) setAffiliateHref("/affiliate");
+      })
+      .catch(() => {});
+  }, []);
 
   return (
     <header className="ff-header" style={{
@@ -35,7 +46,7 @@ export default function LandingHeader() {
         <a href="/#how" style={{ fontSize: 14, color: "#94A3B8", textDecoration: "none", fontWeight: 500 }}>How it works</a>
         <a href="/#plans" style={{ fontSize: 14, color: "#94A3B8", textDecoration: "none", fontWeight: 500 }}>Pricing</a>
         <a href="/#faq" style={{ fontSize: 14, color: "#94A3B8", textDecoration: "none", fontWeight: 500 }}>FAQ</a>
-        <a href="/affiliates" style={{ fontSize: 14, color: "#94A3B8", textDecoration: "none", fontWeight: 500 }}>Affiliates</a>
+        <a href={affiliateHref} style={{ fontSize: 14, color: "#94A3B8", textDecoration: "none", fontWeight: 500 }}>Affiliates</a>
       </nav>
 
       {/* Right buttons */}
@@ -73,7 +84,7 @@ export default function LandingHeader() {
             { label: "How it works", href: "/#how" },
             { label: "Pricing", href: "/#plans" },
             { label: "FAQ", href: "/#faq" },
-            { label: "Affiliates", href: "/affiliates" },
+            { label: "Affiliates", href: affiliateHref },
           ].map(({ label, href }) => (
             <a key={label} href={href} onClick={() => setMenuOpen(false)} style={{
               fontSize: 15, color: "#94A3B8", textDecoration: "none",

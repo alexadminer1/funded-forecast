@@ -11,14 +11,19 @@ export default function Header() {
   const [user, setUser] = useState<User | null>(null);
   const [userLoading, setUserLoading] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [hasAffiliate, setHasAffiliate] = useState(false);
 
   useEffect(() => {
     if (!getToken()) return;
     setUserLoading(true);
-    apiFetch<{ success: boolean; user: User }>("/api/user/me")
-      .then((data) => { if (data.success) setUser(data.user); })
-      .catch(() => {})
-      .finally(() => setUserLoading(false));
+    Promise.all([
+      apiFetch<{ success: boolean; user: User }>("/api/user/me")
+        .then((data) => { if (data.success) setUser(data.user); })
+        .catch(() => {}),
+      apiFetch<{ affiliate: { id: number } | null }>("/api/affiliate/me")
+        .then((data) => { setHasAffiliate(!!data.affiliate); })
+        .catch(() => {}),
+    ]).finally(() => setUserLoading(false));
   }, []);
 
   useEffect(() => {
@@ -44,6 +49,7 @@ export default function Header() {
   ];
 
   const isLoggedIn = !!user;
+  const affiliateHref = hasAffiliate ? "/affiliate" : "/affiliates";
 
   return (
     <header style={{
@@ -99,25 +105,45 @@ export default function Header() {
               {label}
             </a>
           ))}
+          <a
+            key="affiliate"
+            href={affiliateHref}
+            style={{
+              color: isActive("/affiliate") || isActive("/affiliates") ? "#F1F5F9" : "#64748B",
+              textDecoration: "none",
+              fontSize: 13.5,
+              fontWeight: isActive("/affiliate") || isActive("/affiliates") ? 600 : 400,
+              padding: "5px 12px",
+              borderRadius: 7,
+              background: isActive("/affiliate") || isActive("/affiliates") ? "rgba(255,255,255,0.06)" : "transparent",
+              transition: "color 0.15s, background 0.15s",
+            }}
+            onMouseEnter={(e) => { if (!isActive("/affiliate") && !isActive("/affiliates")) (e.currentTarget as HTMLElement).style.color = "#94A3B8"; }}
+            onMouseLeave={(e) => { if (!isActive("/affiliate") && !isActive("/affiliates")) (e.currentTarget as HTMLElement).style.color = "#64748B"; }}
+          >
+            Affiliates
+          </a>
         </nav>
       )}
 
-      <a
-        href="/affiliates"
-        style={{
-          color: "#64748B",
-          textDecoration: "none",
-          fontSize: 13.5,
-          fontWeight: 400,
-          padding: "5px 12px",
-          borderRadius: 7,
-          transition: "color 0.15s",
-        }}
-        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "#94A3B8"; }}
-        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "#64748B"; }}
-      >
-        Affiliates
-      </a>
+      {!isLoggedIn && (
+        <a
+          href="/affiliates"
+          style={{
+            color: "#64748B",
+            textDecoration: "none",
+            fontSize: 13.5,
+            fontWeight: 400,
+            padding: "5px 12px",
+            borderRadius: 7,
+            transition: "color 0.15s",
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "#94A3B8"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "#64748B"; }}
+        >
+          Affiliates
+        </a>
+      )}
 
       {/* Right */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 320, justifyContent: "flex-end" }}>
