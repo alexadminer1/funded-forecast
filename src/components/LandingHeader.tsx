@@ -35,6 +35,7 @@ export default function LandingHeader() {
         <a href="#how" style={{ fontSize: 14, color: "#94A3B8", textDecoration: "none", fontWeight: 500 }}>How it works</a>
         <a href="#plans" style={{ fontSize: 14, color: "#94A3B8", textDecoration: "none", fontWeight: 500 }}>Pricing</a>
         <a href="#faq" style={{ fontSize: 14, color: "#94A3B8", textDecoration: "none", fontWeight: 500 }}>FAQ</a>
+        <a href="/affiliates" style={{ fontSize: 14, color: "#94A3B8", textDecoration: "none", fontWeight: 500 }}>Affiliates</a>
       </nav>
 
       {/* Right buttons */}
@@ -72,6 +73,7 @@ export default function LandingHeader() {
             { label: "How it works", href: "#how" },
             { label: "Pricing", href: "#plans" },
             { label: "FAQ", href: "#faq" },
+            { label: "Affiliates", href: "/affiliates" },
           ].map(({ label, href }) => (
             <a key={label} href={href} onClick={() => setMenuOpen(false)} style={{
               fontSize: 15, color: "#94A3B8", textDecoration: "none",
