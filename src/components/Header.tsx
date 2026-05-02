@@ -12,9 +12,11 @@ export default function Header() {
   const [userLoading, setUserLoading] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [hasAffiliate, setHasAffiliate] = useState(false);
+  const [hasToken, setHasToken] = useState(false);
 
   useEffect(() => {
     if (!getToken()) return;
+    setHasToken(true);
     setUserLoading(true);
     Promise.all([
       apiFetch<{ success: boolean; user: User }>("/api/user/me")
@@ -48,7 +50,7 @@ export default function Header() {
     { href: "/leaderboard", label: "Leaderboard" },
   ];
 
-  const isLoggedIn = !!user;
+  const isLoggedIn = hasToken || !!user;
   const affiliateHref = hasAffiliate ? "/affiliate" : "/affiliates";
 
   return (
