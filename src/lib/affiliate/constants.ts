@@ -71,6 +71,15 @@ export const REFCODE = {
   pattern:   /^[a-zA-Z0-9_-]+$/,
 } as const;
 
+export const RESERVED_REFCODES: ReadonlySet<string> = new Set([
+  "admin", "api", "app", "auth", "login", "logout", "register",
+  "dashboard", "account", "settings", "support", "help", "terms",
+  "privacy", "affiliate", "affiliates", "r", "ref", "payment",
+  "payments", "checkout", "success", "cancel", "webhook", "cron",
+  "static", "assets", "_next", "test", "system", "null", "undefined",
+  "none",
+]);
+
 export const RECONCILE = {
   epsilon: 0.01,
   alertTo: "admin",
