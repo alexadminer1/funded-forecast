@@ -64,6 +64,7 @@ export default function AffiliateConversionsPage() {
           <a href="/affiliate" style={{ fontSize: 13, color: "#475569", textDecoration: "none" }}>Overview</a>
           <a href="/affiliate/conversions" style={{ fontSize: 13, fontWeight: 700, color: "#22C55E", textDecoration: "none" }}>Conversions</a>
           <a href="/affiliate/ledger" style={{ fontSize: 13, color: "#475569", textDecoration: "none" }}>Ledger</a>
+          <a href="/affiliate/settings" style={{ fontSize: 13, color: "#475569", textDecoration: "none" }}>Settings</a>
         </div>
 
         <div style={{ fontSize: 18, fontWeight: 700, color: "#F1F5F9", marginBottom: 16 }}>Conversions</div>
