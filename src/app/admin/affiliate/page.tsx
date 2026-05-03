@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 
 const STORAGE_KEY  = "adminKey";
 const ATTEMPTS_KEY = "adminAttempts";
@@ -9,7 +10,7 @@ const MAX_ATTEMPTS = 3;
 const BLOCK_MS     = 5 * 60 * 1000;
 const LIMIT        = 20;
 
-type StatusFilter = "all" | "pending" | "approved" | "rejected";
+type StatusFilter = "all" | "pending" | "approved" | "rejected" | "suspended" | "banned";
 
 function getAppField(item: any, key: string): string {
   try {
@@ -109,19 +110,24 @@ export default function AdminAffiliatePage() {
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 const STATUS_COLORS: Record<string, string> = {
-  pending:  "#F59E0B",
-  approved: "#22C55E",
-  rejected: "#EF4444",
+  pending:   "#F59E0B",
+  approved:  "#22C55E",
+  rejected:  "#EF4444",
+  suspended: "#F97316",
+  banned:    "#DC2626",
 };
 
 const FILTERS: { key: StatusFilter; label: string }[] = [
-  { key: "all",      label: "All"      },
-  { key: "pending",  label: "Pending"  },
-  { key: "approved", label: "Approved" },
-  { key: "rejected", label: "Rejected" },
+  { key: "all",       label: "All"       },
+  { key: "pending",   label: "Pending"   },
+  { key: "approved",  label: "Approved"  },
+  { key: "rejected",  label: "Rejected"  },
+  { key: "suspended", label: "Suspended" },
+  { key: "banned",    label: "Banned"    },
 ];
 
 function AffiliateAdmin({ onInvalidKey, onLogout }: { onInvalidKey: () => void; onLogout: () => void }) {
+  const router = useRouter();
   const [items,        setItems]        = useState<any[]>([]);
   const [total,        setTotal]        = useState(0);
   const [hasMore,      setHasMore]      = useState(false);
@@ -275,7 +281,7 @@ function AffiliateAdmin({ onInvalidKey, onLogout }: { onInvalidKey: () => void; 
                   const sc = STATUS_COLORS[item.status] ?? "#475569";
                   const msg = actionMsg[item.id];
                   return (
-                    <tr key={item.id}>
+                    <tr key={item.id} onClick={() => router.push(`/admin/affiliate/${item.id}`)} style={{ cursor: "pointer" }}>
                       <td style={{ fontSize: 13, color: "#94A3B8",  padding: "14px 16px", borderTop: "1px solid rgba(255,255,255,0.04)", whiteSpace: "nowrap" }}>{item.id}</td>
                       <td style={{ fontSize: 13, color: "#F1F5F9",  padding: "14px 16px", borderTop: "1px solid rgba(255,255,255,0.04)", whiteSpace: "nowrap" }}>{item.user?.email ?? "—"}</td>
                       <td style={{ fontSize: 13, fontFamily: "monospace", color: "#22C55E", padding: "14px 16px", borderTop: "1px solid rgba(255,255,255,0.04)", whiteSpace: "nowrap" }}>{item.refCode}</td>
@@ -291,13 +297,13 @@ function AffiliateAdmin({ onInvalidKey, onLogout }: { onInvalidKey: () => void; 
                         ) : item.status === "pending" ? (
                           <div style={{ display: "flex", gap: 8 }}>
                             <button
-                              onClick={() => handleApprove(item.id)}
+                              onClick={(e) => { e.stopPropagation(); handleApprove(item.id); }}
                               style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: "rgba(34,197,94,0.15)", color: "#22C55E", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
                             >
                               Approve
                             </button>
                             <button
-                              onClick={() => handleReject(item.id)}
+                              onClick={(e) => { e.stopPropagation(); handleReject(item.id); }}
                               style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: "rgba(239,68,68,0.15)", color: "#EF4444", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
                             >
                               Reject
