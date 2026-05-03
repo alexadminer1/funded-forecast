@@ -9,35 +9,37 @@ datasource db {
 }
 
 model User {
-  id                   Int       @id @default(autoincrement())
-  email                String    @unique
-  username             String    @unique
-  firstName            String
-  lastName             String
-  password             String?
-  provider             String    @default("email")
-  membershipStatus     String    @default("free")
-  stripeCustomerId     String?   @unique
-  stripeSubscriptionId String?
-  subscriptionPlan     String?
-  subscriptionEndsAt   DateTime?
-  isBlocked            Boolean   @default(false)
-  blockReason          String?
-  lastTradeAt          DateTime?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
-  walletAddress        String?
-  walletNetwork        String?
+  id                    Int       @id @default(autoincrement())
+  email                 String    @unique
+  username              String    @unique
+  firstName             String
+  lastName              String
+  password              String?
+  provider              String    @default("email")
+  membershipStatus      String    @default("free")
+  stripeCustomerId      String?   @unique
+  stripeSubscriptionId  String?
+  subscriptionPlan      String?
+  subscriptionEndsAt    DateTime?
+  isBlocked             Boolean   @default(false)
+  blockReason           String?
+  lastTradeAt           DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  walletAddress         String?
+  walletNetwork         String?
+  referredByAffiliateId Int?
+  registrationIpHash    String?
 
-  trades             Trade[]
-  positions          Position[]
-  balanceLogs        BalanceLog[]
-  challenges         Challenge[]
-  subscriptions      Subscription[]
-  payoutRequests     PayoutRequest[]
-  auditLogsAsActor   AuditLog[]      @relation("AuditActor")
-  userConsent        UserConsent?
-  payments           Payment[]
+  trades           Trade[]
+  positions        Position[]
+  balanceLogs      BalanceLog[]
+  challenges       Challenge[]
+  subscriptions    Subscription[]
+  payoutRequests   PayoutRequest[]
+  auditLogsAsActor AuditLog[]      @relation("AuditActor")
+  userConsent      UserConsent?
+  payments         Payment[]
 
   @@index([isBlocked])
   @@index([stripeCustomerId])
@@ -97,9 +99,9 @@ model Trade {
   marketNoPriceAtExecution  Float
   createdAt                 DateTime @default(now())
 
-  user       User        @relation(fields: [userId], references: [id])
-  market     Market      @relation(fields: [marketId], references: [id])
-  challenge  Challenge?  @relation(fields: [challengeId], references: [id])
+  user        User         @relation(fields: [userId], references: [id])
+  market      Market       @relation(fields: [marketId], references: [id])
+  challenge   Challenge?   @relation(fields: [challengeId], references: [id])
   balanceLogs BalanceLog[]
 
   @@index([userId, createdAt(sort: Desc)])
@@ -109,20 +111,20 @@ model Trade {
 }
 
 model Position {
-  id           Int       @id @default(autoincrement())
-  userId       Int
-  marketId     String
-  challengeId  Int?
-  side         String
-  status       String    @default("open")
-  shares       Int       @default(0)
-  avgPrice     Float     @default(0)
-  costBasis    Float     @default(0)
-  realizedPnl  Float     @default(0)
-  version      Int       @default(0)
-  openedAt     DateTime  @default(now())
-  closedAt     DateTime?
-  resolvedAt   DateTime?
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  marketId    String
+  challengeId Int?
+  side        String
+  status      String    @default("open")
+  shares      Int       @default(0)
+  avgPrice    Float     @default(0)
+  costBasis   Float     @default(0)
+  realizedPnl Float     @default(0)
+  version     Int       @default(0)
+  openedAt    DateTime  @default(now())
+  closedAt    DateTime?
+  resolvedAt  DateTime?
 
   user      User       @relation(fields: [userId], references: [id])
   market    Market     @relation(fields: [marketId], references: [id])
@@ -155,62 +157,62 @@ model BalanceLog {
 }
 
 model ChallengePlan {
-  id                 Int        @id @default(autoincrement())
-  name               String
-  price              Float
-  accountSize        Float
-  profitTargetPct    Float
-  maxLossPct         Float
-  dailyLossPct       Float
-  maxPositionSizePct Float
-  minTradingDays     Int
-  payoutCap          Float?
-  priceCents             Int     @default(0)
-  refundableFeeCents     Int     @default(0)
-  maxPayoutCapCents      Int     @default(0)
-  minPayoutCents         Int     @default(5000)
-  profitSharePct         Float   @default(80)
-  challengePeriodDays    Int     @default(30)
-  payoutCooldownDays     Int     @default(14)
-  isActive           Boolean    @default(true)
-  isPopular          Boolean    @default(false)
-  order              Int        @default(0)
-  createdAt          DateTime   @default(now())
-  challenges         Challenge[]
-  payments           Payment[]
+  id                  Int         @id @default(autoincrement())
+  name                String
+  price               Float
+  accountSize         Float
+  profitTargetPct     Float
+  maxLossPct          Float
+  dailyLossPct        Float
+  maxPositionSizePct  Float
+  minTradingDays      Int
+  payoutCap           Float?
+  priceCents          Int         @default(0)
+  refundableFeeCents  Int         @default(0)
+  maxPayoutCapCents   Int         @default(0)
+  minPayoutCents      Int         @default(5000)
+  profitSharePct      Float       @default(80)
+  challengePeriodDays Int         @default(30)
+  payoutCooldownDays  Int         @default(14)
+  isActive            Boolean     @default(true)
+  isPopular           Boolean     @default(false)
+  order               Int         @default(0)
+  createdAt           DateTime    @default(now())
+  challenges          Challenge[]
+  payments            Payment[]
 }
 
 model Challenge {
-  id                  Int       @id @default(autoincrement())
-  userId              Int
-  planId              Int?
-  stage               String
-  status              String    @default("active")
-  startBalance        Float     @default(10000)
-  realizedBalance     Float
-  peakBalance         Float
-  profitTargetPct     Float
-  maxDailyDdPct       Float
-  maxTotalDdPct       Float
-  maxPositionSizePct  Float     @default(5)
-  minTradingDays      Int
-  tradingDaysCount    Int       @default(0)
-  profitTargetMet     Boolean   @default(false)
-  drawdownViolated    Boolean   @default(false)
-  dayStartBalance     Float?
-  dayStartDate        DateTime?
-  lastTradingDay      DateTime?
-  violationReason     String?
-  expiresAt              DateTime?
-  payoutCapCents         Int?
-  minPayoutCents         Int?
-  profitSharePct         Float?
-  refundableFeeCents     Int?
-  payoutCooldownDays     Int?
-  refundableFeePaidAt    DateTime?
-  lastApprovedPayoutAt   DateTime?
-  startedAt           DateTime  @default(now())
-  endedAt             DateTime?
+  id                   Int       @id @default(autoincrement())
+  userId               Int
+  planId               Int?
+  stage                String
+  status               String    @default("active")
+  startBalance         Float     @default(10000)
+  realizedBalance      Float
+  peakBalance          Float
+  profitTargetPct      Float
+  maxDailyDdPct        Float
+  maxTotalDdPct        Float
+  maxPositionSizePct   Float     @default(5)
+  minTradingDays       Int
+  tradingDaysCount     Int       @default(0)
+  profitTargetMet      Boolean   @default(false)
+  drawdownViolated     Boolean   @default(false)
+  dayStartBalance      Float?
+  dayStartDate         DateTime?
+  lastTradingDay       DateTime?
+  violationReason      String?
+  expiresAt            DateTime?
+  payoutCapCents       Int?
+  minPayoutCents       Int?
+  profitSharePct       Float?
+  refundableFeeCents   Int?
+  payoutCooldownDays   Int?
+  refundableFeePaidAt  DateTime?
+  lastApprovedPayoutAt DateTime?
+  startedAt            DateTime  @default(now())
+  endedAt              DateTime?
 
   user           User            @relation(fields: [userId], references: [id])
   plan           ChallengePlan?  @relation(fields: [planId], references: [id])
@@ -224,17 +226,17 @@ model Challenge {
 }
 
 model Subscription {
-  id                     Int       @id @default(autoincrement())
-  userId                 Int
-  stripeSubscriptionId   String    @unique
-  stripeCustomerId       String
-  plan                   String
-  status                 String
-  currentPeriodStart     DateTime
-  currentPeriodEnd       DateTime
-  canceledAt             DateTime?
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  id                   Int       @id @default(autoincrement())
+  userId               Int
+  stripeSubscriptionId String    @unique
+  stripeCustomerId     String
+  plan                 String
+  status               String
+  currentPeriodStart   DateTime
+  currentPeriodEnd     DateTime
+  canceledAt           DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id])
 
@@ -248,23 +250,23 @@ model ProcessedStripeEvent {
 }
 
 model PayoutRequest {
-  id              Int       @id @default(autoincrement())
-  userId          Int
-  challengeId     Int
-  amount          Float
-  maxPayoutAmount Float
-  feePct          Float     @default(20)
-  platformFee     Float
-  netAmount       Float
-  status          String    @default("pending")
-  rejectionReason String?
-  requestedAt     DateTime  @default(now())
-  processedAt     DateTime?
-  paidAt          DateTime?
-  walletAddress   String?
-  walletNetwork   String?
-  txHash          String?
-  currency        String    @default("USDT")
+  id                      Int       @id @default(autoincrement())
+  userId                  Int
+  challengeId             Int
+  amount                  Float
+  maxPayoutAmount         Float
+  feePct                  Float     @default(20)
+  platformFee             Float
+  netAmount               Float
+  status                  String    @default("pending")
+  rejectionReason         String?
+  requestedAt             DateTime  @default(now())
+  processedAt             DateTime?
+  paidAt                  DateTime?
+  walletAddress           String?
+  walletNetwork           String?
+  txHash                  String?
+  currency                String    @default("USDT")
   baseAmountCents         Int?
   refundableFeeBonusCents Int?
   finalAmountCents        Int?
@@ -327,19 +329,19 @@ model Review {
 }
 
 model Payment {
-  id            Int      @id @default(autoincrement())
-  userId        Int
-  planId        Int?
-  nowPaymentId  String?  @unique
-  orderId       String   @unique
-  amount        Float
-  currency      String   @default("USD")
-  payCurrency   String?
-  payAmount     Float?
-  status        String   @default("pending")
-  paymentUrl    String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  planId       Int?
+  nowPaymentId String?  @unique
+  orderId      String   @unique
+  amount       Float
+  currency     String   @default("USD")
+  payCurrency  String?
+  payAmount    Float?
+  status       String   @default("pending")
+  paymentUrl   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   user User           @relation(fields: [userId], references: [id])
   plan ChallengePlan? @relation(fields: [planId], references: [id])
@@ -364,7 +366,6 @@ model LeaderboardEntry {
   @@index([totalPnl])
 }
 
-
 // ─────────────────────────────────────────────────────────────
 // AFFILIATE PROGRAM — Phase 1 MVP
 // Added 2026-05-01. Do not modify existing models above.
@@ -373,6 +374,7 @@ model LeaderboardEntry {
 enum AffiliateStatus {
   pending
   approved
+  suspended
   rejected
   banned
 }
@@ -443,44 +445,47 @@ enum AffiliateRejectionReason {
 }
 
 model Affiliate {
-  id                       Int                     @id @default(autoincrement())
-  userId                   Int                     @unique
-  refCode                  String                  @unique
-  status                   AffiliateStatus         @default(pending)
-  tier                     String                  @default("starter")
-  applicationData          Json
-  approvedAt               DateTime?
-  approvedBy               String?
-  rejectionReason          String?
-  isVerified               Boolean                 @default(false)
-  suspiciousFlag           Boolean                 @default(false)
-  suspiciousReason         String?
-  paymentMethod            AffiliatePaymentMethod?
-  paymentWallet            String?
-  paymentWalletVerifiedAt  DateTime?
-  walletChangedAt          DateTime?
-  walletLockUntil          DateTime?
-  walletRequiresReview     Boolean                 @default(false)
-  kycStatus                KycStatus               @default(not_required)
-  kycVerifiedAt            DateTime?
-  kycCountry               String?
-  kycAdminNote             String?
-  balancePending           Float                   @default(0)
-  balanceAvailable         Float                   @default(0)
-  balanceFrozen            Float                   @default(0)
-  balanceNegative          Float                   @default(0)
-  lifetimeEarned           Float                   @default(0)
-  lifetimePaid             Float                   @default(0)
-  lifetimeClawedBack       Float                   @default(0)
-  salesCount30d            Int                     @default(0)
-  parentAffiliateId        Int?
-  customCommissionRate     Float?
-  notificationsEnabled     Boolean                 @default(false)
-  acceptedTermsVersion     String                  @default("1.0")
-  acceptedTermsAt          DateTime
-  programVersion           String                  @default("1.0")
-  createdAt                DateTime                @default(now())
-  updatedAt                DateTime                @updatedAt
+  id                      Int                     @id @default(autoincrement())
+  userId                  Int                     @unique
+  refCode                 String                  @unique
+  status                  AffiliateStatus         @default(pending)
+  tier                    String                  @default("starter")
+  applicationData         Json
+  approvedAt              DateTime?
+  rejectedAt              DateTime?
+  suspendedAt             DateTime?
+  bannedAt                DateTime?
+  approvedBy              String?
+  rejectionReason         String?
+  isVerified              Boolean                 @default(false)
+  suspiciousFlag          Boolean                 @default(false)
+  suspiciousReason        String?
+  paymentMethod           AffiliatePaymentMethod?
+  paymentWallet           String?
+  paymentWalletVerifiedAt DateTime?
+  walletChangedAt         DateTime?
+  walletLockUntil         DateTime?
+  walletRequiresReview    Boolean                 @default(false)
+  kycStatus               KycStatus               @default(not_required)
+  kycVerifiedAt           DateTime?
+  kycCountry              String?
+  kycAdminNote            String?
+  balancePending          Float                   @default(0)
+  balanceAvailable        Float                   @default(0)
+  balanceFrozen           Float                   @default(0)
+  balanceNegative         Float                   @default(0)
+  lifetimeEarned          Float                   @default(0)
+  lifetimePaid            Float                   @default(0)
+  lifetimeClawedBack      Float                   @default(0)
+  salesCount30d           Int                     @default(0)
+  parentAffiliateId       Int?
+  customCommissionRate    Float?
+  notificationsEnabled    Boolean                 @default(false)
+  acceptedTermsVersion    String                  @default("1.0")
+  acceptedTermsAt         DateTime
+  programVersion          String                  @default("1.0")
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
 
   parent      Affiliate?            @relation("AffiliateParent", fields: [parentAffiliateId], references: [id], onDelete: SetNull)
   children    Affiliate[]           @relation("AffiliateParent")
@@ -524,43 +529,43 @@ model AffiliateClick {
 }
 
 model AffiliateConversion {
-  id                          Int                        @id @default(autoincrement())
-  affiliateId                 Int
-  referredUserId              Int
-  paymentId                   Int                        @unique
-  planId                      Int
-  clickId                     Int?
-  grossAmount                 Float
-  discountAmount              Float                      @default(0)
-  processorFeeAmount          Float                      @default(0)
-  netAmount                   Float
-  commissionRate              Float
-  commissionAmount            Float
-  status                      AffiliateConversionStatus  @default(pending)
-  previousStatus              AffiliateConversionStatus?
-  pendingUntil                DateTime
-  paymentStatusAtCreation     String
-  paymentStatusLastChecked    String?
-  paymentStatusLastCheckedAt  DateTime?
-  approvedAt                  DateTime?
-  rejectedAt                  DateTime?
-  rejectionReason             AffiliateRejectionReason?
-  reviewedBy                  String?
-  reviewNote                  String?
-  reviewRequiredAt            DateTime?
-  paidAt                      DateTime?
-  payoutId                    Int?
-  activityCheckedAt           DateTime?
-  referralActivityDays        Int                        @default(0)
-  referralTradesCount         Int                        @default(0)
-  frozenFromBucket            AffiliateLedgerBucket?
-  lastStatusChangeAt          DateTime
-  createdAt                   DateTime                   @default(now())
-  updatedAt                   DateTime                   @updatedAt
+  id                         Int                        @id @default(autoincrement())
+  affiliateId                Int
+  referredUserId             Int
+  paymentId                  Int                        @unique
+  planId                     Int
+  clickId                    Int?
+  grossAmount                Float
+  discountAmount             Float                      @default(0)
+  processorFeeAmount         Float                      @default(0)
+  netAmount                  Float
+  commissionRate             Float
+  commissionAmount           Float
+  status                     AffiliateConversionStatus  @default(pending)
+  previousStatus             AffiliateConversionStatus?
+  pendingUntil               DateTime
+  paymentStatusAtCreation    String
+  paymentStatusLastChecked   String?
+  paymentStatusLastCheckedAt DateTime?
+  approvedAt                 DateTime?
+  rejectedAt                 DateTime?
+  rejectionReason            AffiliateRejectionReason?
+  reviewedBy                 String?
+  reviewNote                 String?
+  reviewRequiredAt           DateTime?
+  paidAt                     DateTime?
+  payoutId                   Int?
+  activityCheckedAt          DateTime?
+  referralActivityDays       Int                        @default(0)
+  referralTradesCount        Int                        @default(0)
+  frozenFromBucket           AffiliateLedgerBucket?
+  lastStatusChangeAt         DateTime
+  createdAt                  DateTime                   @default(now())
+  updatedAt                  DateTime                   @updatedAt
 
-  affiliate     Affiliate        @relation(fields: [affiliateId], references: [id], onDelete: Restrict)
-  click         AffiliateClick?  @relation(fields: [clickId], references: [id], onDelete: SetNull)
-  payout        AffiliatePayout? @relation(fields: [payoutId], references: [id], onDelete: SetNull)
+  affiliate     Affiliate         @relation(fields: [affiliateId], references: [id], onDelete: Restrict)
+  click         AffiliateClick?   @relation(fields: [clickId], references: [id], onDelete: SetNull)
+  payout        AffiliatePayout?  @relation(fields: [payoutId], references: [id], onDelete: SetNull)
   ledgerEntries AffiliateLedger[]
 
   @@index([affiliateId, status])
