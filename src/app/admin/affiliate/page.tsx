@@ -309,7 +309,9 @@ function AffiliateAdmin({ onInvalidKey, onLogout }: { onInvalidKey: () => void; 
                               Reject
                             </button>
                           </div>
-                        ) : null}
+                        ) : (
+                          <a href={`/admin/affiliate/${item.id}`} onClick={(e) => e.stopPropagation()} style={{ color: "#22C55E", textDecoration: "none", fontSize: 12, fontWeight: 600 }}>View →</a>
+                        )}
                       </td>
                     </tr>
                   );

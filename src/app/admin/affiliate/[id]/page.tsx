@@ -126,12 +126,29 @@ export default function AdminAffiliateDetailPage() {
 
 // ─── Detail component ─────────────────────────────────────────────────────────
 
+function getModalConfig(kind: string | null, affiliate: any) {
+  switch (kind) {
+    case "suspend":         return { title: "Suspend affiliate",           warning: "Affiliate will not earn new commissions until unsuspended." };
+    case "unsuspend":       return { title: "Unsuspend affiliate",         warning: "Affiliate will resume earning commissions." };
+    case "ban":             return { title: "Ban affiliate",               warning: "Permanent action. Affiliate cannot earn future commissions. Existing balance is NOT forfeited automatically." };
+    case "forfeit_pending": return { title: "Forfeit pending balance",     warning: `Will forfeit ${fmtUsd(affiliate?.balancePending ?? 0)} from pending balance. Available balance is preserved. This action is logged and reflected in ledger.` };
+    case "forfeit_full":    return { title: "Forfeit pending + available", warning: `Will forfeit ${fmtUsd(affiliate?.balancePending ?? 0)} pending + ${fmtUsd(affiliate?.balanceAvailable ?? 0)} available = ${fmtUsd((affiliate?.balancePending ?? 0) + (affiliate?.balanceAvailable ?? 0))} total. Paid balance is preserved. This action is logged.` };
+    default:                return { title: "", warning: "" };
+  }
+}
+
 function AffiliateDetail({ onInvalidKey, onLogout }: { onInvalidKey: () => void; onLogout: () => void }) {
   const { id } = useParams<{ id: string }>();
   const [data,      setData]      = useState<any>(null);
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const [activeTab,    setActiveTab]    = useState<TabKey>("overview");
+  const [modalOpen,    setModalOpen]    = useState<"suspend" | "unsuspend" | "ban" | "forfeit_pending" | "forfeit_full" | null>(null);
+  const [modalLabel,   setModalLabel]   = useState("");
+  const [modalReason,  setModalReason]  = useState("");
+  const [modalLoading, setModalLoading] = useState(false);
+  const [modalError,   setModalError]   = useState<string | null>(null);
+  const [successMsg,   setSuccessMsg]   = useState<string | null>(null);
 
   const apiFetch = useCallback(async function<T = any>(url: string, opts: RequestInit = {}): Promise<T> {
     const key = sessionStorage.getItem(STORAGE_KEY) ?? "";
@@ -144,7 +161,7 @@ function AffiliateDetail({ onInvalidKey, onLogout }: { onInvalidKey: () => void;
     return res.json() as Promise<T>;
   }, [onInvalidKey]);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     if (!id) return;
     setLoading(true);
     apiFetch(`/api/admin/affiliate/${id}`)
@@ -152,6 +169,31 @@ function AffiliateDetail({ onInvalidKey, onLogout }: { onInvalidKey: () => void;
       .catch(e => { if (e.message !== "Forbidden") setError(e.message); })
       .finally(() => setLoading(false));
   }, [id, apiFetch]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function handleAction() {
+    if (!modalOpen || !modalLabel.trim() || !modalReason.trim()) { setModalError("Admin label and reason are required."); return; }
+    setModalLoading(true);
+    setModalError(null);
+    try {
+      const endpoint = (modalOpen === "forfeit_pending" || modalOpen === "forfeit_full") ? "forfeit" : modalOpen;
+      const body: Record<string, string> = { adminLabel: modalLabel.trim(), reason: modalReason.trim() };
+      if (modalOpen === "forfeit_pending") body.scope = "pending_only";
+      if (modalOpen === "forfeit_full")    body.scope = "pending_and_available";
+      const res = await fetch(`/api/admin/affiliate/${id}/${endpoint}`, {
+        method: "POST",
+        headers: { "x-admin-key": sessionStorage.getItem(STORAGE_KEY) ?? "", "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.status === 401 || res.status === 403) { onInvalidKey(); return; }
+      const json = await res.json();
+      if (!res.ok) { setModalError(json.message ?? json.error ?? `Error ${res.status}`); return; }
+      setModalOpen(null); setModalLabel(""); setModalReason("");
+      setSuccessMsg("Action completed."); setTimeout(() => setSuccessMsg(null), 4000);
+      load();
+    } catch { setModalError("Network error"); } finally { setModalLoading(false); }
+  }
 
   const cell: React.CSSProperties = { fontSize: 13, padding: "12px 14px", borderTop: "1px solid rgba(255,255,255,0.04)", color: "#94A3B8", whiteSpace: "nowrap" };
   const th: React.CSSProperties   = { fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", padding: "10px 14px", textAlign: "left", fontWeight: 700, whiteSpace: "nowrap", borderBottom: "1px solid #334155" };
@@ -220,6 +262,30 @@ function AffiliateDetail({ onInvalidKey, onLogout }: { onInvalidKey: () => void;
                   </div>
                 </div>
               </div>
+
+              {/* Admin Actions */}
+              {(() => {
+                const st          = affiliate.status;
+                const canBalance  = ["approved", "suspended", "banned"].includes(st);
+                const showSuspend      = st === "approved";
+                const showUnsuspend    = st === "suspended";
+                const showBan          = st === "approved" || st === "suspended";
+                const showForfeitPend  = canBalance && affiliate.balancePending > 0;
+                const showForfeitFull  = canBalance && (affiliate.balancePending > 0 || affiliate.balanceAvailable > 0);
+                if (!showSuspend && !showUnsuspend && !showBan && !showForfeitPend && !showForfeitFull) return null;
+                return (
+                  <div style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 12, padding: "18px 24px", marginBottom: 24 }}>
+                    <div style={{ fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 14 }}>Admin Actions</div>
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      {showSuspend      && <button onClick={() => setModalOpen("suspend")}          style={{ padding: "7px 16px", borderRadius: 7, border: "1px solid #F97316", background: "rgba(249,115,22,0.1)",  color: "#F97316", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Suspend</button>}
+                      {showUnsuspend    && <button onClick={() => setModalOpen("unsuspend")}        style={{ padding: "7px 16px", borderRadius: 7, border: "1px solid #22C55E", background: "rgba(34,197,94,0.1)",   color: "#22C55E", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Unsuspend</button>}
+                      {showBan          && <button onClick={() => setModalOpen("ban")}              style={{ padding: "7px 16px", borderRadius: 7, border: "1px solid #DC2626", background: "rgba(220,38,38,0.1)",   color: "#DC2626", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Ban</button>}
+                      {showForfeitPend  && <button onClick={() => setModalOpen("forfeit_pending")}  style={{ padding: "7px 16px", borderRadius: 7, border: "1px solid #DC2626", background: "rgba(220,38,38,0.08)", color: "#DC2626", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Forfeit Pending</button>}
+                      {showForfeitFull  && <button onClick={() => setModalOpen("forfeit_full")}     style={{ padding: "7px 16px", borderRadius: 7, border: "1px solid #DC2626", background: "rgba(220,38,38,0.08)", color: "#DC2626", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Forfeit Pending + Available</button>}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Risk flags */}
               {(riskFlags.sameIpAtRegistration || riskFlags.hasNegativeBalance || riskFlags.manyClicksZeroConversions || riskFlags.negativeBalanceOverLimit) && (
@@ -415,6 +481,45 @@ function AffiliateDetail({ onInvalidKey, onLogout }: { onInvalidKey: () => void;
           );
         })()}
       </div>
+
+      {successMsg && (
+        <div style={{ position: "fixed", bottom: 24, right: 24, background: "#22C55E", color: "#071A0E", padding: "12px 20px", borderRadius: 8, fontSize: 13, fontWeight: 700, zIndex: 999 }}>
+          {successMsg}
+        </div>
+      )}
+
+      {modalOpen && (() => {
+        const cfg          = getModalConfig(modalOpen, data?.affiliate);
+        const confirmBg    = modalLoading ? "#334155" : modalOpen === "unsuspend" ? "#22C55E" : modalOpen === "suspend" ? "#F97316" : "#DC2626";
+        const confirmColor = modalLoading ? "#64748B" : modalOpen === "unsuspend" ? "#071A0E" : "#fff";
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+            <div style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 12, padding: "28px 32px", width: 440, maxWidth: "90vw" }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#F1F5F9", marginBottom: 8 }}>{cfg.title}</div>
+              <div style={{ fontSize: 13, color: "#94A3B8", marginBottom: 20, lineHeight: "1.5" }}>{cfg.warning}</div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 6 }}>Admin Label</label>
+                <input value={modalLabel} onChange={e => setModalLabel(e.target.value)} placeholder="e.g. admin-ui"
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 7, boxSizing: "border-box", border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 13, outline: "none" }} />
+              </div>
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 6 }}>Reason</label>
+                <textarea value={modalReason} onChange={e => setModalReason(e.target.value)} placeholder="Describe the reason for this action" rows={3}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 7, boxSizing: "border-box", border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 13, outline: "none", resize: "vertical", fontFamily: "inherit" }} />
+              </div>
+              {modalError && <div style={{ color: "#EF4444", fontSize: 12, marginBottom: 14 }}>{modalError}</div>}
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <button onClick={() => { setModalOpen(null); setModalLabel(""); setModalReason(""); setModalError(null); }} disabled={modalLoading}
+                  style={{ padding: "8px 20px", borderRadius: 7, border: "1px solid #334155", background: "transparent", color: "#94A3B8", fontSize: 13, cursor: "pointer" }}>Cancel</button>
+                <button onClick={handleAction} disabled={modalLoading}
+                  style={{ padding: "8px 20px", borderRadius: 7, border: "none", background: confirmBg, color: confirmColor, fontSize: 13, fontWeight: 700, cursor: modalLoading ? "not-allowed" : "pointer" }}>
+                  {modalLoading ? "Processing…" : "Confirm"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
