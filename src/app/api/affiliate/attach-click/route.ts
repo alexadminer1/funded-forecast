@@ -60,9 +60,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ attached: false, reason: "self_referral" });
     }
 
-    await prisma.affiliateClick.update({
-      where: { id: click.id },
-      data:  { convertedToUserId: userId },
+    const registrant = await prisma.user.findUnique({
+      where:  { id: userId },
+      select: { registrationIpHash: true },
+    });
+
+    await prisma.$transaction(async (tx) => {
+      await tx.affiliateClick.update({
+        where: { id: click.id },
+        data:  { convertedToUserId: userId },
+      });
+
+      await tx.user.update({
+        where: { id: userId },
+        data:  { referredByAffiliateId: click.affiliateId },
+      });
+
+      if (registrant?.registrationIpHash && registrant.registrationIpHash === click.ipHash) {
+        await tx.affiliate.updateMany({
+          where: { id: click.affiliateId, suspiciousFlag: false },
+          data:  { suspiciousFlag: true, suspiciousReason: "ip_match_registration" },
+        });
+      }
     });
 
     return NextResponse.json({ attached: true });

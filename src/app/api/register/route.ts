@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcrypt'
 import { signToken } from '@/lib/auth'
+import { hashIp } from '@/lib/ip'
 
 const STARTING_BALANCE = 10000.00
 
@@ -61,6 +62,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const hashedPassword = await bcrypt.hash(password, 10)
+    const ipHash = hashIp(req)
 
     const result = await prisma.$transaction(async (tx) => {
       // Create user
@@ -73,6 +75,7 @@ export async function POST(req: NextRequest) {
           lastName: lastName.trim(),
           provider: 'email',
           membershipStatus: 'free',
+          registrationIpHash: ipHash,
         },
       })
 
