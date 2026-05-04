@@ -34,7 +34,7 @@ export default function CookieBanner() {
     }}>
       <p style={{ fontSize: 13, color: "#94A3B8", margin: 0, lineHeight: 1.5, flex: 1 }}>
         We use cookies to improve your experience.{" "}
-        <a href="/privacy-policy" style={{ color: "#22C55E", textDecoration: "none" }}>Privacy Policy</a>
+        <a href="/privacy" style={{ color: "#22C55E", textDecoration: "none" }}>Privacy Policy</a>
       </p>
       <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
         <button onClick={decline} style={{

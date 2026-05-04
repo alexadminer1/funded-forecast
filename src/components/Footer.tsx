@@ -41,8 +41,8 @@ export default function Footer() {
               <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 16 }}>Information</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {[
-                  { label: "Terms & Conditions", href: "/terms-of-use" },
-                  { label: "Privacy Policy", href: "/privacy-policy" },
+                  { label: "Terms & Conditions", href: "/terms" },
+                  { label: "Privacy Policy", href: "/privacy" },
                   { label: "Risk Disclosure", href: "/risk-disclosure" },
                 ].map(({ label, href }) => (
                   <a key={label} href={href} style={{ fontSize: 13, color: "#64748B", textDecoration: "none" }}>{label}</a>

@@ -368,12 +368,12 @@ export default function AccountPage() {
               <span style={{ fontSize: 13, color: "#94A3B8" }}>Terms of Use</span>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 {consent?.acceptedAt && <span style={{ fontSize: 11, color: "#22C55E" }}>✓ Accepted {new Date(consent.acceptedAt).toLocaleDateString()}</span>}
-                <a href="/terms-of-use" style={{ fontSize: 12, color: "#475569", textDecoration: "none" }}>View →</a>
+                <a href="/terms" style={{ fontSize: 12, color: "#475569", textDecoration: "none" }}>View →</a>
               </div>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontSize: 13, color: "#94A3B8" }}>Privacy Policy</span>
-              <a href="/privacy-policy" style={{ fontSize: 12, color: "#475569", textDecoration: "none" }}>View →</a>
+              <a href="/privacy" style={{ fontSize: 12, color: "#475569", textDecoration: "none" }}>View →</a>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontSize: 13, color: "#94A3B8" }}>Risk Disclosure</span>
