@@ -82,10 +82,6 @@ export default function PrivacyPage() {
   return (
     <div style={styles.page}>
       <div style={styles.container}>
-        <div style={styles.draftBanner}>
-          DRAFT — pending legal review before production launch.
-        </div>
-
         <h1 style={styles.h1}>Privacy Policy</h1>
         <p style={styles.effective}>
           Effective: {LEGAL_CONFIG.effectiveDate}
@@ -415,12 +411,6 @@ export default function PrivacyPage() {
           {LEGAL_CONFIG.registrationNumber}.
         </p>
 
-        <div style={styles.finalNote}>
-          Reminder: this document is a draft prepared for closed-test use
-          only. It has not yet been reviewed by qualified legal counsel
-          and must not be treated as final or binding before such review
-          is completed and the page is approved for production launch.
-        </div>
       </div>
     </div>
   );
