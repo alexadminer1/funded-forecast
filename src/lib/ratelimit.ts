@@ -13,6 +13,7 @@ export const limiters = {
   startChallenge: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(3, "1 h"), prefix: "rl:challenge" }),
   affiliateApply: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(3, "1 h"), prefix: "rl:affiliate-apply" }),
   walletUpdate: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(5, "1 h"), prefix: "rl:affiliate-wallet" }),
+  payoutRequest: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(1, "1 d"), prefix: "rl:affiliate-payout" }),
   webhook: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(100, "1 m"), prefix: "rl:webhook" }),
   admin: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(20, "1 m"), prefix: "rl:admin" }),
   default: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(60, "1 m"), prefix: "rl:default" }),
