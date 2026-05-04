@@ -193,14 +193,32 @@ export default function AdminAffiliatePayoutsPage() {
   const STATUSES: StatusFilter[] = ["all", "requested", "approved", "processing", "completed", "failed", "cancelled"];
 
   return (
-    <div style={{ minHeight: "100vh", background: "#080c14", color: "#F1F5F9", fontFamily: "'Inter',-apple-system,sans-serif" }}>
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "60px 24px 80px" }}>
+    <div style={{ minHeight: "100vh", background: "#0F172A", fontFamily: "'Inter',-apple-system,sans-serif" }}>
 
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 32 }}>
-          <div>
-            <a href="/admin/affiliate" style={{ fontSize: 13, color: "#22C55E", textDecoration: "none" }}>← Admin</a>
-            <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-0.03em", marginTop: 8, marginBottom: 0 }}>Affiliate Payouts</h1>
-          </div>
+      {/* Header */}
+      <div style={{ background: "#1E293B", borderBottom: "1px solid #334155", padding: "0 24px", display: "flex", alignItems: "center", height: 52 }}>
+        <a href="/admin" style={{ fontSize: 14, fontWeight: 700, color: "#22C55E", marginRight: 8, textDecoration: "none" }}>Admin</a>
+        <span style={{ fontSize: 14, color: "#475569", marginRight: "auto" }}>· Affiliate Payouts</span>
+        <button
+          onClick={() => { sessionStorage.removeItem("adminKey"); setAuthed(false); }}
+          style={{ marginLeft: 16, padding: "6px 16px", borderRadius: 7, border: "1px solid #334155", background: "transparent", color: "#475569", fontSize: 13, cursor: "pointer" }}
+        >
+          Logout
+        </button>
+      </div>
+
+      {/* Sub-nav */}
+      <div style={{ background: "#0F172A", borderBottom: "1px solid #1E293B", padding: "0 24px" }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", gap: 24, height: 44, alignItems: "center" }}>
+          <a href="/admin/affiliate" style={{ fontSize: 13, fontWeight: 500, color: "#475569", textDecoration: "none" }}>Applications</a>
+          <a href="/admin/affiliate/payouts" style={{ fontSize: 13, fontWeight: 700, color: "#22C55E", textDecoration: "none" }}>Payouts</a>
+        </div>
+      </div>
+
+      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 24px 80px", color: "#F1F5F9" }}>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
+          <h1 style={{ fontSize: 18, fontWeight: 700, color: "#F1F5F9", margin: 0 }}>Affiliate Payouts</h1>
           <div style={{ fontSize: 13, color: "#475569" }}>Total: {total}</div>
         </div>
 

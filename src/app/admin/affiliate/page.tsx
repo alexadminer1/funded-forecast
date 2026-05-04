@@ -235,6 +235,14 @@ function AffiliateAdmin({ onInvalidKey, onLogout }: { onInvalidKey: () => void; 
         </button>
       </div>
 
+      {/* Sub-nav */}
+      <div style={{ background: "#0F172A", borderBottom: "1px solid #1E293B", padding: "0 24px" }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", gap: 24, height: 44, alignItems: "center" }}>
+          <a href="/admin/affiliate" style={{ fontSize: 13, fontWeight: 700, color: "#22C55E", textDecoration: "none" }}>Applications</a>
+          <a href="/admin/affiliate/payouts" style={{ fontSize: 13, fontWeight: 500, color: "#475569", textDecoration: "none" }}>Payouts</a>
+        </div>
+      </div>
+
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 24px" }}>
         <div style={{ fontSize: 18, fontWeight: 700, color: "#F1F5F9", marginBottom: 24 }}>Affiliate Applications</div>
 
