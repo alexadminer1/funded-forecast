@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
     data: {
       status: payment_status,
       nowPaymentId: String(payment_id),
-      payAmount: actually_paid,
+      payAmount: Number(actually_paid),
       payCurrency: pay_currency,
     },
   });
