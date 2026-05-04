@@ -10,7 +10,7 @@ const styles = {
     minHeight: "100vh",
     backgroundColor: "#080c14",
     color: "#F1F5F9",
-    padding: "32px 16px 80px",
+    padding: "80px 16px 80px",
     fontFamily:
       "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif",
     lineHeight: 1.65,
