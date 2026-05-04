@@ -13,37 +13,49 @@ Affiliate Program MVP в production на funded-forecast.vercel.app, branch main
 - Public landing `/affiliates`
 - Click tracking → cookie → conversion → ledger (атомарно)
 - Daily cron pending → available после hold period
-- Admin detail page `/admin/affiliate/[id]` с табами и действиями
+- Admin sub-nav Applications | Payouts на admin/affiliate и admin/affiliate/payouts (Step 9.8.1)
+- Admin detail page `/admin/affiliate/[id]` с 6 табами (Overview / Conversions / Ledger / Referred Users / Audit Log / Payouts) и actions
 - Admin actions affiliate-level: suspend / unsuspend / ban / forfeit
-- Same-IP fraud detection
-- Risk flags
 - Wallet setup с 7-day lock, method-specific валидацией
-- Affiliate-side payout endpoints + cabinet UI (Step 9.4 + 9.6): создание payout request с TOCTOU recheck, dashboard summary, history с masked wallets, blocking reason mapping в UI, window.confirm перед submit
-- Admin payout review API (Step 9.5): GET list, GET detail, POST approve/reject/complete/fail. Все atomic, с audit log. complete делает payout_paid ledger entry, increment lifetimePaid, переводит conversions в paid
+- Affiliate-side payout endpoints + cabinet UI (Step 9.4 + 9.6)
+- Admin payout review API (Step 9.5): GET list, GET detail, POST approve/reject/complete/fail
+- Admin payout review UI (Step 9.7 + 9.8): standalone /admin/affiliate/payouts с filter + table + action modal, плюс Payouts tab в карточке партнёра с lazy load и теми же действиями
 
 Текущий test affiliate: root@alexadminer.com, refCode tesssettre, status approved, баланс \$0, 0 conversions, wallet установлен (USDT TRC20), walletLockUntil May 10 2026.
 
 ## LAST COMPLETED STEP
-Step 9.6 (commit 3a9d361) — affiliate cabinet payout UI. Smoke-test пройден визуально: dashboard, action block с lock-сообщением, история (пустая), nav с пятью ссылками, Payouts активная.
+Step 9.8.2 (commit 50d10cc) — Payouts tab в admin/affiliate/[id]. Smoke-test пройден: 6 табов, Payouts таб показывает per-affiliate список ("No payouts for this affiliate." при пустых данных).
 
 ## CURRENT ACTIVE TASK
-Подготовка Step 9.7 pre-check.
+Подготовка Step 11 (Full E2E test) или решение по следующему шагу.
 
-## NEXT STEP
-Step 9.7: Admin payout review UI.
+## NEXT STEP CANDIDATES
 
-Зафиксированный scope:
-- Расширить /admin/affiliate секцию payouts (или создать отдельную /admin/payouts)
-- List view: фильтр по статусу, пагинация
-- Detail view: показывает payout + affiliate + conversions
-- 4 actions: approve / reject / complete / fail
-- Modal с adminLabel + reason (для reject/fail/complete - reason; approve - reason optional)
-- complete modal: дополнительно transactionHash + adminNote (optional)
+### Step 11 — Full E2E test
+End-to-end проверка всего цикла на production:
+1. Реф-клик /r/{tesssettre} → cookie aff_id
+2. Регистрация нового тестового юзера → registrationIpHash
+3. /api/affiliate/attach-click → User.referredByAffiliateId
+4. NowPayments тестовая покупка (если есть sandbox/тест-режим)
+5. Webhook → AffiliateConversion (status=pending)
+6. Cron promote → status=approved + balanceAvailable
+7. Cabinet payout request → AffiliatePayout (status=requested)
+8. Admin approve → approved
+9. Admin complete → completed + payout_paid ledger + lifetimePaid increment
+10. Verification: balance correct, conversion paid, audit log полный
 
-Pre-check Step 9.7 проверит:
-- Структуру существующего /admin/affiliate UI (паттерны list/detail, modal, action handler)
-- Где разместить payouts admin UI (вкладка в admin/affiliate или отдельная страница)
-- Существующий ADMIN_API_KEY flow в admin pages
+Pre-check Step 11:
+- Проверить как сейчас работает NowPayments в dev/test (есть ли sandbox)
+- Может ли реально пройти платёж в closed-test или нужен manual webhook trigger
+- IP-overlap между тестовым юзером и affiliate (одна машина) → suspiciousFlag
+
+### Step 10B — Terms/Privacy
+Юр. контент от пользователя.
+
+### Pre-prod security audit
+- Rotate ADMIN_API_KEY
+- Rotate DATABASE_URL password
+- Update Vercel envs
 
 ## BACKLOG
 
@@ -51,18 +63,17 @@ Pre-check Step 9.7 проверит:
 (пусто)
 
 ### P1 — MVP / launch critical
-- Step 9.7 — Admin payout review UI
-- Step 11 — Full E2E test (click → register → payment → conversion → cron → payout cycle с реальным affiliate balance)
+- Step 11 — Full E2E test
 - Step 10B — Terms/Privacy pages
-- Pre-prod security audit (rotate ADMIN_API_KEY, DATABASE_URL password)
+- Pre-prod security audit
 
 ### P2 — important but not blocking
-- Lifetime counters lifetimeEarned не обновляется автоматически (lifetimePaid обновляется в complete)
+- Lifetime counters: lifetimeEarned не обновляется автоматически
 - AffiliateClick FK без onDelete:Cascade
-- Admin approve/reject existing endpoints non-atomic (тех.долг)
+- Admin approve/reject existing endpoints non-atomic
 - Admin UI Approve/Reject loading state отсутствует
 - LeaderboardEntry table без RLS
-- Email notifications для affiliates (suspend/ban/payout/wallet_change)
+- Email notifications для affiliates
 - Внутренний cabinet nav хардкоден без shared layout
 - Freeze action для admin payout (deferred MVP)
 - Real payout provider integration (NowPayments) → processing status
@@ -83,49 +94,50 @@ Pre-check Step 9.7 проверит:
 Нет подтверждённых багов.
 
 ## RISKS
-- Technical: Step 9.7 — большой UI. Возможно потребуется новая admin страница или вкладка в существующей. Pre-check определит.
-- Technical: prisma db push hangs. DDL — Supabase SQL Editor.
-- Technical: Free Vercel plan, 2 cron limit.
-- Product: payout flow без email notifications.
-- Product: KYC не реализован.
-- Infra: единый Supabase для dev/preview/prod.
-- Legal: Terms/Privacy отсутствуют.
-- Security: ADMIN_API_KEY в dev-логах.
+- Step 11: NowPayments sandbox возможно недоступен → потребует manual webhook simulate через curl с подписью
+- Step 11: walletLockUntil affiliate'а до May 10 2026 — payout request не пройдёт сейчас (blockingReason wallet_locked). Либо ждать, либо сменить wallet (что снова даёт 7 дней lock), либо patch DB вручную, либо использовать другого test affiliate
+- prisma db push hangs. DDL — Supabase SQL Editor.
+- Free Vercel plan, 2 cron limit.
+- Email notifications отсутствуют.
+- KYC не реализован.
+- Единый Supabase для dev/preview/prod.
+- Terms/Privacy отсутствуют.
+- ADMIN_API_KEY в dev-логах.
 
 ## RECENTLY CHANGED FILES
-- src/app/affiliate/payouts/page.tsx (Step 9.6 new)
+- src/app/admin/affiliate/[id]/page.tsx (Step 9.8.2 + Payouts tab + handlers + modal)
+- src/app/admin/affiliate/page.tsx (Step 9.8.1 + sub-nav)
+- src/app/admin/affiliate/payouts/page.tsx (Step 9.8.1 + header bar + sub-nav, Step 9.7 + admin UI)
+- src/app/affiliate/payouts/page.tsx (Step 9.6 cabinet UI)
 - src/app/affiliate/page.tsx (Step 9.6 + Payouts nav)
 - src/app/affiliate/conversions/page.tsx (Step 9.6 + Payouts nav)
 - src/app/affiliate/ledger/page.tsx (Step 9.6 + Payouts nav)
 - src/app/affiliate/settings/page.tsx (Step 9.6 + Payouts nav)
-- src/app/api/admin/affiliate/payouts/route.ts (Step 9.5.1 new — list)
-- src/app/api/admin/affiliate/payouts/[id]/route.ts (Step 9.5.1 new — detail)
-- src/app/api/admin/affiliate/payouts/[id]/approve/route.ts (Step 9.5.2 new)
-- src/app/api/admin/affiliate/payouts/[id]/reject/route.ts (Step 9.5.3 new)
-- src/app/api/admin/affiliate/payouts/[id]/fail/route.ts (Step 9.5.3 new)
-- src/app/api/admin/affiliate/payouts/[id]/complete/route.ts (Step 9.5.4 new)
-- src/lib/affiliate/payout.ts (Step 9.4.1 new)
-- src/app/api/affiliate/payouts/route.ts (Step 9.4.2 + 9.4.3 new)
+- src/app/api/admin/affiliate/payouts/* (Step 9.5)
+- src/app/api/affiliate/payouts/route.ts (Step 9.4)
+- src/lib/affiliate/payout.ts (Step 9.4.1)
 - src/lib/ratelimit.ts (Step 9.4.2 + payoutRequest)
 
 DB migrations applied:
 - partial unique index affiliate_active_payout_idx (Step 9.4.0, applied via Supabase SQL Editor)
 
-Last commits (chronological):
+Last commits (chronological, newest first):
+- 50d10cc Step 9.8.2 (Payouts tab in detail page)
+- 2661005 Step 9.8.1 (admin sub-nav)
+- 802ff26 Step 9.7 (admin payout UI)
 - 3a9d361 Step 9.6 (cabinet payout UI)
-- e2c0509 Step 9.5 (admin payout review endpoints)
-- b5646cd docs after 9.4
-- 6b8a661 Step 9.4.2-9.4.3 (payout endpoints affiliate-side)
-- 1129645 docs after 9.3.5
-- 9e060a0 Step 9.3.5
+- e2c0509 Step 9.5 (admin payout endpoints)
+- 6b8a661 Step 9.4 (payout endpoints affiliate-side)
+- 9e060a0 Step 9.3.5 (wallet setup)
 
 ## LAST CLAUDE CODE REPORT
-Step 9.6 implementation complete. Build green, 5 files changed (+340 insertions), commit 3a9d361 pushed. Smoke-test in production: /affiliate/payouts page renders correctly with all 3 sections (dashboard with 4 stat cards, action block with wallet_locked message and disabled button, empty history). All 5 nav links present including active Payouts.
+Step 9.8.2 implementation complete. Build green, file size 751 lines (no gaps), commit 50d10cc pushed. Smoke-test passed: 6 tabs visible in /admin/affiliate/[id], Payouts tab shows per-affiliate list with lazy load, empty state shows "No payouts for this affiliate." correctly.
 
 ## OPEN QUESTIONS
-1. Admin payout review UI — где разместить: новая вкладка в /admin/affiliate detail page (по affiliate'у) или отдельная страница /admin/payouts (cross-affiliate list)?
-   - Pre-check Step 9.7 покажет структуру admin UI и подскажет.
+1. Step 11 strategy — реально пройти платёж в NowPayments sandbox или симулировать webhook вручную?
+2. Wallet lock на test affiliate (до May 10 2026) — ждать или patch DB?
 
 ## USER SHOULD PROVIDE IF AVAILABLE
-- Required: ничего критичного для Step 9.7
+- Required: ничего критичного
+- Useful: подтверждение что NowPayments в dev режиме доступен для теста
 - Optional: текст Terms/Privacy для Step 10B
