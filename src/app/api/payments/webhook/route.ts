@@ -51,13 +51,25 @@ export async function POST(req: NextRequest) {
   const payment = await prisma.payment.findUnique({ where: { orderId: order_id } });
   if (!payment) return NextResponse.json({ error: "Payment not found" }, { status: 404 });
 
+  const payAmount =
+    actually_paid != null && !Number.isNaN(Number(actually_paid))
+      ? Number(actually_paid)
+      : null;
+  if (payAmount === null && actually_paid != null) {
+    console.warn(`[WEBHOOK] actually_paid is non-numeric: ${JSON.stringify(actually_paid)}`);
+  }
+  const payCurrency =
+    typeof pay_currency === "string" && pay_currency.length > 0
+      ? pay_currency
+      : null;
+
   await prisma.payment.update({
     where: { orderId: order_id },
     data: {
       status: payment_status,
       nowPaymentId: String(payment_id),
-      payAmount: Number(actually_paid),
-      payCurrency: pay_currency,
+      payAmount,
+      payCurrency,
     },
   });
 
