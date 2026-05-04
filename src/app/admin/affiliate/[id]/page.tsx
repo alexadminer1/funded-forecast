@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
+import { maskWallet } from "@/lib/affiliate/wallet";
 
 const STORAGE_KEY  = "adminKey";
 const ATTEMPTS_KEY = "adminAttempts";
@@ -9,7 +10,7 @@ const BLOCKED_KEY  = "adminBlockedUntil";
 const MAX_ATTEMPTS = 3;
 const BLOCK_MS     = 5 * 60 * 1000;
 
-type TabKey = "overview" | "conversions" | "ledger" | "referred" | "audit";
+type TabKey = "overview" | "conversions" | "ledger" | "referred" | "audit" | "payouts";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "overview",    label: "Overview"       },
@@ -17,6 +18,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "ledger",      label: "Ledger"         },
   { key: "referred",    label: "Referred Users" },
   { key: "audit",       label: "Audit Log"      },
+  { key: "payouts",     label: "Payouts"        },
 ];
 
 const STATUS_COLORS: Record<string, string> = {
@@ -150,6 +152,21 @@ function AffiliateDetail({ onInvalidKey, onLogout }: { onInvalidKey: () => void;
   const [modalError,   setModalError]   = useState<string | null>(null);
   const [successMsg,   setSuccessMsg]   = useState<string | null>(null);
 
+  // Payouts tab state (lazy load)
+  const [payoutsData,    setPayoutsData]    = useState<any[] | null>(null);
+  const [payoutsLoading, setPayoutsLoading] = useState(false);
+  const [payoutsError,   setPayoutsError]   = useState<string | null>(null);
+
+  // Payout action modal state
+  const [payoutModalAction, setPayoutModalAction] = useState<"approve" | "reject" | "complete" | "fail" | null>(null);
+  const [payoutModalRow,    setPayoutModalRow]    = useState<any | null>(null);
+  const [payoutModalLabel,  setPayoutModalLabel]  = useState("");
+  const [payoutModalReason, setPayoutModalReason] = useState("");
+  const [payoutModalTxHash, setPayoutModalTxHash] = useState("");
+  const [payoutModalNote,   setPayoutModalNote]   = useState("");
+  const [payoutModalLoading, setPayoutModalLoading] = useState(false);
+  const [payoutModalError,   setPayoutModalError]   = useState<string | null>(null);
+
   const apiFetch = useCallback(async function<T = any>(url: string, opts: RequestInit = {}): Promise<T> {
     const key = sessionStorage.getItem(STORAGE_KEY) ?? "";
     const res = await fetch(url, {
@@ -171,6 +188,93 @@ function AffiliateDetail({ onInvalidKey, onLogout }: { onInvalidKey: () => void;
   }, [id, apiFetch]);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadPayouts = useCallback(async () => {
+    if (!id) return;
+    setPayoutsLoading(true);
+    setPayoutsError(null);
+    try {
+      const res = await apiFetch<{ items: any[] }>(`/api/admin/affiliate/payouts?affiliateId=${id}&limit=100`);
+      setPayoutsData(res.items ?? []);
+    } catch (e: any) {
+      if (e?.message !== "Forbidden") {
+        setPayoutsError(String(e?.message ?? e));
+      }
+    } finally {
+      setPayoutsLoading(false);
+    }
+  }, [id, apiFetch]);
+
+  useEffect(() => {
+    if (activeTab === "payouts" && payoutsData === null && !payoutsLoading) {
+      loadPayouts();
+    }
+  }, [activeTab, payoutsData, payoutsLoading, loadPayouts]);
+
+  function openPayoutModal(action: "approve" | "reject" | "complete" | "fail", row: any) {
+    setPayoutModalAction(action);
+    setPayoutModalRow(row);
+    setPayoutModalLabel("");
+    setPayoutModalReason("");
+    setPayoutModalTxHash("");
+    setPayoutModalNote("");
+    setPayoutModalError(null);
+  }
+
+  function closePayoutModal() {
+    setPayoutModalAction(null);
+    setPayoutModalRow(null);
+    setPayoutModalLabel("");
+    setPayoutModalReason("");
+    setPayoutModalTxHash("");
+    setPayoutModalNote("");
+    setPayoutModalError(null);
+    setPayoutModalLoading(false);
+  }
+
+  async function handlePayoutConfirm() {
+    if (!payoutModalAction || !payoutModalRow) return;
+    setPayoutModalError(null);
+
+    const label = payoutModalLabel.trim();
+    const reason = payoutModalReason.trim();
+    const txHash = payoutModalTxHash.trim();
+    const note = payoutModalNote.trim();
+
+    if (!label) { setPayoutModalError("adminLabel required"); return; }
+    if ((payoutModalAction === "reject" || payoutModalAction === "fail") && !reason) {
+      setPayoutModalError("reason required");
+      return;
+    }
+
+    setPayoutModalLoading(true);
+    const body: any = { adminLabel: label };
+    if (reason) body.reason = reason;
+    if (payoutModalAction === "complete") {
+      if (txHash) body.transactionHash = txHash;
+      if (note) body.adminNote = note;
+    }
+
+    try {
+      const res = await apiFetch<any>(`/api/admin/affiliate/payouts/${payoutModalRow.id}/${payoutModalAction}`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      if (res?.error) {
+        setPayoutModalError(res.message || res.error);
+        setPayoutModalLoading(false);
+        return;
+      }
+      setSuccessMsg(`Payout ${payoutModalAction}d.`);
+      setTimeout(() => setSuccessMsg(null), 2500);
+      closePayoutModal();
+      // Refetch payouts only
+      setPayoutsData(null);
+    } catch (e: any) {
+      setPayoutModalError(String(e?.message ?? "Request failed"));
+      setPayoutModalLoading(false);
+    }
+  }
 
   async function handleAction() {
     if (!modalOpen || !modalLabel.trim() || !modalReason.trim()) { setModalError("Admin label and reason are required."); return; }
@@ -477,6 +581,72 @@ function AffiliateDetail({ onInvalidKey, onLogout }: { onInvalidKey: () => void;
                   }
                 </div>
               )}
+
+              {/* ── Payouts ── */}
+              {activeTab === "payouts" && (
+                <div>
+                  {payoutsLoading && payoutsData === null ? (
+                    <div style={{ color: "#94A3B8", fontSize: 13, padding: "12px 0" }}>Loading payouts…</div>
+                  ) : payoutsError ? (
+                    <div style={{ color: "#EF4444", fontSize: 13, padding: "12px 0" }}>Error: {payoutsError}</div>
+                  ) : !payoutsData || payoutsData.length === 0 ? (
+                    <div style={{ color: "#94A3B8", fontSize: 13, padding: "12px 0" }}>No payouts for this affiliate.</div>
+                  ) : (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ borderBottom: "1px solid #334155" }}>
+                            <th style={{ textAlign: "left", padding: "10px 12px", fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em" }}>ID</th>
+                            <th style={{ textAlign: "left", padding: "10px 12px", fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em" }}>Status</th>
+                            <th style={{ textAlign: "right", padding: "10px 12px", fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em" }}>Amount</th>
+                            <th style={{ textAlign: "left", padding: "10px 12px", fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em" }}>Method</th>
+                            <th style={{ textAlign: "left", padding: "10px 12px", fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em" }}>Wallet</th>
+                            <th style={{ textAlign: "left", padding: "10px 12px", fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em" }}>Requested</th>
+                            <th style={{ textAlign: "left", padding: "10px 12px", fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em" }}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {payoutsData.map((row: any) => {
+                            const showApproveReject = row.status === "requested";
+                            const showCompleteFail = row.status === "approved";
+                            return (
+                              <tr key={row.id} style={{ borderBottom: "1px solid #1E293B" }}>
+                                <td style={{ padding: "10px 12px", color: "#94A3B8", fontFamily: "monospace" }}>#{row.id}</td>
+                                <td style={{ padding: "10px 12px" }}>
+                                  <span style={{ fontSize: 11, padding: "3px 8px", borderRadius: 4, background: "#0F172A", color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.06em" }}>{row.status}</span>
+                                </td>
+                                <td style={{ padding: "10px 12px", textAlign: "right", color: "#F1F5F9", fontWeight: 600 }}>${Number(row.amount).toFixed(2)}</td>
+                                <td style={{ padding: "10px 12px", color: "#94A3B8" }}>{row.paymentMethod}</td>
+                                <td style={{ padding: "10px 12px", color: "#94A3B8", fontFamily: "monospace", fontSize: 12 }}>{maskWallet(row.paymentWallet)}</td>
+                                <td style={{ padding: "10px 12px", color: "#94A3B8", fontSize: 12 }}>{row.requestedAt ? new Date(row.requestedAt).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—"}</td>
+                                <td style={{ padding: "10px 12px" }}>
+                                  <div style={{ display: "flex", gap: 6 }}>
+                                    {showApproveReject && (
+                                      <>
+                                        <button onClick={() => openPayoutModal("approve", row)} style={{ padding: "4px 10px", fontSize: 11, borderRadius: 5, border: "1px solid #22C55E", background: "transparent", color: "#22C55E", cursor: "pointer" }}>Approve</button>
+                                        <button onClick={() => openPayoutModal("reject", row)} style={{ padding: "4px 10px", fontSize: 11, borderRadius: 5, border: "1px solid #EF4444", background: "transparent", color: "#EF4444", cursor: "pointer" }}>Reject</button>
+                                      </>
+                                    )}
+                                    {showCompleteFail && (
+                                      <>
+                                        <button onClick={() => openPayoutModal("complete", row)} style={{ padding: "4px 10px", fontSize: 11, borderRadius: 5, border: "1px solid #22C55E", background: "transparent", color: "#22C55E", cursor: "pointer" }}>Complete</button>
+                                        <button onClick={() => openPayoutModal("fail", row)} style={{ padding: "4px 10px", fontSize: 11, borderRadius: 5, border: "1px solid #EF4444", background: "transparent", color: "#EF4444", cursor: "pointer" }}>Fail</button>
+                                      </>
+                                    )}
+                                    {!showApproveReject && !showCompleteFail && (
+                                      <span style={{ color: "#475569", fontSize: 12 }}>—</span>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           );
         })()}
@@ -520,6 +690,62 @@ function AffiliateDetail({ onInvalidKey, onLogout }: { onInvalidKey: () => void;
           </div>
         );
       })()}
+
+      {payoutModalAction && payoutModalRow && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+          <div style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 12, padding: "28px 32px", width: 540, maxWidth: "92vw", maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#F1F5F9", marginBottom: 16, textTransform: "capitalize" }}>
+              {payoutModalAction} payout #{payoutModalRow.id}
+            </div>
+            <div style={{ background: "#0F172A", border: "1px solid #334155", borderRadius: 8, padding: "12px 14px", marginBottom: 18, fontSize: 12, color: "#94A3B8" }}>
+              <div style={{ marginBottom: 6 }}><span style={{ color: "#475569" }}>Amount:</span> <span style={{ color: "#F1F5F9", fontWeight: 600 }}>${Number(payoutModalRow.amount).toFixed(2)}</span></div>
+              <div style={{ marginBottom: 6 }}><span style={{ color: "#475569" }}>Method:</span> {payoutModalRow.paymentMethod} ({payoutModalRow.network})</div>
+              <div style={{ marginBottom: 6, fontFamily: "monospace", wordBreak: "break-all" }}><span style={{ color: "#475569", fontFamily: "inherit" }}>Wallet:</span> {payoutModalRow.paymentWallet}</div>
+              <div style={{ marginBottom: 6 }}><span style={{ color: "#475569" }}>Requested:</span> {payoutModalRow.requestedAt ? new Date(payoutModalRow.requestedAt).toLocaleString("en-US") : "—"}</div>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 6 }}>Admin Label *</label>
+              <input value={payoutModalLabel} onChange={e => setPayoutModalLabel(e.target.value)} placeholder="e.g. admin-ui"
+                style={{ width: "100%", padding: "9px 12px", borderRadius: 7, boxSizing: "border-box", border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 13, outline: "none" }} />
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 6 }}>
+                Reason {(payoutModalAction === "reject" || payoutModalAction === "fail") ? "*" : "(optional)"}
+              </label>
+              <textarea value={payoutModalReason} onChange={e => setPayoutModalReason(e.target.value)} rows={3}
+                style={{ width: "100%", padding: "9px 12px", borderRadius: 7, boxSizing: "border-box", border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 13, outline: "none", resize: "vertical", fontFamily: "inherit" }} />
+            </div>
+
+            {payoutModalAction === "complete" && (
+              <>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 6 }}>Transaction Hash (optional)</label>
+                  <input value={payoutModalTxHash} onChange={e => setPayoutModalTxHash(e.target.value)} placeholder="0x..."
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 7, boxSizing: "border-box", border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 13, outline: "none", fontFamily: "monospace" }} />
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 11, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 6 }}>Admin Note (optional)</label>
+                  <textarea value={payoutModalNote} onChange={e => setPayoutModalNote(e.target.value)} rows={2}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 7, boxSizing: "border-box", border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 13, outline: "none", resize: "vertical", fontFamily: "inherit" }} />
+                </div>
+              </>
+            )}
+
+            {payoutModalError && <div style={{ color: "#EF4444", fontSize: 12, marginBottom: 14 }}>{payoutModalError}</div>}
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button onClick={closePayoutModal} disabled={payoutModalLoading}
+                style={{ padding: "8px 20px", borderRadius: 7, border: "1px solid #334155", background: "transparent", color: "#94A3B8", fontSize: 13, cursor: "pointer" }}>Cancel</button>
+              <button onClick={handlePayoutConfirm} disabled={payoutModalLoading}
+                style={{ padding: "8px 20px", borderRadius: 7, border: "none", background: (payoutModalAction === "approve" || payoutModalAction === "complete") ? "#22C55E" : "#EF4444", color: (payoutModalAction === "approve" || payoutModalAction === "complete") ? "#071A0E" : "#fff", fontSize: 13, fontWeight: 700, cursor: payoutModalLoading ? "not-allowed" : "pointer" }}>
+                {payoutModalLoading ? "Processing…" : "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
