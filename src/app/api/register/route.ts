@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcrypt'
 import { signToken } from '@/lib/auth'
 import { hashIp } from '@/lib/ip'
+import { attachAffiliateClickIfNeeded } from '@/lib/affiliate/attribution'
 
 const STARTING_BALANCE = 10000.00
 
@@ -119,6 +120,16 @@ export async function POST(req: NextRequest) {
     })
 
     const token = signToken({ userId: result.id })
+
+    // Attach affiliate referral if cookie present (best-effort, doesn't block registration)
+    const affCookieId = req.cookies.get('aff_id')?.value
+    if (affCookieId) {
+      try {
+        await attachAffiliateClickIfNeeded(result.id, affCookieId)
+      } catch (err) {
+        console.warn('[REGISTER] affiliate attach failed', err)
+      }
+    }
 
     return NextResponse.json({
       success: true,
