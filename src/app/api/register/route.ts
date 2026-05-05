@@ -7,7 +7,7 @@ import { signToken } from '@/lib/auth'
 import { hashIp } from '@/lib/ip'
 import { attachAffiliateClickIfNeeded } from '@/lib/affiliate/attribution'
 
-const STARTING_BALANCE = 10000.00
+const STARTING_BALANCE = 10.00
 
 export async function POST(req: NextRequest) {
   let body: {
