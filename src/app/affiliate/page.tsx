@@ -58,6 +58,7 @@ export default function AffiliatePage() {
         {affiliate?.status === "approved" && (
           <div style={{ display: "flex", gap: 24, marginBottom: 28 }}>
             <a href="/affiliate" style={{ fontSize: 13, fontWeight: 700, color: "#22C55E", textDecoration: "none" }}>Overview</a>
+            <a href="/affiliate/referrals" style={{ fontSize: 13, color: "#475569", textDecoration: "none" }}>Referrals</a>
             <a href="/affiliate/conversions" style={{ fontSize: 13, color: "#475569", textDecoration: "none" }}>Conversions</a>
             <a href="/affiliate/ledger" style={{ fontSize: 13, color: "#475569", textDecoration: "none" }}>Ledger</a>
             <a href="/affiliate/settings" style={{ fontSize: 13, color: "#475569", textDecoration: "none" }}>Settings</a>
