@@ -5,8 +5,16 @@ import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { REFCODE, ATTRIBUTION } from "@/lib/affiliate/constants";
 
+function getBaseUrl(request: NextRequest): string {
+  const host = request.headers.get("x-forwarded-host")
+            ?? request.headers.get("host")
+            ?? "tradepredictions.online";
+  const proto = request.headers.get("x-forwarded-proto") ?? "https";
+  return `${proto}://${host}`;
+}
+
 function redirectHome(request: NextRequest): NextResponse {
-  return NextResponse.redirect(new URL("/", request.url), 302);
+  return NextResponse.redirect(`${getBaseUrl(request)}/`, 302);
 }
 
 export async function GET(
@@ -114,6 +122,6 @@ export async function GET(
     return response;
   } catch (err) {
     console.error("[AFFILIATE_TRACKING] route error", err);
-    return NextResponse.redirect(new URL("/", request.url), 302);
+    return NextResponse.redirect(`${getBaseUrl(request)}/`, 302);
   }
 }
