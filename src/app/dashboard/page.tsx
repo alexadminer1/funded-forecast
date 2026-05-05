@@ -130,7 +130,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 <a
-                  href="/#plans"
+                  href="/account/plans"
                   style={{
                     flexShrink: 0,
                     background: "#22C55E",
