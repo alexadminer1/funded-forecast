@@ -56,13 +56,20 @@ export default function AffiliatePage() {
         </div>
 
         {affiliate?.status === "approved" && (
-          <div style={{ display: "flex", gap: 24, marginBottom: 28 }}>
-            <a href="/affiliate" style={{ fontSize: 13, fontWeight: 700, color: "#22C55E", textDecoration: "none" }}>Overview</a>
-            <a href="/affiliate/referrals" style={{ fontSize: 13, color: "#475569", textDecoration: "none" }}>Referrals</a>
-            <a href="/affiliate/conversions" style={{ fontSize: 13, color: "#475569", textDecoration: "none" }}>Conversions</a>
-            <a href="/affiliate/ledger" style={{ fontSize: 13, color: "#475569", textDecoration: "none" }}>Ledger</a>
-            <a href="/affiliate/settings" style={{ fontSize: 13, color: "#475569", textDecoration: "none" }}>Settings</a>
-            <a href="/affiliate/payouts" style={{ fontSize: 13, color: "#475569", textDecoration: "none" }}>Payouts</a>
+          <div style={{
+            display: "flex",
+            gap: 24,
+            marginBottom: 28,
+            overflowX: "auto",
+            WebkitOverflowScrolling: "touch",
+            paddingBottom: 4,
+          }}>
+            <a href="/affiliate" style={{ fontSize: 13, fontWeight: 700, color: "#22C55E", textDecoration: "none", whiteSpace: "nowrap" }}>Overview</a>
+            <a href="/affiliate/referrals" style={{ fontSize: 13, color: "#475569", textDecoration: "none", whiteSpace: "nowrap" }}>Referrals</a>
+            <a href="/affiliate/conversions" style={{ fontSize: 13, color: "#475569", textDecoration: "none", whiteSpace: "nowrap" }}>Conversions</a>
+            <a href="/affiliate/ledger" style={{ fontSize: 13, color: "#475569", textDecoration: "none", whiteSpace: "nowrap" }}>Ledger</a>
+            <a href="/affiliate/settings" style={{ fontSize: 13, color: "#475569", textDecoration: "none", whiteSpace: "nowrap" }}>Settings</a>
+            <a href="/affiliate/payouts" style={{ fontSize: 13, color: "#475569", textDecoration: "none", whiteSpace: "nowrap" }}>Payouts</a>
           </div>
         )}
 

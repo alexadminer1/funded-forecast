@@ -23,6 +23,16 @@ export default function LandingHeader() {
       WebkitBackdropFilter: "blur(16px)",
       borderBottom: "1px solid rgba(255,255,255,0.06)",
     }}>
+      <style jsx>{`
+        @media (max-width: 768px) {
+          :global(.ff-nav) { display: none !important; }
+          :global(.ff-login-btn) { display: none !important; }
+          :global(.ff-hamburger) { display: flex !important; }
+        }
+        @media (max-width: 480px) {
+          :global(.ff-header > div) { padding: 14px 16px !important; }
+        }
+      `}</style>
       <div style={{
         maxWidth: 900, margin: "0 auto",
         padding: "16px 40px",

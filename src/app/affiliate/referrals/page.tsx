@@ -83,19 +83,27 @@ export default function ReferralsPage(): React.JSX.Element {
 
   return (
     <div style={{ minHeight: "100vh", background: "#080c14", color: "#F1F5F9", fontFamily: "'Inter',-apple-system,sans-serif" }}>
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 24px 80px" }}>
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 16px 80px" }}>
         <a href="/affiliate" style={{ fontSize: 13, color: "#22C55E", textDecoration: "none", display: "inline-block", marginBottom: 20 }}>← Back to dashboard</a>
 
         <h1 style={{ fontSize: 32, fontWeight: 800, letterSpacing: "-0.03em", margin: "0 0 24px" }}>Affiliate Program</h1>
 
         {/* Nav tabs */}
-        <div style={{ display: "flex", gap: 24, borderBottom: "1px solid rgba(255,255,255,0.06)", marginBottom: 28, paddingBottom: 12 }}>
-          <a href="/affiliate"             style={{ color: "#64748B", textDecoration: "none", fontSize: 14 }}>Overview</a>
-          <a href="/affiliate/referrals"   style={{ color: "#22C55E", textDecoration: "none", fontSize: 14, fontWeight: 600 }}>Referrals</a>
-          <a href="/affiliate/conversions" style={{ color: "#64748B", textDecoration: "none", fontSize: 14 }}>Conversions</a>
-          <a href="/affiliate/ledger"      style={{ color: "#64748B", textDecoration: "none", fontSize: 14 }}>Ledger</a>
-          <a href="/affiliate/settings"    style={{ color: "#64748B", textDecoration: "none", fontSize: 14 }}>Settings</a>
-          <a href="/affiliate/payouts"     style={{ color: "#64748B", textDecoration: "none", fontSize: 14 }}>Payouts</a>
+        <div style={{
+          display: "flex",
+          gap: 24,
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          marginBottom: 28,
+          paddingBottom: 12,
+          overflowX: "auto",
+          WebkitOverflowScrolling: "touch",
+        }}>
+          <a href="/affiliate"             style={{ color: "#64748B", textDecoration: "none", fontSize: 14, whiteSpace: "nowrap" }}>Overview</a>
+          <a href="/affiliate/referrals"   style={{ color: "#22C55E", textDecoration: "none", fontSize: 14, fontWeight: 600, whiteSpace: "nowrap" }}>Referrals</a>
+          <a href="/affiliate/conversions" style={{ color: "#64748B", textDecoration: "none", fontSize: 14, whiteSpace: "nowrap" }}>Conversions</a>
+          <a href="/affiliate/ledger"      style={{ color: "#64748B", textDecoration: "none", fontSize: 14, whiteSpace: "nowrap" }}>Ledger</a>
+          <a href="/affiliate/settings"    style={{ color: "#64748B", textDecoration: "none", fontSize: 14, whiteSpace: "nowrap" }}>Settings</a>
+          <a href="/affiliate/payouts"     style={{ color: "#64748B", textDecoration: "none", fontSize: 14, whiteSpace: "nowrap" }}>Payouts</a>
         </div>
 
         {loading && <div style={{ color: "#64748B" }}>Loading…</div>}
