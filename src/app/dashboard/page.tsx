@@ -32,7 +32,6 @@ export default function DashboardPage() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [modeData, setModeData] = useState<ModeData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [startingChallenge, setStartingChallenge] = useState(false);
 
   const loadData = useCallback(() => {
     if (!getToken()) { router.push("/login"); return; }
@@ -48,16 +47,6 @@ export default function DashboardPage() {
   }, [router]);
 
   useEffect(() => { loadData(); }, [loadData]);
-
-  async function handleStartChallenge() {
-    setStartingChallenge(true);
-    try {
-      const data = await apiFetch<{ success: boolean; error?: string }>("/api/user/start-challenge", { method: "POST" });
-      if (data.success) loadData();
-    } finally {
-      setStartingChallenge(false);
-    }
-  }
 
   if (loading) return (
     <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}>
@@ -140,25 +129,23 @@ export default function DashboardPage() {
                     You&apos;re trading in sandbox. Start an evaluation to earn real payouts.
                   </div>
                 </div>
-                <button
-                  onClick={handleStartChallenge}
-                  disabled={startingChallenge}
+                <a
+                  href="/#plans"
                   style={{
                     flexShrink: 0,
-                    background: startingChallenge ? "#16532d" : "#22C55E",
+                    background: "#22C55E",
                     color: "#071A0E",
-                    border: "none",
                     borderRadius: 9,
                     padding: "10px 22px",
                     fontSize: 13,
                     fontWeight: 700,
-                    cursor: startingChallenge ? "not-allowed" : "pointer",
                     letterSpacing: "-0.01em",
+                    textDecoration: "none",
                     transition: "background 0.15s",
                   }}
                 >
-                  {startingChallenge ? "Starting..." : "Start Challenge"}
-                </button>
+                  Get Funded →
+                </a>
               </div>
             ) : modeData.challenge ? (
               <ChallengeCard challenge={modeData.challenge} />

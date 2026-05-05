@@ -96,6 +96,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Challenge not found or not passed" }, { status: 400 });
   }
 
+  // Reject payouts for challenges not backed by a real payment
+  if (!challenge.planId) {
+    return NextResponse.json(
+      { error: "This challenge is not eligible for payouts" },
+      { status: 400 }
+    );
+  }
+  const verifiedPayment = await prisma.payment.findFirst({
+    where: {
+      userId,
+      planId: challenge.planId,
+      status: { in: ["confirmed", "finished"] },
+    },
+  });
+  if (!verifiedPayment) {
+    return NextResponse.json(
+      { error: "No verified payment found for this challenge" },
+      { status: 400 }
+    );
+  }
+
   // 1. Min payout check (plan-level or fallback $10)
   const minPayout = challenge.minPayoutCents != null ? challenge.minPayoutCents / 100 : 10;
   if (amount < minPayout) {

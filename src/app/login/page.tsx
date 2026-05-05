@@ -44,17 +44,6 @@ function LoginInner() {
     setError(null);
   }
 
-  async function startChallengeIfNeeded(token: string) {
-    if (!planId) return;
-    try {
-      await apiFetch("/api/user/start-challenge", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ planId: Number(planId) }),
-      });
-    } catch { /* ignore */ }
-  }
-
   async function handleSubmit() {
     setLoading(true);
     setError(null);
@@ -66,7 +55,6 @@ function LoginInner() {
         });
         if (data.token) {
           setToken(data.token);
-          await startChallengeIfNeeded(data.token);
           router.push(next ?? (planId ? `/checkout?planId=${planId}` : "/dashboard"));
         } else setError(data.error ?? "Login failed");
       } else {
