@@ -13,6 +13,7 @@ export default function Header() {
   const [scrolled, setScrolled] = useState(false);
   const [hasAffiliate, setHasAffiliate] = useState(false);
   const [hasToken, setHasToken] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!getToken()) return;
@@ -37,16 +38,17 @@ export default function Header() {
   function handleLogout() {
     removeToken();
     setUser(null);
+    setMenuOpen(false);
     router.push("/");
   }
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
 
   const navLinks = [
-    { href: "/markets", label: "Markets" },
-    { href: "/dashboard", label: "Dashboard" },
-    { href: "/history", label: "History" },
-    { href: "/faq", label: "FAQ" },
+    { href: "/markets",     label: "Markets" },
+    { href: "/dashboard",   label: "Dashboard" },
+    { href: "/history",     label: "History" },
+    { href: "/faq",         label: "FAQ" },
     { href: "/leaderboard", label: "Leaderboard" },
   ];
 
@@ -70,8 +72,23 @@ export default function Header() {
       transition: "background 0.2s, border-color 0.2s",
     }}>
 
+      <style jsx>{`
+        @media (max-width: 768px) {
+          :global(.hdr-nav) { display: none !important; }
+          :global(.hdr-progress) { display: none !important; }
+          :global(.hdr-username) { display: none !important; }
+          :global(.hdr-signout) { display: none !important; }
+          :global(.hdr-hamburger) { display: flex !important; }
+          :global(header) { padding: 0 14px !important; }
+        }
+        @media (max-width: 480px) {
+          :global(.hdr-balance) { padding: 4px 8px !important; font-size: 11px !important; }
+          :global(.hdr-balance-label) { display: none !important; }
+        }
+      `}</style>
+
       {/* Logo */}
-      <a href={isLoggedIn ? "/markets" : "/"} style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 8 }}>
+      <a href={isLoggedIn ? "/markets" : "/"} style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
         <div style={{
           width: 28, height: 28, borderRadius: 8,
           background: "linear-gradient(135deg, #22C55E, #16A34A)",
@@ -84,25 +101,23 @@ export default function Header() {
         </span>
       </a>
 
-      {/* Nav — only when logged in */}
+      {/* Nav — desktop only */}
       {isLoggedIn && (
-        <nav style={{ display: "flex", gap: 4, alignItems: "center" }}>
+        <nav className="hdr-nav" style={{ display: "flex", gap: 4, alignItems: "center" }}>
           {navLinks.map(({ href, label }) => (
             <a
               key={href}
               href={href}
               style={{
-                color: isActive(href) ? "#F1F5F9" : "#64748B",
+                color:      isActive(href) ? "#F1F5F9" : "#64748B",
                 textDecoration: "none",
-                fontSize: 13.5,
+                fontSize:   13.5,
                 fontWeight: isActive(href) ? 600 : 400,
-                padding: "5px 12px",
+                padding:    "5px 12px",
                 borderRadius: 7,
                 background: isActive(href) ? "rgba(255,255,255,0.06)" : "transparent",
                 transition: "color 0.15s, background 0.15s",
               }}
-              onMouseEnter={(e) => { if (!isActive(href)) (e.currentTarget as HTMLElement).style.color = "#94A3B8"; }}
-              onMouseLeave={(e) => { if (!isActive(href)) (e.currentTarget as HTMLElement).style.color = "#64748B"; }}
             >
               {label}
             </a>
@@ -120,8 +135,6 @@ export default function Header() {
               background: isActive("/affiliate") || isActive("/affiliates") ? "rgba(255,255,255,0.06)" : "transparent",
               transition: "color 0.15s, background 0.15s",
             }}
-            onMouseEnter={(e) => { if (!isActive("/affiliate") && !isActive("/affiliates")) (e.currentTarget as HTMLElement).style.color = "#94A3B8"; }}
-            onMouseLeave={(e) => { if (!isActive("/affiliate") && !isActive("/affiliates")) (e.currentTarget as HTMLElement).style.color = "#64748B"; }}
           >
             Affiliates
           </a>
@@ -131,6 +144,7 @@ export default function Header() {
       {!isLoggedIn && (
         <a
           href="/affiliates"
+          className="hdr-nav"
           style={{
             color: "#64748B",
             textDecoration: "none",
@@ -138,83 +152,101 @@ export default function Header() {
             fontWeight: 400,
             padding: "5px 12px",
             borderRadius: 7,
-            transition: "color 0.15s",
           }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "#94A3B8"; }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "#64748B"; }}
         >
           Affiliates
         </a>
       )}
 
       {/* Right */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 320, justifyContent: "flex-end" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, visibility: isLoggedIn ? "visible" : "hidden", position: isLoggedIn ? "static" : "absolute" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "flex-end" }}>
 
-          {/* Challenge progress bar */}
-          {user?.activeChallenge && (() => {
-            const ch = user.activeChallenge!;
-            const profitPct = ch.startBalance > 0
-              ? ((ch.realizedBalance - ch.startBalance) / ch.startBalance) * 100
-              : 0;
-            const progress = Math.min(Math.max(profitPct / ch.profitTargetPct, 0), 1);
-            const planName = ch.plan?.name ?? "Evaluation";
-            const badgeColor =
-              planName.toLowerCase().includes("elite") ? "#F59E0B" :
-              planName.toLowerCase().includes("pro") ? "#3B82F6" : "#94A3B8";
-            return (
-              <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 140 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{
-                    fontSize: 10, fontWeight: 700, color: badgeColor,
-                    textTransform: "uppercase", letterSpacing: "0.08em",
-                  }}>{planName}</span>
-                  <span style={{ fontSize: 10, color: "#475569" }}>
-                    {Math.max(0, profitPct) > 0 ? "+" : ""}{Math.max(0, profitPct).toFixed(1)}% / {ch.profitTargetPct}%
-                  </span>
+        {isLoggedIn && (
+          <>
+            {/* Challenge progress — desktop only */}
+            {user?.activeChallenge && (() => {
+              const ch = user.activeChallenge!;
+              const profitPct = ch.startBalance > 0
+                ? ((ch.realizedBalance - ch.startBalance) / ch.startBalance) * 100
+                : 0;
+              const progress = Math.min(Math.max(profitPct / ch.profitTargetPct, 0), 1);
+              const planName = ch.plan?.name ?? "Evaluation";
+              const badgeColor =
+                planName.toLowerCase().includes("elite") ? "#F59E0B" :
+                planName.toLowerCase().includes("pro") ? "#3B82F6" : "#94A3B8";
+              return (
+                <div className="hdr-progress" style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 140 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, color: badgeColor,
+                      textTransform: "uppercase", letterSpacing: "0.08em",
+                    }}>{planName}</span>
+                    <span style={{ fontSize: 10, color: "#475569" }}>
+                      {Math.max(0, profitPct) > 0 ? "+" : ""}{Math.max(0, profitPct).toFixed(1)}% / {ch.profitTargetPct}%
+                    </span>
+                  </div>
+                  <div style={{ height: 4, borderRadius: 4, background: "rgba(255,255,255,0.07)", overflow: "hidden" }}>
+                    <div style={{
+                      height: "100%", borderRadius: 4,
+                      width: `${progress * 100}%`,
+                      background: progress >= 1 ? "#22C55E" : `linear-gradient(90deg, ${badgeColor}99, ${badgeColor})`,
+                      transition: "width 0.4s ease",
+                    }} />
+                  </div>
                 </div>
-                <div style={{ height: 4, borderRadius: 4, background: "rgba(255,255,255,0.07)", overflow: "hidden" }}>
-                  <div style={{
-                    height: "100%", borderRadius: 4,
-                    width: `${progress * 100}%`,
-                    background: progress >= 1 ? "#22C55E" : `linear-gradient(90deg, ${badgeColor}99, ${badgeColor})`,
-                    transition: "width 0.4s ease",
-                  }} />
-                </div>
-              </div>
-            );
-          })()}
+              );
+            })()}
 
-          {/* Balance */}
-          <div style={{
-            background: "rgba(34,197,94,0.08)",
-            border: "1px solid rgba(34,197,94,0.2)",
-            borderRadius: 8, padding: "5px 13px",
-            fontSize: 13, display: "flex", alignItems: "center", gap: 6,
-          }}>
-            <span style={{ color: "#475569", fontSize: 11, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.06em" }}>Balance</span>
-            <span style={{ color: "#22C55E", fontWeight: 700, fontSize: 14 }}>
-              ${user?.balance.toLocaleString("en-US", { minimumFractionDigits: 2 }) ?? "0.00"}
-            </span>
-          </div>
-
-          {/* @username */}
-          <a href="/account" style={{ fontSize: 13, color: "#475569", fontWeight: 500, textDecoration: "none" }}>@{user?.username ?? ""}</a>
-
-          {/* Sign out */}
-          <button
-            onClick={handleLogout}
-            style={{
-              background: "transparent",
-              border: "1px solid rgba(255,255,255,0.08)",
+            {/* Balance */}
+            <div className="hdr-balance" style={{
+              background: "rgba(34,197,94,0.08)",
+              border: "1px solid rgba(34,197,94,0.2)",
               borderRadius: 8, padding: "5px 13px",
-              color: "#64748B", cursor: "pointer", fontSize: 13,
-              transition: "border-color 0.15s, color 0.15s",
-            }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.15)"; (e.currentTarget as HTMLElement).style.color = "#94A3B8"; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.08)"; (e.currentTarget as HTMLElement).style.color = "#64748B"; }}
-          >Sign out</button>
-        </div>
+              fontSize: 13, display: "flex", alignItems: "center", gap: 6,
+              flexShrink: 0,
+            }}>
+              <span className="hdr-balance-label" style={{ color: "#475569", fontSize: 11, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.06em" }}>Balance</span>
+              <span style={{ color: "#22C55E", fontWeight: 700, fontSize: 14 }}>
+                ${user?.balance.toLocaleString("en-US", { minimumFractionDigits: 2 }) ?? "0.00"}
+              </span>
+            </div>
+
+            {/* @username — desktop only */}
+            <a href="/account" className="hdr-username" style={{ fontSize: 13, color: "#475569", fontWeight: 500, textDecoration: "none" }}>@{user?.username ?? ""}</a>
+
+            {/* Sign out — desktop only */}
+            <button
+              onClick={handleLogout}
+              className="hdr-signout"
+              style={{
+                background: "transparent",
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: 8, padding: "5px 13px",
+                color: "#64748B", cursor: "pointer", fontSize: 13,
+                transition: "border-color 0.15s, color 0.15s",
+              }}
+            >Sign out</button>
+
+            {/* Hamburger — mobile only */}
+            <button
+              className="hdr-hamburger"
+              onClick={() => setMenuOpen(!menuOpen)}
+              style={{
+                background: "transparent",
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: 8, padding: "6px 8px",
+                cursor: "pointer", flexDirection: "column", gap: 4,
+                display: "none",
+                flexShrink: 0,
+              }}
+              aria-label="Menu"
+            >
+              <span style={{ width: 18, height: 2, background: "#F1F5F9", borderRadius: 2, display: "block" }} />
+              <span style={{ width: 18, height: 2, background: "#F1F5F9", borderRadius: 2, display: "block" }} />
+              <span style={{ width: 18, height: 2, background: "#F1F5F9", borderRadius: 2, display: "block" }} />
+            </button>
+          </>
+        )}
 
         {!userLoading && !isLoggedIn && (
           <a
@@ -226,14 +258,85 @@ export default function Header() {
               letterSpacing: "-0.01em",
               boxShadow: "0 0 16px rgba(34,197,94,0.25)",
               transition: "box-shadow 0.15s",
+              flexShrink: 0,
             }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = "0 0 24px rgba(34,197,94,0.4)"; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = "0 0 16px rgba(34,197,94,0.25)"; }}
           >
             Get Started
           </a>
         )}
       </div>
+
+      {/* Mobile menu — opens below header */}
+      {menuOpen && isLoggedIn && (
+        <div style={{
+          position: "absolute",
+          top: "100%",
+          left: 0,
+          right: 0,
+          background: "rgba(7,13,25,0.97)",
+          backdropFilter: "blur(16px)",
+          WebkitBackdropFilter: "blur(16px)",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          padding: "8px 14px 14px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 2,
+          zIndex: 49,
+        }}>
+          {navLinks.map(({ href, label }) => (
+            <a
+              key={href}
+              href={href}
+              onClick={() => setMenuOpen(false)}
+              style={{
+                color: isActive(href) ? "#22C55E" : "#94A3B8",
+                textDecoration: "none",
+                fontSize: 15,
+                fontWeight: isActive(href) ? 600 : 500,
+                padding: "12px 8px",
+                borderBottom: "1px solid rgba(255,255,255,0.04)",
+              }}
+            >{label}</a>
+          ))}
+          <a
+            href={affiliateHref}
+            onClick={() => setMenuOpen(false)}
+            style={{
+              color: isActive("/affiliate") || isActive("/affiliates") ? "#22C55E" : "#94A3B8",
+              textDecoration: "none",
+              fontSize: 15,
+              fontWeight: 500,
+              padding: "12px 8px",
+              borderBottom: "1px solid rgba(255,255,255,0.04)",
+            }}
+          >Affiliates</a>
+          <a
+            href="/account"
+            onClick={() => setMenuOpen(false)}
+            style={{
+              color: "#94A3B8",
+              textDecoration: "none",
+              fontSize: 15,
+              fontWeight: 500,
+              padding: "12px 8px",
+              borderBottom: "1px solid rgba(255,255,255,0.04)",
+            }}
+          >My account {user?.username ? `(@${user.username})` : ""}</a>
+          <button
+            onClick={handleLogout}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "#EF4444",
+              fontSize: 15,
+              fontWeight: 500,
+              padding: "12px 8px",
+              textAlign: "left",
+              cursor: "pointer",
+            }}
+          >Sign out</button>
+        </div>
+      )}
     </header>
   );
 }
