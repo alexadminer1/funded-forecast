@@ -20,10 +20,19 @@ interface Challenge {
   drawdownViolated: boolean;
 }
 
+interface LastChallenge {
+  id: number;
+  status: "passed" | "failed";
+  violationReason: string | null;
+  profitTargetMet: boolean;
+  endedAt: string | null;
+}
+
 interface ModeData {
   mode: "sandbox" | "challenge";
   currentBalance: number;
   challenge: Challenge | null;
+  lastChallenge: LastChallenge | null;
 }
 
 export default function DashboardPage() {
@@ -42,7 +51,12 @@ export default function DashboardPage() {
     ]).then(([userData, posData, mode]) => {
       if (userData.success) setUser(userData.user);
       if (posData.success) setPositions(posData.positions);
-      if (mode.success) setModeData({ mode: mode.mode, currentBalance: mode.currentBalance, challenge: mode.challenge });
+      if (mode.success) setModeData({
+        mode:          mode.mode,
+        currentBalance: mode.currentBalance,
+        challenge:     mode.challenge,
+        lastChallenge: mode.lastChallenge,
+      });
     }).finally(() => setLoading(false));
   }, [router]);
 
@@ -111,42 +125,11 @@ export default function DashboardPage() {
         {modeData && (
           <div style={{ marginBottom: 36 }}>
             {modeData.mode === "sandbox" ? (
-              <div style={{
-                background: "#1E293B",
-                border: "1px solid #334155",
-                borderRadius: 12,
-                padding: 24,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 20,
-              }}>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>
-                    Sandbox Mode
-                  </div>
-                  <div style={{ fontSize: 14, color: "#94A3B8", lineHeight: 1.5 }}>
-                    You&apos;re trading in sandbox. Start an evaluation to earn real payouts.
-                  </div>
-                </div>
-                <a
-                  href="/account/plans"
-                  style={{
-                    flexShrink: 0,
-                    background: "#22C55E",
-                    color: "#071A0E",
-                    borderRadius: 9,
-                    padding: "10px 22px",
-                    fontSize: 13,
-                    fontWeight: 700,
-                    letterSpacing: "-0.01em",
-                    textDecoration: "none",
-                    transition: "background 0.15s",
-                  }}
-                >
-                  Get Funded →
-                </a>
-              </div>
+              modeData.lastChallenge ? (
+                <PostChallengeBanner last={modeData.lastChallenge} />
+              ) : (
+                <SandboxBanner />
+              )
             ) : modeData.challenge ? (
               <ChallengeCard challenge={modeData.challenge} />
             ) : null}
@@ -327,5 +310,137 @@ function PositionRow({ position: p }: { position: Position }) {
         </div>
       </div>
     </a>
+  );
+}
+
+function SandboxBanner() {
+  return (
+    <div style={{
+      background:     "#1E293B",
+      border:         "1px solid #334155",
+      borderRadius:   12,
+      padding:        24,
+      display:        "flex",
+      alignItems:     "center",
+      justifyContent: "space-between",
+      gap:            20,
+    }}>
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>
+          Sandbox Mode
+        </div>
+        <div style={{ fontSize: 14, color: "#94A3B8", lineHeight: 1.5 }}>
+          You&apos;re trading in sandbox. Start an evaluation to earn real payouts.
+        </div>
+      </div>
+      <a
+        href="/account/plans"
+        style={{
+          flexShrink:     0,
+          background:     "#22C55E",
+          color:          "#071A0E",
+          borderRadius:   9,
+          padding:        "10px 22px",
+          fontSize:       13,
+          fontWeight:     700,
+          letterSpacing:  "-0.01em",
+          textDecoration: "none",
+        }}
+      >
+        Get Funded →
+      </a>
+    </div>
+  );
+}
+
+type LastChallengeBannerProps = {
+  last: {
+    status:          "passed" | "failed";
+    violationReason: string | null;
+    profitTargetMet: boolean;
+  };
+};
+
+function PostChallengeBanner({ last }: LastChallengeBannerProps) {
+  const isPassed  = last.status === "passed";
+  const isExpired = last.status === "failed" && last.violationReason === "Challenge period expired";
+
+  let title: string;
+  let body:  string;
+  let ctaLabel: string;
+  let ctaHref:  string;
+  let accent:   string;
+  let bg:       string;
+  let border:   string;
+  let label:    string;
+
+  if (isPassed) {
+    title    = "Challenge passed";
+    body     = "You passed the challenge. You can now request a payout.";
+    ctaLabel = "Request payout →";
+    ctaHref  = "/account";
+    accent   = "#22C55E";
+    bg       = "rgba(34,197,94,0.06)";
+    border   = "rgba(34,197,94,0.25)";
+    label    = "PASSED";
+  } else if (isExpired) {
+    title    = "Challenge expired";
+    body     = "Your challenge period has ended. Buy a new plan to start a new evaluation.";
+    ctaLabel = "Buy new challenge →";
+    ctaHref  = "/account/plans";
+    accent   = "#F59E0B";
+    bg       = "rgba(245,158,11,0.06)";
+    border   = "rgba(245,158,11,0.25)";
+    label    = "EXPIRED";
+  } else {
+    title    = "Challenge failed";
+    body     = last.violationReason ?? "You did not meet the challenge requirements.";
+    ctaLabel = "Buy new challenge →";
+    ctaHref  = "/account/plans";
+    accent   = "#EF4444";
+    bg       = "rgba(239,68,68,0.06)";
+    border   = "rgba(239,68,68,0.25)";
+    label    = "FAILED";
+  }
+
+  return (
+    <div style={{
+      background:     bg,
+      border:         `1px solid ${border}`,
+      borderRadius:   12,
+      padding:        24,
+      display:        "flex",
+      alignItems:     "center",
+      justifyContent: "space-between",
+      gap:            20,
+    }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: accent, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>
+          {label}
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: "#F1F5F9", marginBottom: 4 }}>
+          {title}
+        </div>
+        <div style={{ fontSize: 13, color: "#94A3B8", lineHeight: 1.5 }}>
+          {body}
+        </div>
+      </div>
+      <a
+        href={ctaHref}
+        style={{
+          flexShrink:     0,
+          background:     accent,
+          color:          "#071A0E",
+          borderRadius:   9,
+          padding:        "10px 22px",
+          fontSize:       13,
+          fontWeight:     700,
+          letterSpacing:  "-0.01em",
+          textDecoration: "none",
+        }}
+      >
+        {ctaLabel}
+      </a>
+    </div>
   );
 }

@@ -33,11 +33,25 @@ export async function GET(req: NextRequest) {
 
     const currentBalance = lastLog ? lastLog.runningBalance : 0;
 
+    // If no active challenge, fetch the most recent terminal one (passed/failed)
+    const lastChallenge = activeChallenge ? null : await prisma.challenge.findFirst({
+      where:   { userId, status: { in: ["passed", "failed"] } },
+      orderBy: [{ endedAt: "desc" }, { startedAt: "desc" }],
+      select: {
+        id:              true,
+        status:          true,
+        violationReason: true,
+        profitTargetMet: true,
+        endedAt:         true,
+      },
+    });
+
     return NextResponse.json({
       success: true,
       mode,
       currentBalance,
-      challenge: activeChallenge ?? null,
+      challenge:     activeChallenge ?? null,
+      lastChallenge,
     });
 
   } catch (error) {
