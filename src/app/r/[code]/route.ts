@@ -14,7 +14,7 @@ function getBaseUrl(request: NextRequest): string {
 }
 
 function redirectHome(request: NextRequest): NextResponse {
-  return NextResponse.redirect(`${getBaseUrl(request)}/`, 302);
+  return NextResponse.redirect(`${getBaseUrl(request)}/login?mode=register`, 302);
 }
 
 export async function GET(
@@ -122,6 +122,6 @@ export async function GET(
     return response;
   } catch (err) {
     console.error("[AFFILIATE_TRACKING] route error", err);
-    return NextResponse.redirect(`${getBaseUrl(request)}/`, 302);
+    return NextResponse.redirect(`${getBaseUrl(request)}/login?mode=register`, 302);
   }
 }
