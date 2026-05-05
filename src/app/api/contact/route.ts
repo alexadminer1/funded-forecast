@@ -8,7 +8,7 @@ const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
   : null;
 
-const FROM_ADDR = "FundedForecast <onboarding@resend.dev>";
+const FROM_ADDR = "FundedForecast <noreply@tradepredictions.online>";
 const RECIPIENT = process.env.CONTACT_RECIPIENT_EMAIL ?? "";
 
 export async function POST(req: NextRequest) {
