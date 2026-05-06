@@ -77,14 +77,17 @@ function CheckoutInner() {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [loadingPlan, setLoadingPlan] = useState(true);
-  const [creatingInvoice, setCreatingInvoice] = useState(false);
+  const [loadingInvoice, setLoadingInvoice] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState<number>(0);
 
+  // Ref flags to prevent re-trigger of effects on state changes.
+  // Without these, setState inside useEffect would re-run the effect.
+  const invoiceAttemptRef = useRef<boolean>(false);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const tickIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  /* ----- Effect: load plan + auth check ----- */
+  /* ----- Effect: load plan + auth check (runs once on mount) ----- */
   useEffect(() => {
     if (!getToken()) {
       router.push(`/login?mode=login&redirect=/checkout?planId=${planId}`);
@@ -95,35 +98,67 @@ function CheckoutInner() {
       return;
     }
 
+    let cancelled = false;
     apiFetch<{ success: boolean; plan: Plan }>(`/api/plans/${planId}`)
       .then((d) => {
+        if (cancelled) return;
         if (d.success) setPlan(d.plan);
         else router.push("/account/plans");
       })
-      .catch(() => setError("Failed to load plan."))
-      .finally(() => setLoadingPlan(false));
+      .catch(() => {
+        if (!cancelled) setError("Failed to load plan.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingPlan(false);
+      });
+
+    return () => { cancelled = true; };
   }, [planId, router]);
 
-  /* ----- Effect: create invoice once plan is loaded ----- */
+  /* ----- Effect: create invoice ONCE when plan is loaded -----
+     Uses ref flag to prevent re-trigger on state changes.
+     Without ref, the effect would re-run on every setState below.
+  */
   useEffect(() => {
-    if (!plan || invoice || creatingInvoice) return;
-    setCreatingInvoice(true);
+    if (!plan) return;
+    if (invoiceAttemptRef.current) return;
+    invoiceAttemptRef.current = true;
+
+    setLoadingInvoice(true);
     setError(null);
 
+    let cancelled = false;
     apiFetch<Invoice & { success: boolean; error?: string }>("/api/payments/create", {
       method: "POST",
       body: JSON.stringify({ planId: plan.id }),
     })
       .then((d) => {
+        if (cancelled) return;
         if (d.success) {
           setInvoice(d);
         } else {
           setError(d.error ?? "Failed to create invoice.");
         }
       })
-      .catch(() => setError("Failed to create invoice. Please try again."))
-      .finally(() => setCreatingInvoice(false));
-  }, [plan, invoice, creatingInvoice]);
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        const message = err instanceof Error ? err.message : String(err);
+        // Detect rate limit (429). apiFetch usually surfaces error.message
+        // containing the response body or status info.
+        if (message.includes("429") || message.toLowerCase().includes("too many")) {
+          setError("Too many requests. Please wait a minute and refresh the page.");
+        } else if (message.includes("401")) {
+          setError("Session expired. Please log in again.");
+        } else {
+          setError("Failed to create invoice. Please refresh the page.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingInvoice(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [plan]);
 
   /* ----- Effect: status polling every 5 sec ----- */
   useEffect(() => {
@@ -137,12 +172,16 @@ function CheckoutInner() {
           setInvoice((prev) => (prev ? { ...prev, ...data } : data));
         }
       } catch {
-        // Silent fail on polling errors — keep last good state
+        // Silent fail on polling errors — keep last good state.
+        // If polling 429s repeatedly, user can refresh; we don't spam UI.
       }
     }, 5000);
 
     return () => {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
     };
   }, [invoice?.paymentId, invoice?.status]);
 
@@ -159,7 +198,10 @@ function CheckoutInner() {
 
     tickIntervalRef.current = setInterval(update, 1000);
     return () => {
-      if (tickIntervalRef.current) clearInterval(tickIntervalRef.current);
+      if (tickIntervalRef.current) {
+        clearInterval(tickIntervalRef.current);
+        tickIntervalRef.current = null;
+      }
     };
   }, [invoice?.expiresAt]);
 
@@ -175,43 +217,50 @@ function CheckoutInner() {
   }
 
   function handleCreateNew() {
+    // Manual user action: reset and try again.
+    // Reset both state and ref so the create effect can run once more.
+    invoiceAttemptRef.current = false;
     setInvoice(null);
     setError(null);
   }
 
   /* ----- Render ----- */
 
-  // Loading plan
   if (loadingPlan) {
     return <Centered>Loading plan...</Centered>;
   }
 
   if (!plan) return null;
 
-  // Error state
+  // Error state (shown when no invoice could be created).
+  // No automatic retry — user must refresh or click button.
   if (error && !invoice) {
+    const isRateLimit = error.includes("Too many");
     return (
       <Layout>
         <BackLink />
         <Banner kind="error">
-          {error}
-          <button onClick={handleCreateNew} style={btnInlineRetry}>
-            Retry
-          </button>
+          <div style={{ marginBottom: 8 }}>{error}</div>
+          {!isRateLimit && (
+            <button onClick={handleCreateNew} style={btnInlineRetry}>
+              Try again
+            </button>
+          )}
         </Banner>
       </Layout>
     );
   }
 
-  // Creating invoice
-  if (creatingInvoice || !invoice) {
+  if (loadingInvoice || !invoice) {
     return <Centered>Generating invoice...</Centered>;
   }
 
   const networkName = NETWORK_NAMES[invoice.chainId] ?? `Chain ${invoice.chainId}`;
-  const isExpired = invoice.isExpired || invoice.status === "EXPIRED" || invoice.status === "EXPIRED_UNDERPAID" || (secondsLeft <= 0 && invoice.status === "AWAITING_PAYMENT");
-
-  /* === States after invoice exists === */
+  const isExpired =
+    invoice.isExpired ||
+    invoice.status === "EXPIRED" ||
+    invoice.status === "EXPIRED_UNDERPAID" ||
+    (secondsLeft <= 0 && invoice.status === "AWAITING_PAYMENT");
 
   // CONFIRMED
   if (invoice.status === "CONFIRMED") {
@@ -251,7 +300,7 @@ function CheckoutInner() {
     );
   }
 
-  // CONFIRMING (transaction detected, awaiting confirmations)
+  // CONFIRMING / SEEN_ON_CHAIN
   if (invoice.status === "CONFIRMING" || invoice.status === "SEEN_ON_CHAIN") {
     return (
       <Layout>
@@ -294,13 +343,12 @@ function CheckoutInner() {
             Received less than expected. Send the remaining amount before the invoice expires.
           </div>
         </Banner>
-        {/* Still show payment details so user can top up */}
         <PaymentDetails invoice={invoice} networkName={networkName} secondsLeft={secondsLeft} formatTime={formatTime} copy={copy} />
       </Layout>
     );
   }
 
-  // AWAITING_PAYMENT (default active state)
+  // AWAITING_PAYMENT (default)
   return (
     <Layout>
       <BackLink />
@@ -359,7 +407,6 @@ interface PaymentDetailsProps {
 function PaymentDetails({ invoice, networkName, secondsLeft, formatTime, copy }: PaymentDetailsProps) {
   return (
     <>
-      {/* QR card */}
       <div style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 14, padding: 24, marginBottom: 16, textAlign: "center" }}>
         <div style={{ background: "#fff", padding: 16, borderRadius: 8, display: "inline-block", marginBottom: 16 }}>
           <QRCodeSVG value={invoice.address} size={220} level="M" />
@@ -369,7 +416,6 @@ function PaymentDetails({ invoice, networkName, secondsLeft, formatTime, copy }:
         </div>
       </div>
 
-      {/* Details */}
       <div style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 14, padding: 20, marginBottom: 16 }}>
         <Row label="Network">{networkName}</Row>
         <Row label="Token">{invoice.tokenSymbol}</Row>
@@ -384,7 +430,6 @@ function PaymentDetails({ invoice, networkName, secondsLeft, formatTime, copy }:
         </Row>
       </div>
 
-      {/* Address */}
       <div style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 14, padding: 20, marginBottom: 16 }}>
         <div style={{ fontSize: 11, color: "#64748B", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>
           Receiver address
@@ -397,12 +442,10 @@ function PaymentDetails({ invoice, networkName, secondsLeft, formatTime, copy }:
         </button>
       </div>
 
-      {/* Warning */}
       <div style={{ background: "rgba(239,68,68,0.05)", border: "1px solid rgba(239,68,68,0.15)", borderRadius: 10, padding: "14px 16px", marginBottom: 24, fontSize: 12, color: "#FCA5A5", lineHeight: 1.6 }}>
         Send <strong style={{ color: "#FECACA" }}>exactly {invoice.amountUsdc} {invoice.tokenSymbol}</strong> to this address on <strong style={{ color: "#FECACA" }}>{networkName}</strong>. Sending another token, another network, or a different amount may not be detected automatically.
       </div>
 
-      {/* Card payment placeholder (P3) */}
       <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: 10, padding: "14px 16px", marginBottom: 16, opacity: 0.5 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Credit / Debit Card</div>
         <div style={{ fontSize: 12, color: "#334155" }}>Coming soon</div>
@@ -474,13 +517,13 @@ const btnCopySmall: React.CSSProperties = {
 };
 
 const btnInlineRetry: React.CSSProperties = {
-  marginLeft: 12,
   fontSize: 12,
   color: "#EF4444",
   background: "transparent",
-  border: "none",
+  border: "1px solid rgba(239,68,68,0.3)",
+  borderRadius: 6,
+  padding: "4px 10px",
   cursor: "pointer",
-  textDecoration: "underline",
 };
 
 const confirmedBox: React.CSSProperties = {
