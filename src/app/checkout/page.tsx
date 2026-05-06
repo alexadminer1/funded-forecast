@@ -80,6 +80,7 @@ function CheckoutInner() {
   const [loadingInvoice, setLoadingInvoice] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState<number>(0);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // Ref flags to prevent re-trigger of effects on state changes.
   // Without these, setState inside useEffect would re-run the effect.
@@ -206,8 +207,13 @@ function CheckoutInner() {
   }, [invoice?.expiresAt]);
 
   /* ----- Helpers ----- */
-  function copy(text: string) {
-    navigator.clipboard.writeText(text).catch(() => {});
+  function copy(text: string, key: string) {
+    navigator.clipboard.writeText(text)
+      .then(() => {
+        setCopiedKey(key);
+        setTimeout(() => setCopiedKey(null), 1500);
+      })
+      .catch(() => {});
   }
 
   function formatTime(s: number): string {
@@ -343,7 +349,7 @@ function CheckoutInner() {
             Received less than expected. Send the remaining amount before the invoice expires.
           </div>
         </Banner>
-        <PaymentDetails invoice={invoice} networkName={networkName} secondsLeft={secondsLeft} formatTime={formatTime} copy={copy} />
+        <PaymentDetails invoice={invoice} networkName={networkName} secondsLeft={secondsLeft} formatTime={formatTime} copy={copy} copiedKey={copiedKey} />
       </Layout>
     );
   }
@@ -353,7 +359,7 @@ function CheckoutInner() {
     <Layout>
       <BackLink />
       <PlanCard plan={plan} />
-      <PaymentDetails invoice={invoice} networkName={networkName} secondsLeft={secondsLeft} formatTime={formatTime} copy={copy} />
+      <PaymentDetails invoice={invoice} networkName={networkName} secondsLeft={secondsLeft} formatTime={formatTime} copy={copy} copiedKey={copiedKey} />
     </Layout>
   );
 }
@@ -401,10 +407,11 @@ interface PaymentDetailsProps {
   networkName: string;
   secondsLeft: number;
   formatTime: (s: number) => string;
-  copy: (text: string) => void;
+  copy: (text: string, key: string) => void;
+  copiedKey: string | null;
 }
 
-function PaymentDetails({ invoice, networkName, secondsLeft, formatTime, copy }: PaymentDetailsProps) {
+function PaymentDetails({ invoice, networkName, secondsLeft, formatTime, copy, copiedKey }: PaymentDetailsProps) {
   return (
     <>
       <div style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 14, padding: 24, marginBottom: 16, textAlign: "center" }}>
@@ -421,7 +428,7 @@ function PaymentDetails({ invoice, networkName, secondsLeft, formatTime, copy }:
         <Row label="Token">{invoice.tokenSymbol}</Row>
         <Row label="Amount">
           <span style={{ color: "#22C55E", fontWeight: 700 }}>{invoice.amountUsdc} {invoice.tokenSymbol}</span>
-          <button onClick={() => copy(invoice.amountUsdc)} style={btnCopySmall}>Copy</button>
+          <button onClick={() => copy(invoice.amountUsdc, "amount")} style={btnCopySmall}>{copiedKey === "amount" ? "Copied ✓" : "Copy"}</button>
         </Row>
         <Row label="Expires in">
           <span style={{ fontFamily: "ui-monospace,monospace", color: secondsLeft < 60 ? "#EF4444" : "#F1F5F9" }}>
@@ -437,8 +444,8 @@ function PaymentDetails({ invoice, networkName, secondsLeft, formatTime, copy }:
         <div style={{ fontFamily: "ui-monospace,monospace", fontSize: 12, color: "#F1F5F9", wordBreak: "break-all", marginBottom: 12 }}>
           {invoice.address}
         </div>
-        <button onClick={() => copy(invoice.address)} style={btnSecondary}>
-          Copy address
+        <button onClick={() => copy(invoice.address, "address")} style={btnSecondary}>
+          {copiedKey === "address" ? "Copied ✓" : "Copy address"}
         </button>
       </div>
 
