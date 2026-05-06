@@ -1,20 +1,12 @@
 export const dynamic = 'force-dynamic'
-import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { verifyToken } from "@/lib/auth";
 
-export async function GET(req: NextRequest) {
-  const token = req.headers.get("authorization")?.slice(7);
-  if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const payload = verifyToken(token);
-  const userId = payload?.userId as number;
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+import { NextResponse } from "next/server";
 
-  const payments = await prisma.payment.findMany({
-    where: { userId },
-    orderBy: { createdAt: "desc" },
-    select: { id: true, orderId: true, amount: true, currency: true, status: true, planId: true, createdAt: true, paymentUrl: true },
-  });
-
-  return NextResponse.json({ success: true, payments });
+// NOWPayments status check removed 2026-05-05.
+// On-chain payment status endpoint will be created in Step 2.
+export async function GET() {
+  return NextResponse.json(
+    { error: "Endpoint disabled during payment provider migration" },
+    { status: 410 }
+  );
 }

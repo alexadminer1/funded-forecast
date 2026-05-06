@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import {
   Prisma,
+  PaymentStatus,
   AffiliateConversionStatus,
   AffiliateLedgerType,
   AffiliateLedgerBucket,
@@ -8,9 +9,7 @@ import {
 import { writeLedgerEntries } from "./ledger";
 import { getTierRate, getHoldDays, calculateCommission } from "./constants";
 
-const SUCCESSFUL_STATUSES = ["confirmed", "finished"] as const;
-
-export async function recordAffiliateConversionFromPayment(paymentId: number): Promise<{
+export async function recordAffiliateConversionFromPayment(paymentId: string): Promise<{
   created:      boolean;
   reason:       string;
   conversionId?: number;
@@ -24,8 +23,8 @@ export async function recordAffiliateConversionFromPayment(paymentId: number): P
   const planId = payment.planId;
   if (planId === null) return { created: false, reason: "no_plan_id" };
 
-  // 2. Status must be successful
-  if (!(SUCCESSFUL_STATUSES as readonly string[]).includes(payment.status)) {
+  // 2. Status must be on-chain confirmed
+  if (payment.status !== PaymentStatus.CONFIRMED) {
     return { created: false, reason: "payment_not_successful" };
   }
 
@@ -43,12 +42,12 @@ export async function recordAffiliateConversionFromPayment(paymentId: number): P
   });
   if (!user) return { created: false, reason: "user_not_found" };
 
-  // 5. First-purchase rule — count prior successful payments (exclude current, only earlier)
+  // 5. First-purchase rule — count prior confirmed payments (exclude current, only earlier)
   const priorCount = await prisma.payment.count({
     where: {
       userId:    payment.userId,
       id:        { not: payment.id },
-      status:    { in: [...SUCCESSFUL_STATUSES] },
+      status:    PaymentStatus.CONFIRMED,
       createdAt: { lt: payment.createdAt },
     },
   });
@@ -86,7 +85,7 @@ export async function recordAffiliateConversionFromPayment(paymentId: number): P
   }
 
   // 8. Calculate amounts
-  const netAmount        = payment.amount;
+  const netAmount        = Number(payment.planAmountUsd);
   const rate             = getTierRate(click.affiliate);
   const commissionAmount = calculateCommission(netAmount, rate);
   const holdDays         = getHoldDays(click.affiliate);
@@ -105,7 +104,7 @@ export async function recordAffiliateConversionFromPayment(paymentId: number): P
           paymentId,
           planId,
           clickId:                 click.id,
-          grossAmount:             payment.amount,
+          grossAmount:             netAmount,
           discountAmount:          0,
           processorFeeAmount:      0,
           netAmount,

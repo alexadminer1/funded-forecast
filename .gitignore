@@ -42,3 +42,12 @@ next-env.d.ts
 
 /src/generated/prisma
 .claude/settings.local.json
+
+# Local backups (manual schema backups before migrations)
+*.backup-*
+prisma/schema.prisma.backup*
+
+# nano/editor temp files
+*.save
+*.swp
+*.swo

@@ -220,6 +220,7 @@ model Challenge {
   positions      Position[]
   balanceLogs    BalanceLog[]
   payoutRequests PayoutRequest[]
+  payments       Payment[]
 
   @@index([userId, status])
   @@index([status])
@@ -244,10 +245,6 @@ model Subscription {
   @@index([stripeCustomerId])
 }
 
-model ProcessedStripeEvent {
-  eventId     String   @id
-  processedAt DateTime @default(now())
-}
 
 model PayoutRequest {
   id                      Int       @id @default(autoincrement())
@@ -328,27 +325,6 @@ model Review {
   updatedAt DateTime @updatedAt
 }
 
-model Payment {
-  id           Int      @id @default(autoincrement())
-  userId       Int
-  planId       Int?
-  nowPaymentId String?  @unique
-  orderId      String   @unique
-  amount       Float
-  currency     String   @default("USD")
-  payCurrency  String?
-  payAmount    Float?
-  status       String   @default("pending")
-  paymentUrl   String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  user User           @relation(fields: [userId], references: [id])
-  plan ChallengePlan? @relation(fields: [planId], references: [id])
-
-  @@index([userId])
-  @@index([orderId])
-}
 
 model LeaderboardEntry {
   id        Int      @id @default(autoincrement())
@@ -532,7 +508,7 @@ model AffiliateConversion {
   id                         Int                        @id @default(autoincrement())
   affiliateId                Int
   referredUserId             Int
-  paymentId                  Int                        @unique
+  paymentId                  String                     @unique
   planId                     Int
   clickId                    Int?
   grossAmount                Float
@@ -632,4 +608,134 @@ model AffiliatePayout {
   @@index([affiliateId, status])
   @@index([status])
   @@index([requestedAt])
+}
+
+// ─────────────────────────────────────────────────────────────
+// ON-CHAIN PAYMENT SUBSYSTEM
+// Added 2026-05-05. Replaces NOWPayments integration.
+// Network: Base Sepolia (dev) / Base Mainnet (prod)
+// Token: USDC native (6 decimals)
+// ─────────────────────────────────────────────────────────────
+
+enum PaymentStatus {
+  AWAITING_PAYMENT
+  SEEN_ON_CHAIN
+  CONFIRMING
+  CONFIRMED
+  UNDERPAID
+  EXPIRED
+  EXPIRED_UNDERPAID
+  MANUAL_REVIEW
+  CANCELLED
+  FAILED
+}
+
+enum PaymentTransactionStatus {
+  DETECTED
+  MATCHED
+  CONFIRMED
+  IGNORED
+  MANUAL_REVIEW
+}
+
+model Payment {
+  id                    String        @id @default(cuid())
+  userId                Int
+  challengeId           Int?
+  planId                Int?
+
+  status                PaymentStatus @default(AWAITING_PAYMENT)
+
+  chainId               Int
+  tokenSymbol           String
+  tokenAddress          String
+  tokenDecimals         Int
+  receiverAddress       String
+
+  planAmountUsd         Decimal       @db.Decimal(18, 2)
+  expectedAmountUnits   BigInt
+  actualAmountUnits     BigInt?
+
+  confirmationsRequired Int           @default(6)
+  confirmationsSeen     Int           @default(0)
+
+  expiresAt             DateTime
+  seenAt                DateTime?
+  confirmedAt           DateTime?
+  expiredAt             DateTime?
+
+  primaryTxHash         String?
+  primaryLogIndex       Int?
+  primaryBlockNumber    BigInt?
+
+  flagReason            String?
+  createdByIp           String?
+  createdUserAgent      String?
+
+  metadata              Json?
+
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  user         User                 @relation(fields: [userId], references: [id])
+  challenge    Challenge?           @relation(fields: [challengeId], references: [id])
+  plan         ChallengePlan?       @relation(fields: [planId], references: [id])
+  transactions PaymentTransaction[]
+
+  @@index([userId])
+  @@index([challengeId])
+  @@index([status, expiresAt])
+  @@index([chainId, tokenAddress, receiverAddress, status])
+  @@index([chainId, primaryTxHash])
+}
+
+model PaymentTransaction {
+  id              String                   @id @default(cuid())
+  paymentId       String?
+
+  chainId         Int
+  txHash          String
+  logIndex        Int
+
+  blockNumber     BigInt
+  blockTimestamp  DateTime
+
+  tokenAddress    String
+  receiverAddress String
+  fromAddress     String
+  amountUnits     BigInt
+
+  status          PaymentTransactionStatus @default(DETECTED)
+  matchReason     String?
+  confirmations   Int                      @default(0)
+
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+
+  payment Payment? @relation(fields: [paymentId], references: [id])
+
+  @@unique([chainId, txHash, logIndex])
+  @@index([paymentId])
+  @@index([chainId, blockNumber])
+  @@index([receiverAddress, blockTimestamp])
+}
+
+model PaymentWatcherState {
+  id                 String    @id @default(cuid())
+
+  chainId            Int
+  tokenAddress       String
+  receiverAddress    String
+
+  lastProcessedBlock BigInt
+  latestSeenBlock    BigInt?
+
+  lastHealthyAt      DateTime?
+  errorCount         Int       @default(0)
+  lastError          String?
+
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@unique([chainId, tokenAddress, receiverAddress])
 }

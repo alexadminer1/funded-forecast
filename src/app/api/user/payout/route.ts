@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyToken } from "@/lib/auth";
+import { PaymentStatus } from "@prisma/client";
 
 const ALLOWED_NETWORKS = ["TRC20", "ERC20", "BEP20", "POLYGON"] as const;
 type Network = typeof ALLOWED_NETWORKS[number];
@@ -107,7 +108,7 @@ export async function POST(req: NextRequest) {
     where: {
       userId,
       planId: challenge.planId,
-      status: { in: ["confirmed", "finished"] },
+      status: PaymentStatus.CONFIRMED,
     },
   });
   if (!verifiedPayment) {
