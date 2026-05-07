@@ -115,6 +115,7 @@ Modified: `tsconfig.json` target ES2017 → ES2020 (BigInt literals требую
 - `src/app/api/cron/activate-payments/route.ts` — sweep: находит все CONFIRMED Payment с challengeId=null, вызывает activatePayment() для каждого. Bearer CRON_SECRET. maxDuration=60.
 - `GET /api/payments/[id]/status` — теперь возвращает challengeId в ответе.
 - `/checkout` — CONFIRMED state: polling каждые 3 сек, как только challengeId появляется → router.push("/dashboard"). Сообщение меняется "Activating..." → "Redirecting to dashboard...".
+- `/api/payments/me/active` — расширен полем recentConfirmed (CONFIRMED Payment в 10-min окне). Используется /checkout при mount: redirect на /dashboard если challengeId есть, или resume payment иначе. Закрывает F5-zombie артефакт.
 
 Idempotency:
 - activatePayment() безопасно вызывать несколько раз: если challengeId уже есть → return early
@@ -122,7 +123,8 @@ Idempotency:
 - bumpAttempts() в отдельном transaction — счётчик сохраняется даже если основной tx rollback'нулся
 
 Коммиты Step 5:
-1. (этот коммит) — activation.ts + activate-payments cron + status endpoint challengeId + checkout redirect
+1. `c85811f` — activation.ts + activate-payments cron + status endpoint challengeId + checkout redirect
+2. `86d85cd` — feat(checkout): F5 fix — recover invoice or redirect after CONFIRMED
 
 ---
 
