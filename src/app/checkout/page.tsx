@@ -81,6 +81,8 @@ function CheckoutInner() {
   const [error, setError] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState<number>(0);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   // Ref flags to prevent re-trigger of effects on state changes.
   // Without these, setState inside useEffect would re-run the effect.
@@ -230,6 +232,37 @@ function CheckoutInner() {
     setError(null);
   }
 
+  /* ----- Cancel handler -----
+     Confirm with user, call cancel endpoint, redirect to /account/plans on success.
+     On failure show banner; user can retry or close window.
+  */
+  async function handleCancel() {
+    if (!invoice) return;
+    if (cancelling) return;
+    if (!confirm("Cancel this invoice and choose another plan?")) return;
+
+    setCancelling(true);
+    setCancelError(null);
+
+    try {
+      await apiFetch<{ success: boolean }>(`/api/payments/${invoice.paymentId}/cancel`, {
+        method: "POST",
+      });
+      // Success — go back to plans page.
+      router.push("/account/plans");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // Endpoint can return 409 if status not cancellable (race with watcher),
+      // 404 if not found (race with cron expiring it), or other.
+      if (message.includes("409")) {
+        setCancelError("Cannot cancel — payment is already in progress. Please refresh.");
+      } else {
+        setCancelError("Failed to cancel. Please try again.");
+      }
+      setCancelling(false);
+    }
+  }
+
   /* ----- Render ----- */
 
   if (loadingPlan) {
@@ -349,7 +382,7 @@ function CheckoutInner() {
             Received less than expected. Send the remaining amount before the invoice expires.
           </div>
         </Banner>
-        <PaymentDetails invoice={invoice} networkName={networkName} secondsLeft={secondsLeft} formatTime={formatTime} copy={copy} copiedKey={copiedKey} />
+        <PaymentDetails invoice={invoice} networkName={networkName} secondsLeft={secondsLeft} formatTime={formatTime} copy={copy} copiedKey={copiedKey} onCancel={handleCancel} cancelling={cancelling} cancelError={cancelError} />
       </Layout>
     );
   }
@@ -359,7 +392,7 @@ function CheckoutInner() {
     <Layout>
       <BackLink />
       <PlanCard plan={plan} />
-      <PaymentDetails invoice={invoice} networkName={networkName} secondsLeft={secondsLeft} formatTime={formatTime} copy={copy} copiedKey={copiedKey} />
+      <PaymentDetails invoice={invoice} networkName={networkName} secondsLeft={secondsLeft} formatTime={formatTime} copy={copy} copiedKey={copiedKey} onCancel={handleCancel} cancelling={cancelling} cancelError={cancelError} />
     </Layout>
   );
 }
@@ -409,9 +442,12 @@ interface PaymentDetailsProps {
   formatTime: (s: number) => string;
   copy: (text: string, key: string) => void;
   copiedKey: string | null;
+  onCancel: () => void;
+  cancelling: boolean;
+  cancelError: string | null;
 }
 
-function PaymentDetails({ invoice, networkName, secondsLeft, formatTime, copy, copiedKey }: PaymentDetailsProps) {
+function PaymentDetails({ invoice, networkName, secondsLeft, formatTime, copy, copiedKey, onCancel, cancelling, cancelError }: PaymentDetailsProps) {
   return (
     <>
       <div style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 14, padding: 24, marginBottom: 16, textAlign: "center" }}>
@@ -457,6 +493,31 @@ function PaymentDetails({ invoice, networkName, secondsLeft, formatTime, copy, c
         <div style={{ fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 4 }}>Credit / Debit Card</div>
         <div style={{ fontSize: 12, color: "#334155" }}>Coming soon</div>
       </div>
+
+      {cancelError && (
+        <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: "#EF4444" }}>
+          {cancelError}
+        </div>
+      )}
+
+      <button
+        onClick={onCancel}
+        disabled={cancelling}
+        style={{
+          width: "100%",
+          padding: "11px",
+          borderRadius: 8,
+          background: "transparent",
+          color: cancelling ? "#475569" : "#94A3B8",
+          border: "1px solid rgba(148,163,184,0.2)",
+          fontSize: 12,
+          fontWeight: 600,
+          cursor: cancelling ? "default" : "pointer",
+          opacity: cancelling ? 0.6 : 1,
+        }}
+      >
+        {cancelling ? "Cancelling..." : "Cancel and choose another plan"}
+      </button>
     </>
   );
 }
