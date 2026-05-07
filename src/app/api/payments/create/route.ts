@@ -132,18 +132,44 @@ export async function POST(req: NextRequest) {
 
   const now = new Date();
 
-  // 6. Idempotency — return existing active invoice for (userId, planId) if any
+  // 6. Idempotency check + zombie cleanup.
+  //
+  // Search for any AWAITING_PAYMENT row for (userId, planId) regardless of
+  // expiresAt. Three outcomes:
+  //   1. Not found  -> proceed to create a new invoice.
+  //   2. Found, not expired -> idempotency hit, return existing invoice.
+  //   3. Found, expired (zombie) -> flip to EXPIRED inline, then create new.
+  //
+  // Why we do (3) inline despite the expire-payments cron:
+  // The partial unique index Payment_active_amount_unique includes
+  // AWAITING_PAYMENT without an expiresAt predicate (Postgres partial
+  // indexes can't use now()). Between cron runs (every minute) a stale
+  // row keeps its amount slot 'occupied' in the index and would cause
+  // P2002 -> 503 on the next INSERT. Inline cleanup closes that window.
   const existing = await prisma.payment.findFirst({
     where: {
       userId,
       planId,
       status: PaymentStatus.AWAITING_PAYMENT,
-      expiresAt: { gt: now },
     },
     orderBy: { createdAt: "desc" },
   });
   if (existing) {
-    return NextResponse.json(serializeInvoice(existing));
+    if (existing.expiresAt > now) {
+      // Active invoice — return same one (idempotency).
+      return NextResponse.json(serializeInvoice(existing));
+    }
+    // Zombie — flip to EXPIRED so its amount slot frees up in the index.
+    // Same effect as the cron, just done synchronously to unblock this user.
+    await prisma.payment.update({
+      where: { id: existing.id },
+      data: {
+        status: PaymentStatus.EXPIRED,
+        expiredAt: now,
+        updatedAt: now,
+      },
+    });
+    // Fall through to the normal create flow below.
   }
 
   // 7. Per-user cap on active invoices
