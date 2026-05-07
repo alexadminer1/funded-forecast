@@ -106,6 +106,22 @@ Modified: `tsconfig.json` target ES2017 → ES2020 (BigInt literals требую
 - Server stores: только public receiver address. NO private key on server.
 - RPC: Alchemy primary, public Base RPC fallback only
 
+### Dashboard header inconsistency (2026-05-07) — P1 closed
+
+Header показывал "@user · Free Plan" и "BALANCE $0.00" при активном Challenge.
+
+Корень: dashboard читал legacy Stripe-поля (User.membershipStatus) и balance из BalanceLog (пустого для нового Challenge без трейдов).
+
+Fix:
+- /api/user/me — balance fallback на activeChallenge.realizedBalance если BalanceLog пуст
+- dashboard/page.tsx — label из activeChallenge.plan.name вместо membershipStatus
+
+Коммиты:
+1. `00dd021` — fix(api): /me balance fallback to active challenge realizedBalance
+2. `b5f1796` — fix(dashboard): show plan name from active challenge in header + docs
+
+---
+
 ### On-chain activation flow (2026-05-07) — Step 5 closed
 
 **Замыкает on-chain payment loop: CONFIRMED Payment → создание Challenge → redirect на /dashboard.**
