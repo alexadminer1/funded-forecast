@@ -144,6 +144,20 @@ export async function activatePayment(paymentId: string): Promise<ActivationResu
         },
       });
 
+      // Seed BalanceLog so buy/sell routes don't see currentBalance=0 on first trade.
+      await tx.balanceLog.create({
+        data: {
+          userId: payment.userId,
+          tradeId: null,
+          challengeId: challenge.id,
+          type: "challenge_start",
+          amount: plan.accountSize,
+          balanceBefore: 0,
+          balanceAfter: plan.accountSize,
+          runningBalance: plan.accountSize,
+        },
+      });
+
       const updatedMeta: Record<string, unknown> = {
         ...preMeta,
         activation_attempts: newAttempts,
