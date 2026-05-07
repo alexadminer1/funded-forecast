@@ -119,9 +119,12 @@ function CheckoutInner() {
     return () => { cancelled = true; };
   }, [planId, router]);
 
-  /* ----- Effect: create invoice ONCE when plan is loaded -----
-     Uses ref flag to prevent re-trigger on state changes.
-     Without ref, the effect would re-run on every setState below.
+  /* ----- Effect: resolve invoice ONCE when plan is loaded -----
+     Pre-check /api/payments/me/active before creating a new invoice:
+       - recentConfirmed with challengeId  → redirect to /dashboard
+       - recentConfirmed without challengeId → load it, polling will redirect once activated
+       - hasPending → resume existing invoice (no new create)
+       - none of the above → POST /create as before
   */
   useEffect(() => {
     if (!plan) return;
@@ -132,37 +135,111 @@ function CheckoutInner() {
     setError(null);
 
     let cancelled = false;
-    apiFetch<Invoice & { success: boolean; error?: string }>("/api/payments/create", {
-      method: "POST",
-      body: JSON.stringify({ planId: plan.id }),
-    })
-      .then((d) => {
-        if (cancelled) return;
-        if (d.success) {
-          setInvoice(d);
-        } else {
-          setError(d.error ?? "Failed to create invoice.");
-        }
+
+    type ActiveResp = {
+      success: boolean;
+      hasPending?: boolean;
+      payment?: {
+        paymentId: string;
+        planId: number | null;
+        planName: string | null;
+        status: string;
+        amountUsdc: string;
+        planAmountUsd: string;
+        expiresAt: string;
+      };
+      recentConfirmed?: {
+        paymentId: string;
+        challengeId: number | null;
+        confirmedAt: string | null;
+        planId: number | null;
+      } | null;
+    };
+
+    const handleError = (err: unknown) => {
+      if (cancelled) return;
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes("429") || message.toLowerCase().includes("too many")) {
+        setError("Too many requests. Please wait a minute and refresh the page.");
+      } else if (message.includes("401")) {
+        setError("Session expired. Please log in again.");
+      } else {
+        setError("Failed to create invoice. Please refresh the page.");
+      }
+    };
+
+    const createNewInvoice = () => {
+      apiFetch<Invoice & { success: boolean; error?: string }>("/api/payments/create", {
+        method: "POST",
+        body: JSON.stringify({ planId: plan.id }),
       })
-      .catch((err: unknown) => {
+        .then((d) => {
+          if (cancelled) return;
+          if (d.success) {
+            setInvoice(d);
+          } else {
+            setError(d.error ?? "Failed to create invoice.");
+          }
+        })
+        .catch(handleError)
+        .finally(() => {
+          if (!cancelled) setLoadingInvoice(false);
+        });
+    };
+
+    const loadExistingPayment = (paymentId: string) => {
+      apiFetch<Invoice & { success: boolean }>(`/api/payments/${paymentId}/status`)
+        .then((d) => {
+          if (cancelled) return;
+          if (d.success) {
+            setInvoice(d);
+          } else {
+            // Status fetch failed — fall back to creating a new invoice
+            createNewInvoice();
+          }
+        })
+        .catch(() => {
+          if (cancelled) return;
+          createNewInvoice();
+        })
+        .finally(() => {
+          if (!cancelled) setLoadingInvoice(false);
+        });
+    };
+
+    apiFetch<ActiveResp>("/api/payments/me/active")
+      .then((data) => {
         if (cancelled) return;
-        const message = err instanceof Error ? err.message : String(err);
-        // Detect rate limit (429). apiFetch usually surfaces error.message
-        // containing the response body or status info.
-        if (message.includes("429") || message.toLowerCase().includes("too many")) {
-          setError("Too many requests. Please wait a minute and refresh the page.");
-        } else if (message.includes("401")) {
-          setError("Session expired. Please log in again.");
-        } else {
-          setError("Failed to create invoice. Please refresh the page.");
+
+        // Case 1: recent CONFIRMED with challenge → redirect immediately
+        if (data.recentConfirmed?.challengeId) {
+          router.replace("/dashboard");
+          return;
         }
+
+        // Case 2: recent CONFIRMED without challenge → load it, polling will redirect
+        if (data.recentConfirmed && !data.recentConfirmed.challengeId) {
+          loadExistingPayment(data.recentConfirmed.paymentId);
+          return;
+        }
+
+        // Case 3: pending invoice exists → resume it
+        if (data.hasPending && data.payment) {
+          loadExistingPayment(data.payment.paymentId);
+          return;
+        }
+
+        // Case 4: nothing exists → create new
+        createNewInvoice();
       })
-      .finally(() => {
-        if (!cancelled) setLoadingInvoice(false);
+      .catch(() => {
+        if (cancelled) return;
+        // /me/active failed — degrade gracefully to create flow
+        createNewInvoice();
       });
 
     return () => { cancelled = true; };
-  }, [plan]);
+  }, [plan, router]);
 
   /* ----- Effect: status polling every 5 sec ----- */
   useEffect(() => {
