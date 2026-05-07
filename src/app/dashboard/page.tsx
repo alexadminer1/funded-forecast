@@ -95,7 +95,7 @@ export default function DashboardPage() {
               Welcome back, {user.firstName}
             </h1>
             <p style={{ color: "var(--text-muted)", fontSize: 13, margin: 0 }}>
-              @{user.username} · {user.membershipStatus === "active" ? "Pro Member" : "Free Plan"}
+              @{user.username} · {user.activeChallenge?.plan?.name ? `${user.activeChallenge.plan.name} Member` : "Free Plan"}
             </p>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
