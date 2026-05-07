@@ -38,6 +38,7 @@ interface Invoice {
   confirmationsSeen?: number;
   confirmationsRequired: number;
   primaryTxHash?: string | null;
+  challengeId?: number | null;
 }
 
 const NETWORK_NAMES: Record<number, string> = {
@@ -188,6 +189,27 @@ function CheckoutInner() {
     };
   }, [invoice?.paymentId, invoice?.status]);
 
+  /* ----- Effect: redirect to dashboard once challenge is created ----- */
+  useEffect(() => {
+    if (invoice?.status !== "CONFIRMED") return;
+    if (invoice.challengeId) {
+      router.push("/dashboard");
+      return;
+    }
+    // Poll every 3s until challengeId appears (cron activates within ~1 min).
+    const id = setInterval(async () => {
+      try {
+        const data = await apiFetch<Invoice & { success: boolean }>(`/api/payments/${invoice.paymentId}/status`);
+        if (data.success) {
+          setInvoice((prev) => (prev ? { ...prev, ...data } : data));
+        }
+      } catch {
+        // Silent fail — keep polling.
+      }
+    }, 3000);
+    return () => clearInterval(id);
+  }, [invoice?.status, invoice?.challengeId, invoice?.paymentId, router]);
+
   /* ----- Effect: countdown tick every 1 sec ----- */
   useEffect(() => {
     if (!invoice) return;
@@ -301,7 +323,7 @@ function CheckoutInner() {
     invoice.status === "EXPIRED_UNDERPAID" ||
     (secondsLeft <= 0 && invoice.status === "AWAITING_PAYMENT");
 
-  // CONFIRMED
+  // CONFIRMED — polling for challengeId, redirect handled by effect above.
   if (invoice.status === "CONFIRMED") {
     return (
       <Layout>
@@ -313,7 +335,9 @@ function CheckoutInner() {
             Payment confirmed
           </div>
           <div style={{ fontSize: 13, color: "#94A3B8" }}>
-            Activating your challenge...
+            {invoice.challengeId
+              ? "Redirecting to dashboard..."
+              : "Activating your challenge..."}
           </div>
         </div>
       </Layout>

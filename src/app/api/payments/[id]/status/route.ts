@@ -64,6 +64,7 @@ export async function GET(
       confirmedAt: true,
       expiredAt: true,
       primaryTxHash: true,
+      challengeId: true,
     },
   });
 
@@ -103,5 +104,6 @@ export async function GET(
     confirmedAt: payment.confirmedAt?.toISOString() ?? null,
     expiredAt: payment.expiredAt?.toISOString() ?? null,
     primaryTxHash: payment.primaryTxHash,
+    challengeId: payment.challengeId,
   });
 }
