@@ -178,19 +178,25 @@ export async function runWatcher(): Promise<WatcherRunSummary> {
   let toBlock = fromBlock;
   let chunksProcessed = 0;
 
+  console.log(`[WATCHER] starting loop: fromBlock=${fromBlock}, currentBlock=${currentBlock}, lastProcessed=${state.lastProcessedBlock}`);
+
   while (toBlock < currentBlock && chunksProcessed < MAX_CHUNKS_PER_RUN) {
     const chunkFrom = chunksProcessed === 0 ? fromBlock : toBlock + 1n;
     const chunkTo = chunkFrom + MAX_BLOCK_CHUNK > currentBlock
       ? currentBlock
       : chunkFrom + MAX_BLOCK_CHUNK;
 
+    console.log(`[WATCHER] chunk ${chunksProcessed}: ${chunkFrom} -> ${chunkTo}`);
+
     try {
       const chunkLogs = await getTransferLogs(receiverAddress, chunkFrom, chunkTo);
+      console.log(`[WATCHER] chunk ${chunksProcessed} got ${chunkLogs.length} logs`);
       logs.push(...chunkLogs);
       toBlock = chunkTo;
       chunksProcessed++;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[WATCHER] chunk ${chunksProcessed} FAILED: ${msg}`);
       await prisma.paymentWatcherState.update({
         where: { id: state.id },
         data: {
@@ -198,12 +204,11 @@ export async function runWatcher(): Promise<WatcherRunSummary> {
           lastError: `getTransferLogs failed at chunk ${chunkFrom}-${chunkTo}: ${msg}`,
         },
       });
-      // Don't throw — return partial progress. lastProcessedBlock will be
-      // saved as the last successful chunk's toBlock, so next run resumes
-      // from there.
       break;
     }
   }
+
+  console.log(`[WATCHER] loop done: chunksProcessed=${chunksProcessed}, finalToBlock=${toBlock}, totalLogs=${logs.length}`);
 
   // 7. Process each Transfer event idempotently.
   let newTransactions = 0;
