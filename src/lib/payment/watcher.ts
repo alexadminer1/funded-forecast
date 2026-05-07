@@ -46,7 +46,7 @@ import { getCurrentBlock, getTransferLogs, type TransferLog } from "./alchemy";
  * (faster catch-up after long downtime), upgrade Alchemy plan and bump
  * this constant — no other code changes needed.
  */
-const MAX_BLOCK_CHUNK = 10n;
+const MAX_BLOCK_CHUNK = 9n;
 
 /**
  * Maximum number of getLogs chunks per single watcher run.
@@ -71,7 +71,7 @@ const MAX_CHUNKS_PER_RUN = 30;
  * will be missed on this watcher, but every payment after that is
  * fully covered by the rolling window.
  */
-const INITIAL_LOOKBACK_BLOCKS = 10n;
+const INITIAL_LOOKBACK_BLOCKS = 9n;
 
 export interface WatcherRunSummary {
   startedAt: string;
