@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyToken } from "@/lib/auth";
+import { Resend } from "resend";
 
 const MAX_SLIPPAGE = 0.02;
 
@@ -175,6 +176,7 @@ export async function POST(req: NextRequest) {
       });
 
       // === Challenge balance update + drawdown checks ===
+      let autoPass = false;
       if (activeChallenge && challengeId) {
         const newRealizedBalance = parseFloat((activeChallenge.realizedBalance + proceeds).toFixed(2));
         const newPeakBalance = Math.max(activeChallenge.peakBalance, newRealizedBalance);
@@ -229,6 +231,9 @@ export async function POST(req: NextRequest) {
         // Counting trading days (race-safe via conditional update)
         const todayUtcStart = new Date();
         todayUtcStart.setUTCHours(0, 0, 0, 0);
+        const isNewTradingDay =
+          !activeChallenge.lastTradingDay || activeChallenge.lastTradingDay < todayUtcStart;
+        const effectiveTradingDays = activeChallenge.tradingDaysCount + (isNewTradingDay ? 1 : 0);
         await tx.challenge.updateMany({
           where: {
             id: challengeId,
@@ -242,12 +247,58 @@ export async function POST(req: NextRequest) {
             lastTradingDay: todayUtcStart,
           },
         });
+
+        if (profitTargetMet && effectiveTradingDays >= activeChallenge.minTradingDays) {
+          autoPass = true;
+          await tx.challenge.update({
+            where: { id: challengeId },
+            data: { status: "passed", endedAt: new Date() },
+          });
+          await tx.auditLog.create({
+            data: {
+              actorId: userId,
+              targetType: "challenge",
+              targetId: String(challengeId),
+              category: "challenge",
+              action: "challenge_auto_passed",
+              metadata: {
+                profitPct,
+                profitTargetPct: activeChallenge.profitTargetPct,
+                tradingDays: effectiveTradingDays,
+                minTradingDays: activeChallenge.minTradingDays,
+                realizedBalance: newRealizedBalance,
+              },
+            },
+          });
+        }
       }
 
       await tx.user.update({ where: { id: userId }, data: { lastTradeAt: new Date() } });
 
-      return { trade, position: updatedPosition, proceeds, realizedPnl, balanceAfter: newBalance, positionClosed: isFullClose };
+      return { trade, position: updatedPosition, proceeds, realizedPnl, balanceAfter: newBalance, positionClosed: isFullClose, autoPass };
     });
+
+    if (result.autoPass) {
+      try {
+        const passedUser = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { email: true, firstName: true },
+        });
+        if (passedUser?.email && process.env.RESEND_API_KEY) {
+          const resend = new Resend(process.env.RESEND_API_KEY);
+          const name = passedUser.firstName ?? "Trader";
+          await resend.emails.send({
+            from: "FundedForecast <noreply@tradepredictions.online>",
+            to: [passedUser.email],
+            subject: "Congratulations! You have passed your FundedForecast challenge",
+            html: `<p>Hi ${name},</p><p>Congratulations! You have successfully met the profit target and completed the minimum required trading days on your challenge. Your account is now marked as <strong>passed</strong>.</p><p>A member of our team will be in touch shortly regarding next steps for your funded account.</p><p>– The FundedForecast Team</p>`,
+            text: `Hi ${name},\n\nCongratulations! You have successfully met the profit target and completed the minimum required trading days on your challenge. Your account is now marked as passed.\n\nA member of our team will be in touch shortly regarding next steps for your funded account.\n\n– The FundedForecast Team`,
+          });
+        }
+      } catch (err) {
+        console.error("[SELL] auto-pass email failed (non-fatal):", err);
+      }
+    }
 
     return NextResponse.json({
       success: true,
