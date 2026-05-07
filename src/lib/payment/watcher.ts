@@ -37,18 +37,41 @@ import { getCurrentBlock, getTransferLogs, type TransferLog } from "./alchemy";
 
 /**
  * Maximum block range per Alchemy getLogs call.
- * Alchemy hard limit is 10,000 blocks but logs limit is 1,000 per response.
- * On Base (~2 sec block time) 500 blocks = ~17 minutes of activity, enough
- * headroom for a 1-minute cron, well under both limits.
+ *
+ * Alchemy Free tier limits eth_getLogs to 10 blocks per request.
+ * To catch up to current block we call getLogs in a loop with 10-block
+ * chunks (see runWatcher below).
+ *
+ * Paid Alchemy tier raises this to 10,000 blocks. To use bigger chunks
+ * (faster catch-up after long downtime), upgrade Alchemy plan and bump
+ * this constant — no other code changes needed.
  */
-const MAX_BLOCK_CHUNK = 500n;
+const MAX_BLOCK_CHUNK = 10n;
+
+/**
+ * Maximum number of getLogs chunks per single watcher run.
+ *
+ * Bounds the worst-case work per cron tick. With cron every minute and
+ * Base Sepolia ~2s block time, 30 chunks * 10 blocks = 300 blocks per
+ * minute is enough headroom for ~10 minutes of catch-up per run, leaving
+ * time for retries on RPC failures within Alchemy's tier rate limits
+ * (300 CU/s on Free).
+ */
+const MAX_CHUNKS_PER_RUN = 30;
 
 /**
  * Initial lookback when watcher state row does not exist yet.
- * 100 blocks on Base Sepolia = ~3-4 minutes of history. Enough to catch
- * a payment sent right before the very first watcher poll on a fresh deploy.
+ *
+ * Free Alchemy tier limits eth_getLogs to 10 blocks per call, so on
+ * a fresh deploy we start from currentBlock - 10 (~20 seconds on
+ * Base Sepolia). Anything older won't be picked up on first run;
+ * subsequent runs catch up via MAX_CHUNKS_PER_RUN loop.
+ *
+ * Trade-off: a payment made >20s before the very first cron tick
+ * will be missed on this watcher, but every payment after that is
+ * fully covered by the rolling window.
  */
-const INITIAL_LOOKBACK_BLOCKS = 100n;
+const INITIAL_LOOKBACK_BLOCKS = 10n;
 
 export interface WatcherRunSummary {
   startedAt: string;
@@ -143,25 +166,43 @@ export async function runWatcher(): Promise<WatcherRunSummary> {
     });
   }
 
-  // 5. Cap the range to avoid huge chunks.
-  const toBlock = fromBlock + MAX_BLOCK_CHUNK > currentBlock
-    ? currentBlock
-    : fromBlock + MAX_BLOCK_CHUNK;
+  // 5+6. Fetch Transfer events in chunks bounded by Alchemy Free tier
+  //      (10 blocks per getLogs call). Loop until we either reach
+  //      currentBlock or hit MAX_CHUNKS_PER_RUN to bound run time.
+  //
+  //      toBlock starts as fromBlock + chunk and advances by chunk each
+  //      iteration. After the loop, toBlock holds the highest block we
+  //      successfully processed; that's what we persist as
+  //      lastProcessedBlock at the end.
+  let logs: TransferLog[] = [];
+  let toBlock = fromBlock;
+  let chunksProcessed = 0;
 
-  // 6. Fetch Transfer events in the chosen range.
-  let logs: TransferLog[];
-  try {
-    logs = await getTransferLogs(receiverAddress, fromBlock, toBlock);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    await prisma.paymentWatcherState.update({
-      where: { id: state.id },
-      data: {
-        errorCount: { increment: 1 },
-        lastError: `getTransferLogs failed: ${msg}`,
-      },
-    });
-    throw err;
+  while (toBlock < currentBlock && chunksProcessed < MAX_CHUNKS_PER_RUN) {
+    const chunkFrom = chunksProcessed === 0 ? fromBlock : toBlock + 1n;
+    const chunkTo = chunkFrom + MAX_BLOCK_CHUNK > currentBlock
+      ? currentBlock
+      : chunkFrom + MAX_BLOCK_CHUNK;
+
+    try {
+      const chunkLogs = await getTransferLogs(receiverAddress, chunkFrom, chunkTo);
+      logs.push(...chunkLogs);
+      toBlock = chunkTo;
+      chunksProcessed++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await prisma.paymentWatcherState.update({
+        where: { id: state.id },
+        data: {
+          errorCount: { increment: 1 },
+          lastError: `getTransferLogs failed at chunk ${chunkFrom}-${chunkTo}: ${msg}`,
+        },
+      });
+      // Don't throw — return partial progress. lastProcessedBlock will be
+      // saved as the last successful chunk's toBlock, so next run resumes
+      // from there.
+      break;
+    }
   }
 
   // 7. Process each Transfer event idempotently.
