@@ -49,8 +49,6 @@ export async function GET(req: NextRequest) {
       select: { runningBalance: true },
     });
 
-    const balance = lastLog?.runningBalance ?? 0;
-
     // Get open positions count
     const openPositionsCount = await prisma.position.count({
       where: { userId, status: "open" },
@@ -76,6 +74,10 @@ export async function GET(req: NextRequest) {
         plan: { select: { name: true } },
       },
     });
+
+    // Balance fallback: if no BalanceLog yet (new challenge, no trades),
+    // use the challenge's realizedBalance so the header doesn't show $0.
+    const balance = lastLog?.runningBalance ?? activeChallenge?.realizedBalance ?? 0;
 
     return NextResponse.json({
       success: true,
