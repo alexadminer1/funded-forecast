@@ -689,21 +689,59 @@ function PlansSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestInit
   const [editData, setEditData] = useState<Record<string, string | number | boolean>>({});
   const [saving, setSaving] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
-  const [newPlan, setNewPlan] = useState({ name: "", price: "", accountSize: "", profitTargetPct: "10", maxLossPct: "10", dailyLossPct: "5", maxPositionSizePct: "2", minTradingDays: "10", order: "" });
+  const emptyNew = {
+    name: "", price: "", accountSize: "", profitTargetPct: "10", maxLossPct: "10",
+    dailyLossPct: "5", maxPositionSizePct: "2", minTradingDays: "10", order: "0",
+    profitSharePct: "80", challengePeriodDays: "30", maxPayoutCapDollars: "0",
+    minPayoutDollars: "50", payoutCooldownDays: "14", refundableFeeDollars: "0",
+    isPopular: "false", isActive: "true",
+  };
+  const [newPlan, setNewPlan] = useState(emptyNew);
   const [confirm, setConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
 
   const load = useCallback(async () => { setLoading(true); const d = await apiFetch("/api/admin/plans"); if (d.success) setPlans(d.plans); setLoading(false); }, []);
   useEffect(() => { load(); }, []);
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function startEdit(p: any) {
     setEditId(p.id);
-    setEditData({ name: p.name, price: p.price, accountSize: p.accountSize, profitTargetPct: p.profitTargetPct, maxLossPct: p.maxLossPct, dailyLossPct: p.dailyLossPct, maxPositionSizePct: p.maxPositionSizePct, minTradingDays: p.minTradingDays, isPopular: p.isPopular, isActive: p.isActive, order: p.order });
+    setEditData({
+      name: p.name, price: p.price, accountSize: p.accountSize,
+      profitTargetPct: p.profitTargetPct, maxLossPct: p.maxLossPct,
+      dailyLossPct: p.dailyLossPct, maxPositionSizePct: p.maxPositionSizePct ?? 2,
+      minTradingDays: p.minTradingDays ?? 10, isPopular: p.isPopular, isActive: p.isActive,
+      order: p.order ?? 0, profitSharePct: p.profitSharePct ?? 80,
+      challengePeriodDays: p.challengePeriodDays ?? 30,
+      maxPayoutCapDollars: p.maxPayoutCapCents > 0 ? p.maxPayoutCapCents / 100 : 0,
+      minPayoutDollars: p.minPayoutCents > 0 ? p.minPayoutCents / 100 : 50,
+      payoutCooldownDays: p.payoutCooldownDays ?? 14,
+      refundableFeeDollars: p.refundableFeeCents > 0 ? p.refundableFeeCents / 100 : 0,
+    });
   }
 
   async function saveEdit() {
     if (!editId) return;
     setSaving(true);
-    await apiFetch(`/api/admin/plans/${editId}`, { method: "PUT", body: JSON.stringify(editData) });
+    // Dollar fields are sent as-is; backend converts *Dollars → *Cents
+    await apiFetch(`/api/admin/plans/${editId}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        name: editData.name, price: Number(editData.price),
+        accountSize: Number(editData.accountSize),
+        profitTargetPct: Number(editData.profitTargetPct),
+        maxLossPct: Number(editData.maxLossPct),
+        dailyLossPct: Number(editData.dailyLossPct),
+        maxPositionSizePct: Number(editData.maxPositionSizePct),
+        minTradingDays: Number(editData.minTradingDays),
+        isPopular: editData.isPopular, isActive: editData.isActive,
+        order: Number(editData.order), profitSharePct: Number(editData.profitSharePct),
+        challengePeriodDays: Number(editData.challengePeriodDays),
+        maxPayoutCapDollars: Number(editData.maxPayoutCapDollars),
+        minPayoutDollars: Number(editData.minPayoutDollars),
+        payoutCooldownDays: Number(editData.payoutCooldownDays),
+        refundableFeeDollars: Number(editData.refundableFeeDollars),
+      }),
+    });
     setSaving(false); setEditId(null); load();
   }
 
@@ -714,42 +752,162 @@ function PlansSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestInit
 
   async function addPlan() {
     setSaving(true);
-    await apiFetch("/api/admin/plans", { method: "POST", body: JSON.stringify({
-      name: newPlan.name, price: Number(newPlan.price), accountSize: Number(newPlan.accountSize),
-      profitTargetPct: Number(newPlan.profitTargetPct), maxLossPct: Number(newPlan.maxLossPct),
-      dailyLossPct: Number(newPlan.dailyLossPct), maxPositionSizePct: Number(newPlan.maxPositionSizePct),
-      minTradingDays: Number(newPlan.minTradingDays), order: Number(newPlan.order) || 0,
-    }) });
-    setSaving(false); setShowAdd(false);
-    setNewPlan({ name: "", price: "", accountSize: "", profitTargetPct: "10", maxLossPct: "10", dailyLossPct: "5", maxPositionSizePct: "2", minTradingDays: "10", order: "" });
-    load();
+    await apiFetch("/api/admin/plans", {
+      method: "POST",
+      body: JSON.stringify({
+        name: newPlan.name, price: Number(newPlan.price),
+        accountSize: Number(newPlan.accountSize),
+        profitTargetPct: Number(newPlan.profitTargetPct),
+        maxLossPct: Number(newPlan.maxLossPct),
+        dailyLossPct: Number(newPlan.dailyLossPct),
+        maxPositionSizePct: Number(newPlan.maxPositionSizePct),
+        minTradingDays: Number(newPlan.minTradingDays),
+        order: Number(newPlan.order) || 0,
+        profitSharePct: Number(newPlan.profitSharePct),
+        challengePeriodDays: Number(newPlan.challengePeriodDays),
+        maxPayoutCapDollars: Number(newPlan.maxPayoutCapDollars),
+        minPayoutDollars: Number(newPlan.minPayoutDollars),
+        payoutCooldownDays: Number(newPlan.payoutCooldownDays),
+        refundableFeeDollars: Number(newPlan.refundableFeeDollars),
+        isPopular: newPlan.isPopular === "true",
+        isActive: newPlan.isActive === "true",
+      }),
+    });
+    setSaving(false); setShowAdd(false); setNewPlan(emptyNew); load();
   }
 
-  const inpS: React.CSSProperties = { padding: "4px 8px", borderRadius: 5, border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 11, outline: "none", width: "100%" };
+  const inpS: React.CSSProperties = { padding: "6px 10px", borderRadius: 6, border: "1px solid #334155", background: "#0F172A", color: "#F1F5F9", fontSize: 12, outline: "none", width: "100%" };
+  const labelS: React.CSSProperties = { fontSize: 10, color: "#64748B", marginBottom: 4, display: "block", textTransform: "uppercase", letterSpacing: "0.06em" };
+  const groupTitleS: React.CSSProperties = { fontSize: 10, fontWeight: 700, color: "#22C55E", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.08em" };
+
+  const ed = (key: string) => String(editData[key] ?? "");
+  const setEd = (key: string, val: string | number | boolean) => setEditData(d => ({ ...d, [key]: val }));
 
   return (
     <div>
       {confirm && <ConfirmDialog title={confirm.title} message={confirm.message} onConfirm={confirm.onConfirm} onCancel={() => setConfirm(null)} />}
+
+      {/* Edit modal */}
+      {editId !== null && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+          <div style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 14, padding: "28px 32px", width: 680, maxHeight: "88vh", overflowY: "auto", boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#F1F5F9", marginBottom: 24 }}>Edit Plan</div>
+
+            <div style={{ marginBottom: 20 }}>
+              <div style={groupTitleS}>Pricing</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                <div><label style={labelS}>Price ($)</label><input style={inpS} type="number" step="0.01" value={ed("price")} onChange={e => setEd("price", e.target.value)} /></div>
+                <div><label style={labelS}>Account size ($)</label><input style={inpS} type="number" value={ed("accountSize")} onChange={e => setEd("accountSize", e.target.value)} /></div>
+                <div><label style={labelS}>Refundable fee ($)</label><input style={inpS} type="number" step="0.01" value={ed("refundableFeeDollars")} onChange={e => setEd("refundableFeeDollars", e.target.value)} /></div>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <div style={groupTitleS}>Challenge rules</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                <div><label style={labelS}>Profit target %</label><input style={inpS} type="number" step="0.1" value={ed("profitTargetPct")} onChange={e => setEd("profitTargetPct", e.target.value)} /></div>
+                <div><label style={labelS}>Max loss %</label><input style={inpS} type="number" step="0.1" value={ed("maxLossPct")} onChange={e => setEd("maxLossPct", e.target.value)} /></div>
+                <div><label style={labelS}>Daily loss %</label><input style={inpS} type="number" step="0.1" value={ed("dailyLossPct")} onChange={e => setEd("dailyLossPct", e.target.value)} /></div>
+                <div><label style={labelS}>Max position size %</label><input style={inpS} type="number" step="0.01" value={ed("maxPositionSizePct")} onChange={e => setEd("maxPositionSizePct", e.target.value)} /></div>
+                <div><label style={labelS}>Min trading days</label><input style={inpS} type="number" min="1" value={ed("minTradingDays")} onChange={e => setEd("minTradingDays", e.target.value)} /></div>
+                <div><label style={labelS}>Challenge period (days)</label><input style={inpS} type="number" min="1" value={ed("challengePeriodDays")} onChange={e => setEd("challengePeriodDays", e.target.value)} /></div>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <div style={groupTitleS}>Payouts</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12 }}>
+                <div><label style={labelS}>Profit share %</label><input style={inpS} type="number" step="0.1" min="0" max="100" value={ed("profitSharePct")} onChange={e => setEd("profitSharePct", e.target.value)} /></div>
+                <div><label style={labelS}>Max payout per req ($)</label><input style={inpS} type="number" step="0.01" min="0" value={ed("maxPayoutCapDollars")} onChange={e => setEd("maxPayoutCapDollars", e.target.value)} /></div>
+                <div><label style={labelS}>Min payout ($)</label><input style={inpS} type="number" step="0.01" min="0" value={ed("minPayoutDollars")} onChange={e => setEd("minPayoutDollars", e.target.value)} /></div>
+                <div><label style={labelS}>Cooldown (days)</label><input style={inpS} type="number" min="0" value={ed("payoutCooldownDays")} onChange={e => setEd("payoutCooldownDays", e.target.value)} /></div>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <div style={groupTitleS}>Display</div>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 12 }}>
+                <div><label style={labelS}>Name</label><input style={inpS} value={ed("name")} onChange={e => setEd("name", e.target.value)} /></div>
+                <div><label style={labelS}>Display order</label><input style={inpS} type="number" min="0" value={ed("order")} onChange={e => setEd("order", e.target.value)} /></div>
+                <div><label style={labelS}>Active</label>
+                  <select style={inpS} value={String(editData.isActive)} onChange={e => setEd("isActive", e.target.value === "true")}>
+                    <option value="true">Yes</option><option value="false">No</option>
+                  </select>
+                </div>
+                <div><label style={labelS}>Popular badge</label>
+                  <select style={inpS} value={String(editData.isPopular)} onChange={e => setEd("isPopular", e.target.value === "true")}>
+                    <option value="true">Yes</option><option value="false">No</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <Btn label="Save changes" bg="#22C55E" color="#071A0E" onClick={saveEdit} loading={saving} />
+              <Btn label="Cancel" bg="#334155" color="#94A3B8" onClick={() => setEditId(null)} />
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
         <SH>Plans</SH>
         <Btn label="+ Add Plan" bg="#22C55E" color="#071A0E" onClick={() => setShowAdd(true)} />
       </div>
 
       {showAdd && (
-        <div style={{ background: "#1E293B", border: "1px solid #22C55E", borderRadius: 10, padding: "16px 18px", marginBottom: 16 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#22C55E", marginBottom: 12 }}>New Plan</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 10 }}>
-            {(["name", "price", "accountSize", "order"] as const).map(f => (
-              <div key={f}><div style={{ fontSize: 10, color: "#475569", marginBottom: 3, textTransform: "capitalize" }}>{f}</div>
-              <input style={inpS} value={newPlan[f]} onChange={e => setNewPlan(p => ({ ...p, [f]: e.target.value }))} /></div>
-            ))}
+        <div style={{ background: "#1E293B", border: "1px solid #22C55E", borderRadius: 10, padding: "20px 22px", marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#22C55E", marginBottom: 16 }}>New Plan</div>
+
+          <div style={{ marginBottom: 14 }}>
+            <div style={groupTitleS}>Pricing</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+              <div><label style={labelS}>Name</label><input style={inpS} value={newPlan.name} onChange={e => setNewPlan(p => ({ ...p, name: e.target.value }))} /></div>
+              <div><label style={labelS}>Price ($)</label><input style={inpS} type="number" step="0.01" value={newPlan.price} onChange={e => setNewPlan(p => ({ ...p, price: e.target.value }))} /></div>
+              <div><label style={labelS}>Account size ($)</label><input style={inpS} type="number" value={newPlan.accountSize} onChange={e => setNewPlan(p => ({ ...p, accountSize: e.target.value }))} /></div>
+              <div><label style={labelS}>Refundable fee ($)</label><input style={inpS} type="number" step="0.01" value={newPlan.refundableFeeDollars} onChange={e => setNewPlan(p => ({ ...p, refundableFeeDollars: e.target.value }))} /></div>
+            </div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 12 }}>
-            {(["profitTargetPct", "maxLossPct", "dailyLossPct", "maxPositionSizePct", "minTradingDays"] as const).map(f => (
-              <div key={f}><div style={{ fontSize: 10, color: "#475569", marginBottom: 3, textTransform: "capitalize" }}>{f}</div>
-              <input style={inpS} value={newPlan[f]} onChange={e => setNewPlan(p => ({ ...p, [f]: e.target.value }))} /></div>
-            ))}
+
+          <div style={{ marginBottom: 14 }}>
+            <div style={groupTitleS}>Challenge rules</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10 }}>
+              <div><label style={labelS}>Profit target %</label><input style={inpS} type="number" value={newPlan.profitTargetPct} onChange={e => setNewPlan(p => ({ ...p, profitTargetPct: e.target.value }))} /></div>
+              <div><label style={labelS}>Max loss %</label><input style={inpS} type="number" value={newPlan.maxLossPct} onChange={e => setNewPlan(p => ({ ...p, maxLossPct: e.target.value }))} /></div>
+              <div><label style={labelS}>Daily loss %</label><input style={inpS} type="number" value={newPlan.dailyLossPct} onChange={e => setNewPlan(p => ({ ...p, dailyLossPct: e.target.value }))} /></div>
+              <div><label style={labelS}>Max pos size %</label><input style={inpS} type="number" step="0.01" value={newPlan.maxPositionSizePct} onChange={e => setNewPlan(p => ({ ...p, maxPositionSizePct: e.target.value }))} /></div>
+              <div><label style={labelS}>Min trading days</label><input style={inpS} type="number" value={newPlan.minTradingDays} onChange={e => setNewPlan(p => ({ ...p, minTradingDays: e.target.value }))} /></div>
+              <div><label style={labelS}>Period (days)</label><input style={inpS} type="number" value={newPlan.challengePeriodDays} onChange={e => setNewPlan(p => ({ ...p, challengePeriodDays: e.target.value }))} /></div>
+            </div>
           </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <div style={groupTitleS}>Payouts</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+              <div><label style={labelS}>Profit share %</label><input style={inpS} type="number" value={newPlan.profitSharePct} onChange={e => setNewPlan(p => ({ ...p, profitSharePct: e.target.value }))} /></div>
+              <div><label style={labelS}>Max payout ($)</label><input style={inpS} type="number" step="0.01" value={newPlan.maxPayoutCapDollars} onChange={e => setNewPlan(p => ({ ...p, maxPayoutCapDollars: e.target.value }))} /></div>
+              <div><label style={labelS}>Min payout ($)</label><input style={inpS} type="number" step="0.01" value={newPlan.minPayoutDollars} onChange={e => setNewPlan(p => ({ ...p, minPayoutDollars: e.target.value }))} /></div>
+              <div><label style={labelS}>Cooldown (days)</label><input style={inpS} type="number" value={newPlan.payoutCooldownDays} onChange={e => setNewPlan(p => ({ ...p, payoutCooldownDays: e.target.value }))} /></div>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <div style={groupTitleS}>Display</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+              <div><label style={labelS}>Display order</label><input style={inpS} type="number" value={newPlan.order} onChange={e => setNewPlan(p => ({ ...p, order: e.target.value }))} /></div>
+              <div><label style={labelS}>Active</label>
+                <select style={inpS} value={newPlan.isActive} onChange={e => setNewPlan(p => ({ ...p, isActive: e.target.value }))}>
+                  <option value="true">Yes</option><option value="false">No</option>
+                </select>
+              </div>
+              <div><label style={labelS}>Popular badge</label>
+                <select style={inpS} value={newPlan.isPopular} onChange={e => setNewPlan(p => ({ ...p, isPopular: e.target.value }))}>
+                  <option value="true">Yes</option><option value="false">No</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
           <div style={{ display: "flex", gap: 8 }}>
             <Btn label="Save" bg="#22C55E" color="#071A0E" onClick={addPlan} loading={saving} />
             <Btn label="Cancel" bg="#334155" color="#94A3B8" onClick={() => setShowAdd(false)} />
@@ -762,25 +920,10 @@ function PlansSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestInit
           {["Name", "Price", "Account Size", "Profit%", "Max Loss%", "Daily Loss%", "Popular", "Active", "Actions"].map(h => <div key={h} style={thStyle}>{h}</div>)}
         </div>
         {loading ? <div style={{ padding: 32, textAlign: "center", color: "#475569" }}>Loading...</div> :
-          plans.map((p, i) => editId === p.id ? (
-            <div key={p.id} style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1.5fr 1fr 1fr 1fr 1fr 1fr 2fr", padding: "8px 16px", alignItems: "center", gap: 4, borderBottom: "1px solid #22C55E40", background: "rgba(34,197,94,0.04)" }}>
-              <input style={inpS} value={String(editData.name)} onChange={e => setEditData(d => ({ ...d, name: e.target.value }))} />
-              <input style={inpS} value={String(editData.price)} onChange={e => setEditData(d => ({ ...d, price: Number(e.target.value) }))} />
-              <input style={inpS} value={String(editData.accountSize)} onChange={e => setEditData(d => ({ ...d, accountSize: Number(e.target.value) }))} />
-              <input style={inpS} value={String(editData.profitTargetPct)} onChange={e => setEditData(d => ({ ...d, profitTargetPct: Number(e.target.value) }))} />
-              <input style={inpS} value={String(editData.maxLossPct)} onChange={e => setEditData(d => ({ ...d, maxLossPct: Number(e.target.value) }))} />
-              <input style={inpS} value={String(editData.dailyLossPct)} onChange={e => setEditData(d => ({ ...d, dailyLossPct: Number(e.target.value) }))} />
-              <select style={{ ...inpS }} value={String(editData.isPopular)} onChange={e => setEditData(d => ({ ...d, isPopular: e.target.value === "true" }))}><option value="true">Yes</option><option value="false">No</option></select>
-              <select style={{ ...inpS }} value={String(editData.isActive)} onChange={e => setEditData(d => ({ ...d, isActive: e.target.value === "true" }))}><option value="true">Yes</option><option value="false">No</option></select>
-              <div style={{ display: "flex", gap: 5 }}>
-                <Btn label="Save" bg="#22C55E" color="#071A0E" onClick={saveEdit} loading={saving} />
-                <Btn label="Cancel" bg="#334155" color="#94A3B8" onClick={() => setEditId(null)} />
-              </div>
-            </div>
-          ) : (
+          plans.map((p, i) => (
             <div key={p.id} style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1.5fr 1fr 1fr 1fr 1fr 1fr 2fr", padding: "9px 16px", alignItems: "center", borderBottom: i < plans.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
               <div style={{ ...tdStyle, color: "#F1F5F9", fontWeight: 600 }}>{p.name}</div>
-              <div style={{ ...tdStyle, color: "#22C55E", fontWeight: 700 }}>${p.price}</div>
+              <div style={{ ...tdStyle, color: "#22C55E", fontWeight: 700 }}>${p.priceCents > 0 ? (p.priceCents / 100).toFixed(2) : p.price}</div>
               <div style={{ ...tdStyle }}>${p.accountSize.toLocaleString()}</div>
               <div style={tdStyle}>{p.profitTargetPct}%</div>
               <div style={tdStyle}>{p.maxLossPct}%</div>
