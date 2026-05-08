@@ -2,7 +2,7 @@
 
 Точка правды по статусу проекта. Обновляется после каждой завершённой задачи.
 
-Последнее обновление: 2026-05-07 (после Step 4 — on-chain watcher service закрыт).
+Последнее обновление: 2026-05-08 (Auto-pass logic + email helper refactor — P0 закрыт).
 
 ---
 
@@ -133,6 +133,33 @@ Fix:
 Коммит: `b80a229` — fix(activation): seed BalanceLog on challenge creation
 
 E2E подтверждение: userId=2 (adminer) успешно купил 10 YES shares за $9.19, balance уменьшился $1000 → $990.81.
+
+---
+
+### Auto-pass logic on sell + email helper refactor (2026-05-08) — P0 closed
+
+При закрытии trade через sell — автоматический переход Challenge.status в "passed" если выполнены условия (profitTargetMet + tradingDaysCount >= minTradingDays + !drawdownViolated). Раньше требовал ручного админа.
+
+Архитектура:
+- sell/route.ts — auto-pass блок внутри $transaction после tradingDaysCount update. effectiveTradingDays учитывает +1 если isNewTradingDay. Race-safe через одиночный update.
+- Email уведомление — fire-and-forget после транзакции через shared helper.
+- AuditLog — два события: challenge_profit_target_met (при первом достижении target) + challenge_auto_passed (при переходе статуса).
+
+Email refactor:
+- src/lib/email.ts NEW — singleton getResend(), sendEmail() (never throws), buildBrandTemplate(), buildKeyValueTable(), escapeHtml()
+- contact/route.ts — переключён на shared helper, brand-стиль сохранён
+- sell/route.ts auto-pass email — light-theme template совпадает с contact (зелёный заголовок, key-value table, серый footer)
+
+E2E test:
+- Симуляция: realizedBalance=$1150, tradingDaysCount=9, lastTradingDay=вчера
+- Sell 10 YES shares → balance $1159.19, profitPct 15.92%, effectiveTradingDays=10
+- Challenge.status: active → passed, endedAt set
+- AuditLog id=39 (profit_target_met) + id=40 (auto_passed)
+- Resend POST /emails → 200, email доставлен на root@alexadminer.com в Inbox с brand-styling
+
+Коммиты:
+1. `6303c22` — feat(challenge): auto-pass challenge on sell when profit target + min days met
+2. `e9fd5fc` — refactor(email): shared sendEmail helper + brand template
 
 ---
 
@@ -383,9 +410,7 @@ Notes:
 
 ## 🔴 P0 — критичные (блокирующие функционал)
 
-| # | Задача | Детали |
-|---|---|---|
-| 1 | Auto-pass logic | При profit target + tradingDaysCount ≥ minTradingDays + !drawdownViolated → status=passed автоматически (вместо ручного админа). Трогает горячий trade flow в `sell/route.ts` |
+✅ Все P0 задачи закрыты.
 
 ---
 
@@ -588,7 +613,7 @@ On-chain checkout UI: ███████████████████�
 Checkout UX + cleanup: ████████████████████  100%  (P0 #1 done, f3886e2+0d49c36+feef8b0+0cb186d+last)
 On-chain watcher:     ████████████████████  100%  (Step 4 done, 5bf63d5+1a31d82+ac0a409+last)
 On-chain activation:  ████████████████████  100%  (Step 5 done)
-Auto-pass logic:      ░░░░░░░░░░░░░░░░░░░░    0%
+Auto-pass logic:      ████████████████████  100%  (P0 done, 6303c22+e9fd5fc)
 Legal content:        ████████░░░░░░░░░░░░   40%  (drafts, lawyer pending)
 Security audit:       ░░░░░░░░░░░░░░░░░░░░    0%
 Admin Site Settings:  ░░░░░░░░░░░░░░░░░░░░    0%
