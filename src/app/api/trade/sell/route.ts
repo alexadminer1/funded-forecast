@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyToken } from "@/lib/auth";
-import { Resend } from "resend";
+import { sendEmail, buildBrandTemplate, buildKeyValueTable, escapeHtml } from "@/lib/email";
 
 const MAX_SLIPPAGE = 0.02;
 
@@ -177,6 +177,7 @@ export async function POST(req: NextRequest) {
 
       // === Challenge balance update + drawdown checks ===
       let autoPass = false;
+      let passMeta: { profitPct: number; profitTargetPct: number; tradingDays: number; minTradingDays: number } | null = null;
       if (activeChallenge && challengeId) {
         const newRealizedBalance = parseFloat((activeChallenge.realizedBalance + proceeds).toFixed(2));
         const newPeakBalance = Math.max(activeChallenge.peakBalance, newRealizedBalance);
@@ -250,6 +251,12 @@ export async function POST(req: NextRequest) {
 
         if (profitTargetMet && effectiveTradingDays >= activeChallenge.minTradingDays) {
           autoPass = true;
+          passMeta = {
+            profitPct,
+            profitTargetPct: activeChallenge.profitTargetPct,
+            tradingDays: effectiveTradingDays,
+            minTradingDays: activeChallenge.minTradingDays,
+          };
           await tx.challenge.update({
             where: { id: challengeId },
             data: { status: "passed", endedAt: new Date() },
@@ -275,24 +282,55 @@ export async function POST(req: NextRequest) {
 
       await tx.user.update({ where: { id: userId }, data: { lastTradeAt: new Date() } });
 
-      return { trade, position: updatedPosition, proceeds, realizedPnl, balanceAfter: newBalance, positionClosed: isFullClose, autoPass };
+      return { trade, position: updatedPosition, proceeds, realizedPnl, balanceAfter: newBalance, positionClosed: isFullClose, autoPass, passMeta };
     });
 
-    if (result.autoPass) {
+    if (result.autoPass && result.passMeta) {
       try {
         const passedUser = await prisma.user.findUnique({
           where: { id: userId },
           select: { email: true, firstName: true },
         });
-        if (passedUser?.email && process.env.RESEND_API_KEY) {
-          const resend = new Resend(process.env.RESEND_API_KEY);
+        if (passedUser?.email) {
           const name = passedUser.firstName ?? "Trader";
-          await resend.emails.send({
-            from: "FundedForecast <noreply@tradepredictions.online>",
-            to: [passedUser.email],
-            subject: "Congratulations! You have passed your FundedForecast challenge",
-            html: `<p>Hi ${name},</p><p>Congratulations! You have successfully met the profit target and completed the minimum required trading days on your challenge. Your account is now marked as <strong>passed</strong>.</p><p>A member of our team will be in touch shortly regarding next steps for your funded account.</p><p>– The FundedForecast Team</p>`,
-            text: `Hi ${name},\n\nCongratulations! You have successfully met the profit target and completed the minimum required trading days on your challenge. Your account is now marked as passed.\n\nA member of our team will be in touch shortly regarding next steps for your funded account.\n\n– The FundedForecast Team`,
+          const { profitPct, profitTargetPct, tradingDays, minTradingDays } = result.passMeta;
+          const profitPctStr = profitPct.toFixed(2);
+          const targetStr = profitTargetPct.toFixed(0);
+          const tradingDaysStr = String(tradingDays);
+          const minDaysStr = String(minTradingDays);
+          const balanceStr = `$${result.balanceAfter.toFixed(2)}`;
+
+          const bodyHtml = `
+<p style="font-size:14px;color:#374151;line-height:1.6;margin:0 0 16px">Hi ${escapeHtml(name)},</p>
+<p style="font-size:14px;color:#374151;line-height:1.6;margin:0 0 20px">Congratulations — you have successfully completed your FundedForecast challenge.</p>
+${buildKeyValueTable([
+  { label: "Profit",        value: `${profitPctStr}% (target: ${targetStr}%)` },
+  { label: "Trading days",  value: `${tradingDaysStr} / ${minDaysStr}` },
+  { label: "Final balance", value: balanceStr },
+])}
+<p style="font-size:14px;color:#374151;line-height:1.6;margin:20px 0 0">Our team will reach out shortly with next steps for funding your account.</p>`;
+
+          const bodyText = `Hi ${name},
+
+Congratulations — you have successfully completed your FundedForecast challenge.
+
+Profit:         ${profitPctStr}% (target: ${targetStr}%)
+Trading days:   ${tradingDaysStr} / ${minDaysStr}
+Final balance:  ${balanceStr}
+
+Our team will reach out shortly with next steps for funding your account.`;
+
+          const tpl = buildBrandTemplate({
+            heading: "Challenge passed",
+            bodyHtml,
+            bodyText,
+          });
+
+          await sendEmail({
+            to: passedUser.email,
+            subject: "Congratulations — you passed your FundedForecast challenge",
+            html: tpl.html,
+            text: tpl.text,
           });
         }
       } catch (err) {
