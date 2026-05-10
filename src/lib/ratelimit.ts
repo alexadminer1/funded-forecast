@@ -26,6 +26,9 @@ export function getLimiter(pathname: string) {
   if (pathname === "/api/user/payout") return limiters.payout;
   if (pathname === "/api/user/start-challenge") return limiters.startChallenge;
   if (pathname === "/api/payments/create") return limiters.paymentCreate;
+  if (pathname === "/api/affiliate/apply") return limiters.affiliateApply;
+  if (pathname === "/api/affiliate/wallet") return limiters.walletUpdate;
+  if (pathname === "/api/affiliate/payouts") return limiters.payoutRequest;
   if (pathname.includes("/webhook")) return limiters.webhook;
   if (pathname.startsWith("/api/admin")) return limiters.admin;
   return limiters.default;

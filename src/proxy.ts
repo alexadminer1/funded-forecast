@@ -24,31 +24,43 @@ export async function proxy(req: NextRequest) {
   // Only rate limit API routes
   if (!pathname.startsWith("/api/")) return NextResponse.next();
 
-  const limiter = getLimiter(pathname);
-  const identifier = getIdentifier(req);
+  // Cron jobs are triggered by scheduler, not users
+  if (pathname.startsWith("/api/cron/")) return NextResponse.next();
 
-  const { success, limit, remaining, reset } = await limiter.limit(identifier);
+  // Webhooks come from external services with their own auth
+  if (pathname.includes("/webhook")) return NextResponse.next();
 
-  if (!success) {
-    const retryAfter = Math.ceil((reset - Date.now()) / 1000);
-    return NextResponse.json(
-      { error: "Too many requests", retryAfter },
-      {
-        status: 429,
-        headers: {
-          "Retry-After": String(retryAfter),
-          "X-RateLimit-Limit": String(limit),
-          "X-RateLimit-Remaining": "0",
-          "X-RateLimit-Reset": String(reset),
-        },
-      }
-    );
+  try {
+    const limiter = getLimiter(pathname);
+    const identifier = getIdentifier(req);
+
+    const { success, limit, remaining, reset } = await limiter.limit(identifier);
+
+    if (!success) {
+      const retryAfter = Math.ceil((reset - Date.now()) / 1000);
+      return NextResponse.json(
+        { error: "Too many requests", retryAfter },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(retryAfter),
+            "X-RateLimit-Limit": String(limit),
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": String(reset),
+          },
+        }
+      );
+    }
+
+    const res = NextResponse.next();
+    res.headers.set("X-RateLimit-Limit", String(limit));
+    res.headers.set("X-RateLimit-Remaining", String(remaining));
+    return res;
+  } catch (err) {
+    // Never block legitimate traffic if Redis is unavailable
+    console.error("[proxy] rate limit error:", err);
+    return NextResponse.next();
   }
-
-  const res = NextResponse.next();
-  res.headers.set("X-RateLimit-Limit", String(limit));
-  res.headers.set("X-RateLimit-Remaining", String(remaining));
-  return res;
 }
 
 export const config = {
