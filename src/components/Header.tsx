@@ -2,23 +2,18 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { apiFetch, getToken, removeToken } from "@/lib/api";
+import { apiFetch, removeToken } from "@/lib/api";
 import { User } from "@/lib/types";
 
 export default function Header() {
   const router = useRouter();
   const pathname = usePathname();
   const [user, setUser] = useState<User | null>(null);
-  const [userLoading, setUserLoading] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [hasAffiliate, setHasAffiliate] = useState(false);
-  const [hasToken, setHasToken] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
-    if (!getToken()) return;
-    setHasToken(true);
-    setUserLoading(true);
     Promise.all([
       apiFetch<{ success: boolean; user: User }>("/api/user/me")
         .then((data) => { if (data.success) setUser(data.user); })
@@ -26,7 +21,7 @@ export default function Header() {
       apiFetch<{ affiliate: { id: number } | null }>("/api/affiliate/me")
         .then((data) => { setHasAffiliate(!!data.affiliate); })
         .catch(() => {}),
-    ]).finally(() => setUserLoading(false));
+    ]);
   }, []);
 
   useEffect(() => {
@@ -52,7 +47,6 @@ export default function Header() {
     { href: "/leaderboard", label: "Leaderboard" },
   ];
 
-  const isLoggedIn = hasToken || !!user;
   const affiliateHref = hasAffiliate ? "/affiliate" : "/affiliates";
 
   return (
@@ -88,7 +82,7 @@ export default function Header() {
       `}</style>
 
       {/* Logo */}
-      <a href={isLoggedIn ? "/markets" : "/"} style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+      <a href="/markets" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
         <div style={{
           width: 28, height: 28, borderRadius: 8,
           background: "linear-gradient(135deg, #22C55E, #16A34A)",
@@ -102,8 +96,7 @@ export default function Header() {
       </a>
 
       {/* Nav — desktop only */}
-      {isLoggedIn && (
-        <nav className="hdr-nav" style={{ display: "flex", gap: 4, alignItems: "center" }}>
+      <nav className="hdr-nav" style={{ display: "flex", gap: 4, alignItems: "center" }}>
           {navLinks.map(({ href, label }) => (
             <a
               key={href}
@@ -139,30 +132,10 @@ export default function Header() {
             Affiliates
           </a>
         </nav>
-      )}
-
-      {!isLoggedIn && (
-        <a
-          href="/affiliates"
-          className="hdr-nav"
-          style={{
-            color: "#64748B",
-            textDecoration: "none",
-            fontSize: 13.5,
-            fontWeight: 400,
-            padding: "5px 12px",
-            borderRadius: 7,
-          }}
-        >
-          Affiliates
-        </a>
-      )}
 
       {/* Right */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "flex-end" }}>
 
-        {isLoggedIn && (
-          <>
             {/* Challenge progress — desktop only */}
             {user?.activeChallenge && (() => {
               const ch = user.activeChallenge!;
@@ -245,29 +218,10 @@ export default function Header() {
               <span style={{ width: 18, height: 2, background: "#F1F5F9", borderRadius: 2, display: "block" }} />
               <span style={{ width: 18, height: 2, background: "#F1F5F9", borderRadius: 2, display: "block" }} />
             </button>
-          </>
-        )}
-
-        {!userLoading && !isLoggedIn && (
-          <a
-            href="/login"
-            style={{
-              background: "#22C55E", color: "#071A0E",
-              padding: "7px 18px", borderRadius: 8,
-              textDecoration: "none", fontSize: 13, fontWeight: 700,
-              letterSpacing: "-0.01em",
-              boxShadow: "0 0 16px rgba(34,197,94,0.25)",
-              transition: "box-shadow 0.15s",
-              flexShrink: 0,
-            }}
-          >
-            Get Started
-          </a>
-        )}
       </div>
 
       {/* Mobile menu — opens below header */}
-      {menuOpen && isLoggedIn && (
+      {menuOpen && (
         <div style={{
           position: "absolute",
           top: "100%",

@@ -1,36 +1,24 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Header from "./Header";
 import LandingHeader from "./LandingHeader";
-
-// Public pages (no auth) — show LandingHeader
-const PUBLIC_PATHS = new Set<string>([
-  "/privacy",
-  "/terms",
-  "/risk-disclosure",
-  "/contact",
-]);
+import { getToken } from "@/lib/api";
 
 export default function HeaderWrapper() {
   const pathname = usePathname();
+  const [mounted, setMounted] = useState(false);
 
-  // Routes that render their own header (don't show anything global)
-  if (
-    pathname === "/" ||
-    pathname === "/login" ||
-    pathname.startsWith("/admin") ||
-    pathname === "/affiliates" ||
-    pathname.startsWith("/affiliates/")
-  ) {
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (pathname === "/" || pathname === "/login" || pathname.startsWith("/admin")) {
     return null;
   }
 
-  // Public marketing/legal pages — show landing header (works without auth)
-  if (PUBLIC_PATHS.has(pathname)) {
-    return <LandingHeader />;
-  }
+  if (!mounted) return null;
 
-  // Authenticated app pages — show internal Header
-  return <Header />;
+  return getToken() ? <Header /> : <LandingHeader />;
 }
