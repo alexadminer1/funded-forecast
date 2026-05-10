@@ -49,9 +49,10 @@ export async function GET(req: NextRequest) {
       select: { runningBalance: true },
     });
 
-    // Get open positions count
+    // Get open positions count (exclude positions in failed challenges)
+    // TODO [A2]: replace with proper auto-close after challenge failed (architectural fix)
     const openPositionsCount = await prisma.position.count({
-      where: { userId, status: "open" },
+      where: { userId, status: "open", NOT: { challenge: { status: "failed" } } },
     });
 
     // Get active challenge if any

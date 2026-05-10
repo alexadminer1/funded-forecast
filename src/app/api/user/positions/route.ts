@@ -19,8 +19,9 @@ export async function GET(req: NextRequest) {
   const userId = payload.userId as number;
 
   try {
+    // TODO [A2]: replace with proper auto-close after challenge failed (architectural fix)
     const positions = await prisma.position.findMany({
-      where: { userId, status: "open" },
+      where: { userId, status: "open", NOT: { challenge: { status: "failed" } } },
       include: {
         market: {
           select: {
