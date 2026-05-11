@@ -2,11 +2,40 @@
 
 Точка правды по статусу проекта. Обновляется после каждой завершённой задачи.
 
-Последнее обновление: 2026-05-08 (Auto-pass logic + email helper refactor — P0 закрыт).
+Последнее обновление: 2026-05-11 (Header fix + SEC-1 rate limiting + D20 + D15 checkout popup).
 
 ---
 
 ## ✅ Закрыто (production)
+
+### Demo-blockers session (2026-05-11)
+
+**Header bug fix — гостевой хедер у авторизованных пользователей** — `584f0f4`
+- Корень: `HeaderWrapper` рендерился на сервере (SSR), `getToken()` → localStorage недоступен → всегда null → LandingHeader
+- Fix: mounted-паттерн в `HeaderWrapper.tsx` — рендер только после гидратации. `getToken()` вызывается только на клиенте
+- `Header.tsx` упрощён: убраны все гостевые ветки (он рендерится только для залогиненных)
+- `src/app/affiliates/page.tsx`: убраны дублирующий импорт и рендер `LandingHeader`
+
+**SEC-1 Rate limiting via proxy.ts** — `31349d3`
+- `getLimiter()` не знал о 3 affiliate endpoints (apply, wallet, payouts) → они падали в default 60/мин вместо 5/ч
+- `proxy.ts` не имел bypass для cron/webhook → планировщик мог получить 429
+- `proxy.ts` без try/catch → Redis недоступен = все API запросы 500
+- Fix Option B: добавлены 3 маппинга в `getLimiter()` + bypass blocks + try/catch failsafe
+
+**D20 — Скрыть open positions в failed challenges** — `274eeab`
+- Пользователь видел "активные" позиции в мёртвом challenge → вводило в заблуждение
+- Fix: `NOT: { challenge: { status: "failed" } }` в `GET /api/user/positions` и счётчик в `GET /api/user/me`
+- Prisma semantics: NOT на optional relation включает строки где `challengeId IS NULL`
+- TODO [A2] в коде — архитектурный fix (auto-close при fail) отложен
+
+**D15 — Popup "Payment confirmed" + fallback polling** — `47f4ebd`
+- Silent `catch {}` глотал ошибки → при 429/500 polling invoice.status никогда не обновлялся
+- `router.push("/dashboard")` вызывался тихо без визуального feedback
+- Fix 1: `catch (err) { console.error("[checkout] polling error:", err) }` во всех catch блоках
+- Fix 2: `setShowSuccessPopup(true)` вместо `router.push`. `SuccessPopup` компонент: план, аккаунт, profit target, tx hash с BaseScan link, кнопка "Go to Dashboard →"
+- Fix 3: 4-й useEffect — fallback polling `/api/payments/me/active` каждые 10 сек. Если `recentConfirmed.challengeId` есть → popup. Защита от race condition с основным polling
+
+---
 
 ### Security revamp (2026-05-05)
 
@@ -614,6 +643,10 @@ Checkout UX + cleanup: ███████████████████
 On-chain watcher:     ████████████████████  100%  (Step 4 done, 5bf63d5+1a31d82+ac0a409+last)
 On-chain activation:  ████████████████████  100%  (Step 5 done)
 Auto-pass logic:      ████████████████████  100%  (P0 done, 6303c22+e9fd5fc)
+Header auth fix:      ████████████████████  100%  (584f0f4)
+Rate limiting SEC-1:  ████████████████████  100%  (31349d3)
+D20 positions filter: ████████████████████  100%  (274eeab)
+D15 checkout popup:   ████████████████████  100%  (47f4ebd)
 Legal content:        ████████░░░░░░░░░░░░   40%  (drafts, lawyer pending)
 Security audit:       ░░░░░░░░░░░░░░░░░░░░    0%
 Admin Site Settings:  ░░░░░░░░░░░░░░░░░░░░    0%
@@ -629,6 +662,8 @@ P3 refactors:         ░░░░░░░░░░░░░░░░░░░�
 ---
 
 ## История сессий
+
+- **2026-05-11** — Demo-blockers: 4 задачи одной сессией. Header bug fix (mounted-pattern, 584f0f4), SEC-1 rate limiting failsafe (31349d3), D20 positions filter (274eeab), D15 checkout popup + fallback polling (47f4ebd). Контекстный файл docs/SESSION_LOG.md создан.
 
 - **2026-05-07** — Step 4 On-chain watcher service. 4 коммита: main implementation (alchemy.ts + watcher.ts + cron route), 2 fix'а (Alchemy Free tier 10-block limit + 10n→9n inclusive), 1 debug commit. End-to-end test passed: 2 транзакции по 1 USDC через MetaMask → CONFIRMED. Lessons: Alchemy free tier inclusive limit (10 = max 10 blocks not 11), viem PublicClient generic несовместимость → ReturnType<typeof makeClient>, console.log critical для runtime дебага.
 
