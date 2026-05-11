@@ -188,7 +188,7 @@ export async function POST(req: NextRequest) {
       netAmount,
       walletAddress: addr,
       walletNetwork: network,
-      currency: "USDT",
+      currency: "USDC",
       baseAmountCents: Math.round(amount * 100),
       refundableFeeBonusCents: Math.round(bonus * 100),
       finalAmountCents: Math.round(finalAmount * 100),

@@ -29,7 +29,7 @@
 - prisma/schema.prisma: PayoutRequest.currency default "USDT" → "USDC"
 - БД (sandbox): ALTER TABLE PayoutRequest ALTER COLUMN currency SET DEFAULT 'USDC'
 - БД (sandbox): UPDATE existing USDT → USDC (0 rows — sandbox чистый)
-- src/app/api/user/payout/route.ts: проверено — уже хардкод "USDC", правка не требовалась
+- src/app/api/user/payout/route.ts: hardcoded "USDT" → "USDC" (line 191, hotfix после первого P0.6 коммита)
 - src/app/account/page.tsx: 4 дефолта walletNetwork → "USDC ERC20", оба select-а (profile + payout) → только USDC ERC20 + USDC Polygon
 - src/app/faq/data.ts:56: текст обновлён на "USDC on ERC20 and Polygon networks"
 - src/app/how-it-works/page.tsx:40: "USDT is sent" → "USDC is sent"
@@ -41,6 +41,33 @@
 
 ### Not done yet
 - Production БД (когда переключимся с sandbox на mainnet) — повторить ALTER + UPDATE
+
+---
+
+## Session 2026-05-11 (continuation 6) — P0.10 email templates DRAFTS
+
+### Done
+- Создана директория src/lib/email-templates/ с 7 файлами:
+  - verification.ts — Email verification (registration)
+  - payment-confirmed.ts — Challenge активирован после payment
+  - challenge-passed.ts — Challenge passed
+  - challenge-failed.ts — Challenge failed (drawdown/expired) + Instant Reset CTA
+  - payout-approved.ts — Payout одобрен админом
+  - payout-completed.ts — Payout отправлен on-chain (BaseScan/PolygonScan link)
+  - index.ts — barrel export
+- Все шаблоны используют buildBrandTemplate + buildKeyValueTable + escapeHtml из src/lib/email.ts
+- Типизированные параметры (export interface XxxEmailData)
+- TFP-style DRAFTS — финальный copywriting от заказчика (OPEN_QUESTIONS_P0.md #2)
+- TypeScript check: clean
+
+### Scope NOT covered (отложено в Wave 2/3)
+- Inactivity warning email — P1 (не P0)
+- MLL warning email — P1
+- Интеграция в endpoints (вызовы sendEmail) — Wave 3
+- Существующий auto-pass email в trade/sell/route.ts:323 — будет переподключён в Wave 3
+
+### Hotfix приложен к коммиту
+- src/app/api/user/payout/route.ts:191 — currency hardcode "USDT" → "USDC" (часть P0.6, пропущенная в коммите 41bb411)
 
 ---
 
