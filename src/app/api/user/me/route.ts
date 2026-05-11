@@ -42,13 +42,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Account is blocked" }, { status: 403 });
     }
 
-    // Get current balance from last balance_log entry
-    const lastLog = await prisma.balanceLog.findFirst({
-      where: { userId },
-      orderBy: { createdAt: "desc" },
-      select: { runningBalance: true },
-    });
-
     // Get active challenge if any
     const activeChallenge = await prisma.challenge.findFirst({
       where: { userId, status: "active" },
@@ -68,6 +61,15 @@ export async function GET(req: NextRequest) {
         planId: true,
         plan: { select: { name: true } },
       },
+    });
+
+    // Get current balance from last balance_log entry
+    const lastLog = await prisma.balanceLog.findFirst({
+      where: activeChallenge
+        ? { userId, challengeId: activeChallenge.id }
+        : { userId, challengeId: null },
+      orderBy: { createdAt: "desc" },
+      select: { runningBalance: true },
     });
 
     // TODO [A1]: replace with native walletId filter after wallet model implementation
