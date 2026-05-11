@@ -16,10 +16,10 @@
 - Применено напрямую через Coolify DB Terminal (sandbox БД)
 - Existing active challenges не затронуты (minTradingDays — snapshot в Challenge таблице, NOT NULL без default)
 - SQL: BEGIN; UPDATE "ChallengePlan" SET "minTradingDays" = 15; COMMIT;
+- UI Admin Plans editor проверен — MIN TRADING DAYS=15 отображается корректно для всех планов
 
 ### Not done yet
 - Production БД (когда переключимся с sandbox на mainnet) — повторить SQL
-- В админке UI Plans editor проверить что новое значение отображается корректно
 
 ---
 
