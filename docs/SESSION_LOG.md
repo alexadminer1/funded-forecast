@@ -23,6 +23,27 @@
 
 ---
 
+## Session 2026-05-11 (continuation 5) — P0.6 USDC unification
+
+### Done
+- prisma/schema.prisma: PayoutRequest.currency default "USDT" → "USDC"
+- БД (sandbox): ALTER TABLE PayoutRequest ALTER COLUMN currency SET DEFAULT 'USDC'
+- БД (sandbox): UPDATE existing USDT → USDC (0 rows — sandbox чистый)
+- src/app/api/user/payout/route.ts: проверено — уже хардкод "USDC", правка не требовалась
+- src/app/account/page.tsx: 4 дефолта walletNetwork → "USDC ERC20", оба select-а (profile + payout) → только USDC ERC20 + USDC Polygon
+- src/app/faq/data.ts:56: текст обновлён на "USDC on ERC20 and Polygon networks"
+- src/app/how-it-works/page.tsx:40: "USDT is sent" → "USDC is sent"
+
+### Scope NOT touched
+- src/app/terms/page.tsx раздел 8.3 — это affiliate payout (отдельный flow с AffiliatePaymentMethod enum, оставляем оба варианта)
+- src/app/api/admin/payouts/* — currency валидация уже корректна
+- src/lib/payment/* — incoming USDC payments, не трогаем
+
+### Not done yet
+- Production БД (когда переключимся с sandbox на mainnet) — повторить ALTER + UPDATE
+
+---
+
 ## Session 2026-05-11 (continuation 3) — Backlog audit + corrections
 
 ### Получено

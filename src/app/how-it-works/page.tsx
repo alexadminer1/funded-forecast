@@ -37,7 +37,7 @@ const steps = [
   {
     n: 7,
     title: "Request your payout",
-    body: "Submit a payout request from your account page. Specify amount, wallet network, and address. Once an admin verifies the request, USDT is sent to your wallet. Profit splits and minimums are listed on each plan page.",
+    body: "Submit a payout request from your account page. Specify amount, wallet network, and address. Once an admin verifies the request, USDC is sent to your wallet. Profit splits and minimums are listed on each plan page.",
   },
 ];
 

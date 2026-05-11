@@ -19,14 +19,14 @@ export default function AccountPage() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
 
-  const [form, setForm] = useState({ username: "", firstName: "", lastName: "", walletAddress: "", walletNetwork: "USDT TRC20" });
+  const [form, setForm] = useState({ username: "", firstName: "", lastName: "", walletAddress: "", walletNetwork: "USDC ERC20" });
   const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
   const [pwMsg, setPwMsg] = useState("");
 
   const [activeChallenge, setActiveChallenge] = useState<any>(null);
   const [payouts, setPayouts] = useState<any[]>([]);
   const [passedChallenges, setPassedChallenges] = useState<any[]>([]);
-  const [payoutForm, setPayoutForm] = useState({ challengeId: "", amount: "", walletAddress: "", walletNetwork: "USDT TRC20" });
+  const [payoutForm, setPayoutForm] = useState({ challengeId: "", amount: "", walletAddress: "", walletNetwork: "USDC ERC20" });
   const [payoutMsg, setPayoutMsg] = useState("");
 
   const load = useCallback(async () => {
@@ -38,7 +38,7 @@ export default function AccountPage() {
     if (p.success) {
       setProfile(p.user);
       setConsent(p.consent);
-      setForm({ username: p.user.username ?? "", firstName: p.user.firstName ?? "", lastName: p.user.lastName ?? "", walletAddress: p.user.walletAddress ?? "", walletNetwork: p.user.walletNetwork ?? "USDT TRC20" });
+      setForm({ username: p.user.username ?? "", firstName: p.user.firstName ?? "", lastName: p.user.lastName ?? "", walletAddress: p.user.walletAddress ?? "", walletNetwork: p.user.walletNetwork ?? "USDC ERC20" });
     }
     if (s.success) {
       setStats(s.stats);
@@ -86,7 +86,7 @@ export default function AccountPage() {
     });
     setPayoutMsg(res.success ? "Payout requested successfully" : res.error ?? "Error");
     if (res.success) {
-      setPayoutForm({ challengeId: "", amount: "", walletAddress: "", walletNetwork: "USDT TRC20" });
+      setPayoutForm({ challengeId: "", amount: "", walletAddress: "", walletNetwork: "USDC ERC20" });
       load();
     }
   }
@@ -159,10 +159,8 @@ export default function AccountPage() {
           <div style={{ marginBottom: 12 }}>
             <div style={label}>Network</div>
             <select style={{ ...inputStyle }} value={form.walletNetwork} onChange={e => setForm({ ...form, walletNetwork: e.target.value })}>
-              <option>USDT TRC20</option>
-              <option>USDT ERC20</option>
-              <option>USDT BEP20</option>
               <option>USDC ERC20</option>
+              <option>USDC Polygon</option>
             </select>
           </div>
           <div style={{ marginBottom: 20 }}>
@@ -316,10 +314,8 @@ export default function AccountPage() {
               <div style={{ marginBottom: 10 }}>
                 <div style={label}>Network</div>
                 <select style={{ ...inputStyle }} value={payoutForm.walletNetwork} onChange={e => setPayoutForm({ ...payoutForm, walletNetwork: e.target.value })}>
-                  <option>USDT TRC20</option>
-                  <option>USDT ERC20</option>
-                  <option>USDT BEP20</option>
                   <option>USDC ERC20</option>
+                  <option>USDC Polygon</option>
                 </select>
               </div>
               <div style={{ marginBottom: 16 }}>

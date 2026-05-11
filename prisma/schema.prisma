@@ -263,7 +263,7 @@ model PayoutRequest {
   walletAddress           String?
   walletNetwork           String?
   txHash                  String?
-  currency                String    @default("USDT")
+  currency                String    @default("USDC")
   baseAmountCents         Int?
   refundableFeeBonusCents Int?
   finalAmountCents        Int?

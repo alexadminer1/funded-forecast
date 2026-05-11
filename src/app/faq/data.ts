@@ -53,7 +53,7 @@ export const faqData: FAQCategory[] = [
     items: [
       { q: "When can I request a payout?", a: "You can request a payout after reaching funded status and generating profits. Minimum payout thresholds and review periods apply." },
       { q: "Are payouts guaranteed?", a: "No. Payouts are subject to eligibility review, compliance checks, and verification of trading activity. We do not guarantee payouts." },
-      { q: "What payout methods are supported?", a: "We currently support crypto payouts (USDT on TRC20, ERC20, and BEP20 networks). Additional methods may be added in the future." },
+      { q: "What payout methods are supported?", a: "We currently support crypto payouts (USDC on ERC20 and Polygon networks). Additional methods may be added in the future." },
       { q: "Is KYC required before payout?", a: "KYC or identity verification may be required before processing payouts, depending on applicable regulations and compliance requirements." },
       { q: "How long does payout review take?", a: "Payout review typically takes several business days. Complex cases may take longer if additional verification is required." },
       { q: "Can a payout be rejected?", a: "Yes. Payouts can be rejected if trading activity does not comply with our rules, if prohibited patterns are detected, or if compliance requirements are not met." },
