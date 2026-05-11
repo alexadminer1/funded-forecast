@@ -9,6 +9,28 @@
 
 ---
 
+## Session 2026-05-11 (continuation 3) — Backlog audit + corrections
+
+### Получено
+- Аудит backlog от заказчика (19 пунктов замечаний + 3 корректировки структуры)
+
+### Принято в backlog
+- 18/22 пунктов аудита приняты с моими решениями
+- 4 пункта вынесены в OPEN_QUESTIONS_P0.md (требуют ответа заказчика)
+- Скорректирована оценка P0 с buffer 30% (132ч)
+- Добавлены P0.10 Email templates + P0.11 Backup & DR
+- P1 разделён на P1.early (critical, 117ч) + P1.late (48ч)
+- Добавлены P1.7 Analytics + P1.8 Support
+- Создан MIGRATION_PLAN с rollback strategy
+
+### Total estimate to production
+- 44 working days ≈ 9 weeks
+
+### Blocked on
+- 4 open questions: KYC rejection policy, email copywriting, MaxMind verification, backup storage
+
+---
+
 ## Session 2026-05-11 (continuation 2) — TFP audit + decisions
 
 ### Получено от заказчика

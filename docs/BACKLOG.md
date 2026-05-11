@@ -1,12 +1,13 @@
 # FundedForecast Backlog
 Last updated: 2026-05-11
-Source: Бизнес-аудит TFP + 10 decisions заказчика
+Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пункта корректировок
 
 ## Status overview
 - Demo blockers: ✓ закрыты (см. Archive)
 - Wallet model: ✓ APPROVED (docs/WALLET_MODEL.md)
 - Decisions: ✓ получены от заказчика (см. ниже)
-- Production readiness: requires P0 work (~7-10 дней)
+- Open questions: 4 блокера → docs/OPEN_QUESTIONS_P0.md
+- Production readiness: requires P0 work (~17 дней)
 
 ---
 
@@ -20,7 +21,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика
 6. KYC — Sumsub (Web SDK, crypto-friendly)
 7. Refundable Fee — УБРАТЬ полностью (не переименовывать)
 8. Instant Reset — да, 30% off от боевых ($27.99/$69.99/$139.99)
-9. Гео-блок — OFAC + санкционные через MaxMind GeoLite2
+9. Гео-блок — OFAC + санкционные через MaxMind GeoLite2-City
 10. Multi-account — 1 device fingerprint + 1 IP hash (FingerprintJS open-source)
 
 ---
@@ -38,7 +39,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика
 
 ---
 
-## P0 — Production blockers (~7-10 дней)
+## P0 — Production blockers
 
 ### P0.1 Refundable Fee — УБРАТЬ полностью
 - Scope: убрать поле + текст + логику bonus в payout
@@ -61,6 +62,11 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика
   - При каждом trade: peakBalance = MAX(peakBalance, newRealizedBalance)
   - Drawdown check: (peakBalance - realizedBalance) / peakBalance * 100 >= maxTotalDdPct
   - peakBalance НИКОГДА не уменьшается
+- Funded phase carry-forward:
+  - При passing: peakBalance переносится 1:1 в funded
+  - В funded: peakBalance растёт при profit, никогда не падает
+  - После withdrawal: balance -= amount, peakBalance НЕ меняется
+  - Safe Balance = peakBalance × (1 - maxLossPct/100) → стабильный
 - Тесты:
   - profit → peakBalance растёт, MLL "поднимается"
   - loss → peakBalance не падает, проверка от пика
@@ -72,6 +78,11 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика
 #### P0.3.a Consistency Rule
 - Scope: запретить passing если biggest day > 25% от total profit
 - БД: новая таблица ChallengeDailyPnL (id, challengeId, date, dailyPnl, dailyTrades, isWinningDay)
+- Формула:
+  - dailyPnl = SUM(realizedPnl) за UTC день
+  - Включает: market-resolved + sold positions (всё закрытое)
+  - isWinningDay = (dailyPnl > 0)
+  - Consistency: max(dailyPnl WHERE >0) / total_realized_profit ≤ 0.25
 - Логика:
   - Cron daily: агрегация из Trade за прошлый день
   - При попытке passing: max(dailyPnl WHERE >0) / totalProfit <= 0.25
@@ -112,6 +123,9 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика
   - Polymarket sync: тянуть event_id из Polymarket API
   - При новом trade: пересчитать uniqueEventsCount = COUNT(DISTINCT market.eventId WHERE position.challengeId=X)
   - Проверка при auto-pass: uniqueEventsCount >= 30
+- Fallback:
+  - Если Market.polymarketEventId IS NULL → market.id считается уникальным event
+  - Документировать в коде + FAQ
 - Файлы:
   - prisma/schema.prisma
   - src/lib/polymarket.ts: парсинг event_id
@@ -126,11 +140,13 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика
 - Scope: failed если нет new position >72ч (challenge) / 120ч (funded)
 - БД: Challenge.lastNewPositionAt DateTime?
 - Логика:
+  - При создании Challenge: lastNewPositionAt = activatedAt (даёт 72ч с момента активации)
   - Update lastNewPositionAt при NEW position (не update existing)
   - Cron каждый час: status=active AND now - lastNewPositionAt > 72h → failed
   - Для funded: > 120h
 - Файлы:
   - prisma/schema.prisma
+  - src/lib/payment/activation.ts: set lastNewPositionAt = activatedAt
   - src/app/api/trade/buy: update timer при NEW position
   - src/app/api/cron/inactivity-check (новый)
 - Тесты:
@@ -160,10 +176,14 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика
   - src/app/api/trade/buy: применить spread + reject если price > 0.85
   - src/app/api/trade/sell: применить spread + reject partial sell
   - Min position check: cost >= realizedBalance * 0.02
+- Frontend (trade modal):
+  - Показывать "Buy 100 @ $0.65 + 2% spread = $66.30 total" ДО подтверждения
+  - Юзер видит net cost с учётом spread
 - Файлы:
   - prisma migration: EngineSettings + seed data
   - src/app/api/trade/buy, sell
   - src/lib/engine-settings (новый, кэш на 60 сек)
+  - src/app/markets/[id]: обновить trade modal UI
 - Тесты:
   - buy на price 0.65 → spread 2% применился
   - buy на price 0.86 → reject
@@ -179,14 +199,19 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика
   - amount = approved amount (с tolerance ±1 cent)
   - asset = USDC contract
   - confirmations >= 5
+- Retry cron:
+  - Новый cron /api/cron/verify-pending-payouts каждые 10 минут
+  - Max 24 попытки (4 часа), после — flag для manual review
+  - Включён в Wave 3
 - Файлы:
   - src/lib/onchain-verify (новый)
   - src/app/api/admin/payouts/[id]/complete: integration
+  - src/app/api/cron/verify-pending-payouts (новый)
 - Тесты:
   - Valid USDC tx → approved
   - Wrong amount → rejected
   - Wrong recipient → rejected
-  - Insufficient confirmations → pending
+  - Insufficient confirmations → pending, retry cron picks up
 - Оценка: 8ч
 
 ### P0.6 Валютная унификация USDC (SEC-4)
@@ -204,23 +229,26 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика
   - User.deviceFingerprint String?
   - AuditLog.deviceFingerprint String?
   - Новая таблица MultiAccountFlag (id, userIds[], reason, status, createdAt)
+  - MultiAccountFlag.status enum: pending | confirmed | whitelisted | reviewed_legitimate
 - Логика:
   - Регистрация: захватить deviceFingerprint + IP hash
+  - Cookie/JS-disabled: блокировать регистрацию без JS, показывать <noscript> message
   - При оплате: query active challenges с тем же fingerprint OR ipHash → если есть → soft block
   - Cron detect-multi-accounts: hourly группировка → MultiAccountFlag
 - Файлы:
-  - frontend: интеграция FingerprintJS на /register
+  - frontend: интеграция FingerprintJS на /register + <noscript> block
   - src/app/api/register
   - src/app/api/payments/create: check before payment
   - src/app/api/cron/detect-multi-accounts (новый)
-  - admin UI для review flags
+  - admin UI для review flags + whitelist action
 - Flow при detection:
   - Soft block: показать "We need to verify your account. Contact support."
   - Email админу
-  - Manual review через admin panel
+  - Manual review через admin panel (approve/whitelist/confirm)
 - Тесты:
   - Регистрация с тем же fingerprint → flag
   - Покупка challenge другого user на том же IP → soft block
+  - JS disabled → registration blocked
 - Оценка: 16ч
 
 ### P0.8 Юридические дисклеймеры + гео-блок
@@ -231,35 +259,60 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика
   - "We are NOT a broker. NOT registered with SEC, FINRA, or CFTC."
 - Terms: явный non-refundable subscription пункт
 - Гео-блок:
-  - MaxMind GeoLite2 (бесплатная база)
-  - Список запрещённых: US, North Korea, Iran, Syria, Cuba, Russia, Belarus, Crimea, LNR/DNR
+  - MaxMind GeoLite2-City (бесплатная база, для subdivision detection)
+  - Логика: country_code IN (US, KP, IR, SY, CU, RU, BY) → block
+  - + country=UA AND subdivision_code IN (UA-43, UA-14, UA-09) → block
   - Блок на /register + при /payments/create
 - Файлы:
   - src/components/Footer
   - src/app/risk-disclosure, terms, register
   - src/lib/geo-block (новый, MaxMind интеграция)
-  - download MaxMind DB в Docker build
+  - download MaxMind GeoLite2-City DB в Docker build
 - Тесты:
   - IP из RU → reject on register
-  - IP из UA → allow
+  - IP из UA (Kyiv) → allow
+  - IP из UA-43 (Crimea) → reject
 - Оценка: 10ч
 
-### P0.9 UPDATE цены — ОТЛОЖЕНО
+### P0.9 UPDATE цены
 - Тестовые цены остаются для closed-test phase
-- При финальном launch: UPDATE через админку
+- EXPLICIT step в Wave 6 acceptance: заказчик принимает решение — оставить тестовые / UPDATE на боевые
+- Это часть acceptance criteria Wave 6
+
+### P0.10 Email templates (critical for launch)
+- Минимум 6 шаблонов через Resend:
+  1. Email verification (registration)
+  2. Payment confirmed → challenge active
+  3. Challenge passed
+  4. Challenge failed + Instant Reset CTA
+  5. Payout approved
+  6. Payout completed (с txHash + BaseScan link)
+- Inactivity/MLL warnings → отложены в P1 (после launch)
+- Файлы: src/lib/email-templates/ (новая директория)
+- Зависит от: финальный copywriting от заказчика (см. OPEN_QUESTIONS_P0.md)
+- Оценка: 10ч
+
+### P0.11 Backup & DR (production launch blocker)
+- Daily PostgreSQL snapshot → Backblaze B2 (уже частично настроено)
+- 7-day retention minimum
+- Point-in-time recovery setup
+- Тест восстановления на pre-prod (запуск restore + verify)
+- RTO: 30 минут, RPO: 24ч (daily snapshot)
+- Файлы: scripts/backup.sh, .github/workflows (если автоматизируем)
+- Оценка: 6ч
 
 ### Summary P0
-**Общая оценка P0: ~86 часов = ~11 рабочих дней при 1 разработчике**
+**Общая оценка P0: 102ч × 1.3 buffer = ~132ч ≈ 17 рабочих дней**
 
 ---
 
-## P1 — Первая неделя после launch
+## P1.early — Critical post-launch
 
 ### P1.0 [A1] Wallet isolation
 - Из WALLET_MODEL.md (APPROVED)
 - БАЗА для P1.1 Funded phase
 - Зависимости: нет
-- Оценка: L (40ч)
+- Оценка: 55ч
 
 ### P1.1 Funded phase (Deduction model)
 - Зависит от: P1.0 (A1 wallet isolation)
@@ -294,7 +347,14 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика
   - frontend: KYC flow перед payout request
   - src/app/api/user/payout: блок если !kycVerified
   - src/app/api/webhooks/sumsub (новый)
+- KYC Rejected Policy: → см. OPEN_QUESTIONS_P0.md
 - Оценка: 20ч
+
+**Subtotal P1.early: 117ч ≈ 15 дней**
+
+---
+
+## P1.late — Important post-launch
 
 ### P1.4 Прогрессивный profit split
 - Зависит от: P1.1
@@ -313,6 +373,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика
   - Только при Challenge.status=failed
   - Crypto-only оплата
   - При CONFIRMED: новый Challenge с тем же планом, balance reset
+- Примечание: auto-rebill → P3
 - Оценка: 16ч
 
 ### P1.6 Dashboard widgets
@@ -325,8 +386,16 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика
   - Consistency: biggest day %
 - Оценка: 14ч
 
-### Summary P1
-**Общая оценка P1: ~136ч = ~17 рабочих дней**
+### P1.7 Analytics & Metrics dashboard
+- Метрики: registrations, purchases, fail rate per rule, payout rate, KYC pass rate
+- Файлы: src/app/admin/analytics (новая страница)
+- Оценка: 10ч
+
+### P1.8 Support system setup
+- Email support@, шаблоны на типовые вопросы, SLA definition
+- Оценка: 4ч
+
+**Subtotal P1.late: 48ч ≈ 6 дней**
 
 ---
 
@@ -338,11 +407,26 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика
 - P2.4 AuditLog для всех trades — 6ч
 - P2.5 Risk Disclosure статистика (после accumulating data) — 4ч
 
+**Subtotal P2: 48ч ≈ 6 дней**
+
 ---
 
 ## P3 — По запросу заказчика
 
 - P3.1 Stripe subscription интеграция (параллельно crypto) — 30ч
+- P3.2 Instant Reset auto-rebill — TBD
+
+---
+
+## Total estimate to production-ready
+
+| Фаза | Оценка | Дней |
+|---|---|---|
+| P0 | 132ч | ~17 дней |
+| P1.early | 117ч | ~15 дней |
+| P1.late | 48ч | ~6 дней |
+| P2 | 48ч | ~6 дней |
+| **Grand total** | **~345ч** | **~44 рабочих дня ≈ 9 недель** |
 
 ---
 

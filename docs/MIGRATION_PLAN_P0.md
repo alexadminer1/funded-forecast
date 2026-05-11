@@ -35,9 +35,12 @@ Last updated: 2026-05-11
 ### Wave 3 — Payment system (Day 4-5)
 - P0.5 on-chain verify lib
 - P0.5 admin/payouts/[id]/complete: integration
+- P0.5 cron verify-pending-payouts setup (retry каждые 10 мин, max 24 попытки)
 - P0.6 payout endpoint: USDC unification
 - P0.7 register + payments/create: fingerprint check
 - P0.7 cron detect-multi-accounts
+- P0.10 Email templates: 6 шаблонов через Resend (после получения copywriting)
+- P0.11 Backup verification: restore test на pre-prod
 
 ### Wave 4 — Frontend + Legal (Day 6-7)
 - P0.1 убрать Refundable Fee тексты (footer, лендинг, Risk, Terms)
@@ -59,7 +62,25 @@ Last updated: 2026-05-11
 - Все pre-prod тесты pass
 - Юридический review текстов
 - Финальный аудит безопасности
-- Decision на launch с тестовыми ценами OR upgrade на боевые
+- **P0.9 decision**: заказчик принимает решение — оставить тестовые цены / UPDATE на боевые
+- Sign-off от заказчика перед production deploy
+
+---
+
+## Rollback Strategy
+
+Перед каждым Wave:
+- pg_dump полный snapshot БД → Backblaze B2
+- Git tag на текущем commit: `git tag wave-N-start`
+
+**RTO:** 30 минут на rollback
+**RPO:** 0 (snapshot перед каждым Wave)
+
+### Rollback procedure
+1. `prisma migrate resolve --rolled-back <migration>`
+2. `pg_restore` из snapshot Backblaze B2
+3. `git revert` последнего merge
+4. Coolify redeploy предыдущего тега
 
 ---
 
@@ -79,7 +100,7 @@ Last updated: 2026-05-11
 |---|---|---|
 | ChallengeDailyPnL | id, challengeId, date, dailyPnl, dailyTrades, isWinningDay | Consistency rule |
 | EngineSettings | key, value, updatedAt | Spread/cap конфиг |
-| MultiAccountFlag | id, userIds[], reason, status, createdAt | Multi-account detection |
+| MultiAccountFlag | id, userIds[], reason, status (pending\|confirmed\|whitelisted\|reviewed_legitimate), createdAt | Multi-account detection |
 
 ### Modified models
 | Модель | Поле | Изменение |
@@ -111,6 +132,7 @@ Last updated: 2026-05-11
 | /api/cron/daily-pnl-aggregate | 0 1 * * * (01:00 UTC) | Агрегация PnL по дням |
 | /api/cron/inactivity-check | 0 * * * * (hourly) | 72ч/120ч без new position → fail |
 | /api/cron/detect-multi-accounts | 0 * * * * (hourly) | Группировка fingerprint/IP → flag |
+| /api/cron/verify-pending-payouts | */10 * * * * (каждые 10 мин) | Retry on-chain verification, max 24 попытки → manual review |
 
 ---
 
@@ -130,7 +152,15 @@ Last updated: 2026-05-11
 
 ## Geo-block list (P0.8)
 
-Запрещённые юрисдикции: US, North Korea, Iran, Syria, Cuba, Russia, Belarus, Crimea, LNR/DNR
-
-Источник: MaxMind GeoLite2 (бесплатная база, скачивается в Docker build).
+Источник: MaxMind GeoLite2-City (бесплатная база, не Country — нужна для subdivision detection).
 Блок применяется на: /register, /api/payments/create
+
+### Blocked by country_code
+US, KP (North Korea), IR (Iran), SY (Syria), CU (Cuba), RU (Russia), BY (Belarus)
+
+### Blocked by subdivision (country=UA)
+- UA-43: Crimea (Автономна Республіка Крим)
+- UA-14: Donetsk (Донецька область)
+- UA-09: Luhansk (Луганська область)
+
+**Note:** MaxMind GeoLite2-City subdivision support requires verification before Wave 1 — см. OPEN_QUESTIONS_P0.md #3.
