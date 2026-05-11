@@ -46,12 +46,30 @@ export async function GET(req: NextRequest) {
       },
     });
 
+    // When in challenge mode, include sandbox summary for the secondary card
+    let sandboxBalance: number | null = null;
+    let sandboxPositionsCount: number | null = null;
+    if (activeChallenge) {
+      const sandboxLog = await prisma.balanceLog.findFirst({
+        where:   { userId, challengeId: null },
+        orderBy: { createdAt: "desc" },
+        select:  { runningBalance: true },
+      });
+      const sandboxCount = await prisma.position.count({
+        where: { userId, challengeId: null, status: "open" },
+      });
+      sandboxBalance = sandboxLog?.runningBalance ?? 0;
+      sandboxPositionsCount = sandboxCount;
+    }
+
     return NextResponse.json({
       success: true,
       mode,
       currentBalance,
-      challenge:     activeChallenge ?? null,
+      challenge:            activeChallenge ?? null,
       lastChallenge,
+      sandboxBalance,
+      sandboxPositionsCount,
     });
 
   } catch (error) {
