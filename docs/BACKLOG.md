@@ -302,6 +302,25 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Файлы: scripts/backup.sh, .github/workflows (если автоматизируем)
 - Оценка: 6ч
 
+### P0.12 FAQ full rewrite (TFP-style structure)
+- Scope: переписать FAQ под полноценную структуру по референсу TFP
+- Текущий формат src/app/faq/data.ts (плоский {q,a}) → новая структура:
+  - 5 категорий: Getting Started, Challenge Rules, Position Mechanics, Funded Phase, Account & Compliance
+  - Каждая статья: title + длинный body (примеры, формулы, таблицы, списки)
+- Контент адаптировать под FF реалии (НЕ копировать TFP дословно):
+  - Платежи: on-chain USDC (Base), НЕ Stripe subscription
+  - Цены: текущие тестовые → актуальные mainnet после P0.9
+  - MLL/DLL значения: из БД ChallengePlan (Starter 10%/5%, Pro 8%/4%, Elite 6%/3%)
+  - Instant Reset цены: $27.99/$69.99/$139.99 (по 8 decision)
+  - НЕ копировать статистику ("97% fail", "average $0") — нет наших данных
+- Юридические дисклеймеры: согласовать с P0.8 (Risk Disclosure + Terms)
+- Файлы:
+  - src/app/faq/data.ts: новый schema (Article[] вместо плоских q/a)
+  - src/app/faq/page.tsx: новый компонент рендера (категории + accordion статей)
+- Источник референса: TFP FAQ, 5 категорий ~30 статей
+- Зависит от: P0.1 (Refundable Fee убран), P0.8 (юр.дисклеймеры финализированы)
+- Оценка: 6ч
+
 ### Summary P0
 **Общая оценка P0: 102ч × 1.3 buffer = ~132ч ≈ 17 рабочих дней**
 
