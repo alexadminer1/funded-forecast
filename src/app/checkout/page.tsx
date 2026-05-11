@@ -84,6 +84,7 @@ function CheckoutInner() {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
 
   // Ref flags to prevent re-trigger of effects on state changes.
   // Without these, setState inside useEffect would re-run the effect.
@@ -252,9 +253,8 @@ function CheckoutInner() {
         if (data.success) {
           setInvoice((prev) => (prev ? { ...prev, ...data } : data));
         }
-      } catch {
-        // Silent fail on polling errors — keep last good state.
-        // If polling 429s repeatedly, user can refresh; we don't spam UI.
+      } catch (err) {
+        console.error("[checkout] polling error:", err);
       }
     }, 5000);
 
@@ -270,7 +270,7 @@ function CheckoutInner() {
   useEffect(() => {
     if (invoice?.status !== "CONFIRMED") return;
     if (invoice.challengeId) {
-      router.push("/dashboard");
+      setShowSuccessPopup(true);
       return;
     }
     // Poll every 3s until challengeId appears (cron activates within ~1 min).
@@ -280,12 +280,29 @@ function CheckoutInner() {
         if (data.success) {
           setInvoice((prev) => (prev ? { ...prev, ...data } : data));
         }
-      } catch {
-        // Silent fail — keep polling.
+      } catch (err) {
+        console.error("[checkout] polling error:", err);
       }
     }, 3000);
     return () => clearInterval(id);
   }, [invoice?.status, invoice?.challengeId, invoice?.paymentId, router]);
+
+  /* ----- Effect: fallback polling via /me/active every 10s ----- */
+  useEffect(() => {
+    if (!invoice) return;
+    type FallbackResp = { recentConfirmed?: { challengeId: number | null } | null };
+    const id = setInterval(async () => {
+      try {
+        const data = await apiFetch<FallbackResp>("/api/payments/me/active");
+        if (data.recentConfirmed?.challengeId) {
+          setShowSuccessPopup(true);
+        }
+      } catch (err) {
+        console.error("[checkout] fallback poll error:", err);
+      }
+    }, 10_000);
+    return () => clearInterval(id);
+  }, [invoice?.paymentId]);
 
   /* ----- Effect: countdown tick every 1 sec ----- */
   useEffect(() => {
@@ -369,6 +386,10 @@ function CheckoutInner() {
   }
 
   if (!plan) return null;
+
+  if (showSuccessPopup && invoice) {
+    return <SuccessPopup plan={plan} invoice={invoice} onGo={() => router.push("/dashboard")} />;
+  }
 
   // Error state (shown when no invoice could be created).
   // No automatic retry — user must refresh or click button.
@@ -501,6 +522,87 @@ function CheckoutInner() {
 /* =====================================================================
    Subcomponents
 ====================================================================== */
+
+interface SuccessPopupProps {
+  plan: Plan;
+  invoice: Invoice;
+  onGo: () => void;
+}
+
+function SuccessPopup({ plan, invoice, onGo }: SuccessPopupProps) {
+  const explorerBase =
+    invoice.chainId === 8453
+      ? "https://basescan.org/tx/"
+      : "https://sepolia.basescan.org/tx/";
+
+  const profitTarget = (plan.accountSize * plan.profitTargetPct) / 100;
+
+  const txShort = invoice.primaryTxHash
+    ? `${invoice.primaryTxHash.slice(0, 6)}...${invoice.primaryTxHash.slice(-4)}`
+    : null;
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0,
+      background: "rgba(0,0,0,0.75)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 200,
+      padding: "0 20px",
+    }}>
+      <div style={{
+        background: "#1E293B",
+        border: "1px solid #334155",
+        borderRadius: 14,
+        padding: "36px 32px",
+        maxWidth: 400,
+        width: "100%",
+        textAlign: "center",
+      }}>
+        <div style={{
+          width: 60, height: 60, borderRadius: "50%",
+          background: "linear-gradient(135deg, #22C55E, #16A34A)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          margin: "0 auto 20px",
+          fontSize: 28, color: "#071A0E", fontWeight: 800,
+          boxShadow: "0 0 24px rgba(34,197,94,0.4)",
+        }}>✓</div>
+
+        <h2 style={{ fontSize: 22, fontWeight: 800, color: "#F1F5F9", margin: "0 0 8px" }}>
+          Payment confirmed!
+        </h2>
+        <p style={{ fontSize: 14, color: "#94A3B8", margin: "0 0 24px" }}>
+          Your {plan.name} challenge is ready
+        </p>
+
+        <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 10, padding: "14px 16px", marginBottom: 20, textAlign: "left" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 13 }}>
+            <span style={{ color: "#64748B" }}>Account size</span>
+            <span style={{ color: "#F1F5F9", fontWeight: 600 }}>${plan.accountSize.toLocaleString()}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 13, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+            <span style={{ color: "#64748B" }}>Profit target</span>
+            <span style={{ color: "#22C55E", fontWeight: 600 }}>{plan.profitTargetPct}% (${profitTarget.toLocaleString()})</span>
+          </div>
+          {txShort && (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", fontSize: 13, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+              <span style={{ color: "#64748B" }}>Transaction</span>
+              <a
+                href={`${explorerBase}${invoice.primaryTxHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "#3B82F6", fontFamily: "ui-monospace,monospace", fontSize: 12, textDecoration: "none" }}
+              >{txShort}</a>
+            </div>
+          )}
+        </div>
+
+        <button onClick={onGo} style={btnPrimary}>
+          Go to Dashboard →
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function Layout({ children }: { children: React.ReactNode }) {
   return (
