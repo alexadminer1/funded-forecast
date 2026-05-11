@@ -9,6 +9,72 @@
 
 ---
 
+## 2026-05-11 (продолжение) — D26 + ghost balance discovery
+
+### Контекст сессии
+
+Продолжение той же демо-сессии. Закрыты D27/D28 (изоляция позиций), D26 (история challenges + secondary sandbox card), обнаружен D29 (ghost balance). Создан docs/WALLET_MODEL.md — архитектурное решение [A1] подтверждено.
+
+---
+
+### [D27/D28] Full-reload после покупки + изоляция позиций по challengeId `6773a37`
+
+**Проблема D27:** `router.push("/dashboard")` в checkout — SPA-навигация, не вызывает повторных fetch. После успешной покупки дашборд оставался с данными предыдущей сессии.
+
+**Проблема D28:** После провала challenge позиции того challenge всё ещё показывались в дашборде. Старый фильтр `NOT: { challenge: { status: "failed" } }` (D20) не разделял sandbox и challenge wallets — позиции от разных контекстов перемешивались.
+
+**Решение D27:** `src/app/checkout/page.tsx` — `router.push("/dashboard")` → `window.location.href = "/dashboard"`. Full page reload форсирует все fetch заново.
+
+**Решение D28:** Явная фильтрация по `challengeId`:
+- Active challenge → `challengeId: activeChallenge.id`
+- Нет active challenge → `challengeId: null` (sandbox)
+
+Применено в двух местах:
+- `GET /api/user/positions/route.ts` — список позиций
+- `GET /api/user/me/route.ts` — счётчик `openPositionsCount` (запрос `activeChallenge` перемещён выше счётчика — reuse без extra query)
+
+**TODO [A1]** в обоих файлах — заменить на нативную walletId фильтрацию после реализации wallet model. Детали: `docs/WALLET_MODEL.md`.
+
+---
+
+### [D26] История challenges + sandbox secondary card `00370d0`, `6dbfbc3`
+
+**Проблема:** После провала/прохождения challenge пользователь не видел историю. Sandbox режим при активном challenge не отображался в UI.
+
+**Бэкенд** (`00370d0`):
+- Новый `GET /api/user/challenges` — terminal challenges (passed/failed/expired) с вычисленными полями: `pnl`, `profitTargetProgress` (0–100%), `drawdownUsed` (0–100%), `positionsCount` через Prisma `_count`
+- `GET /api/user/mode` расширен: если active challenge — добавляет `sandboxBalance` + `sandboxPositionsCount` для вторичной карточки
+
+**Фронтенд** (`6dbfbc3`):
+- `PastChallengesSection` — таблица с badge (passed=green, failed=red, expired=gray), hover border transition, caret. Клик → `ChallengeDetailModal`
+- `SandboxSecondaryCard` — мутный фон, PAUSED badge, balance + кол-во позиций, helper text. Видна только при active challenge
+- `ChallengeDetailModal` — закрытие через ESC + ✕ + клик по backdrop. Stats как `{label: string; value: string; color?: string}[]` — не `React.ReactNode` (React не импортирован в файл, только хуки). Violation reason block если заполнен
+- Layout порядок: ChallengeCard → PastChallengesSection → SandboxSecondaryCard → Open Positions
+- 4-й fetch в `Promise.all` с failsafe: `.catch(() => null)` — дашборд не ломается если endpoint недоступен
+
+---
+
+### [D29] Обнаружен: Ghost balance в sandbox режиме (не закрыт, P2 #18)
+
+**Проблема:** После завершения challenge (passed/failed) дашборд в sandbox режиме показывает `currentBalance` из последнего challenge вместо реального sandbox BalanceLog.
+
+**Корень:** `GET /api/user/mode/route.ts` — запрос `lastLog` не имеет фильтра `challengeId`. `findFirst` с `orderBy: createdAt desc` возвращает лог от завершённого challenge (более свежий), а не sandbox.
+
+**Простой fix (не реализован):**
+```typescript
+// mode/route.ts — добавить challengeId фильтр к lastLog
+const lastLog = await prisma.balanceLog.findFirst({
+  where: activeChallenge
+    ? { userId, challengeId: activeChallenge.id }
+    : { userId, challengeId: null },
+  orderBy: { createdAt: "desc" },
+});
+```
+
+**Статус:** Баг обнаружен, задокументирован как D29. Не блокирует демо (проявляется только после завершения challenge, а не во время активного). Закроется автоматически при внедрении [A1] wallet model.
+
+---
+
 ## 2026-05-11
 
 ### Контекст сессии

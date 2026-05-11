@@ -2,7 +2,7 @@
 
 Точка правды по статусу проекта. Обновляется после каждой завершённой задачи.
 
-Последнее обновление: 2026-05-11 (Header fix + SEC-1 rate limiting + D20 + D15 checkout popup).
+Последнее обновление: 2026-05-11 (Header fix + SEC-1 + D20 + D15 + D27/D28 + D26 + D29 found).
 
 ---
 
@@ -34,6 +34,21 @@
 - Fix 1: `catch (err) { console.error("[checkout] polling error:", err) }` во всех catch блоках
 - Fix 2: `setShowSuccessPopup(true)` вместо `router.push`. `SuccessPopup` компонент: план, аккаунт, profit target, tx hash с BaseScan link, кнопка "Go to Dashboard →"
 - Fix 3: 4-й useEffect — fallback polling `/api/payments/me/active` каждые 10 сек. Если `recentConfirmed.challengeId` есть → popup. Защита от race condition с основным polling
+
+**D27/D28 — Full-reload после покупки + изоляция позиций по challengeId** — `6773a37`
+- After failed challenge: старый фильтр `NOT:{challenge:{status:"failed"}}` не разделял sandbox/challenge wallets
+- Fix D27: `router.push("/dashboard")` → `window.location.href` в checkout (full reload, не SPA)
+- Fix D28: positions и openPositionsCount фильтруют по `challengeId: activeChallenge.id` (challenge mode) или `challengeId: null` (sandbox mode)
+- Запрос `activeChallenge` в `GET /api/user/me` перемещён выше счётчика — reuse без extra query
+- TODO [A1] маркеры в обоих route файлах
+
+**D26 — История challenges + sandbox secondary card** — `00370d0` (backend), `6dbfbc3` (frontend)
+- Новый `GET /api/user/challenges` — terminal challenges (passed/failed/expired) с вычисленными pnl/profitTargetProgress/drawdownUsed. `_count.positions` через Prisma select
+- `GET /api/user/mode` расширен полями `sandboxBalance` + `sandboxPositionsCount` при active challenge
+- `PastChallengesSection`: таблица с badge (passed/failed/expired) + hover border + caret + click → modal
+- `SandboxSecondaryCard`: PAUSED badge, мутный фон — только при active challenge
+- `ChallengeDetailModal`: ESC + ✕ + backdrop close. Stats как `{label, value, color?}[]` (не `React.ReactNode` — React не импортирован, только хуки). Violation reason block если есть
+- 4-й fetch в `Promise.all` с `.catch(() => null)` failsafe
 
 ---
 
@@ -481,6 +496,7 @@ Notes:
 | 15 | Wallet review UI | walletRequiresReview=true flag есть, UI для админа нет |
 | 16 | Bug fix admin/expire-challenges balanceLog query | Запрос без `challengeId` фильтра — может подхватить sandbox-лог. Используется только админом вручную, не критично |
 | 17 | Mock webhook E2E test | Альтернатива sandbox NowPayments (sandbox недоступен). Genenerate HMAC + curl на наш webhook. После Step 4 watcher — обновить под on-chain |
+| 18 | **D29 — Ghost balance в sandbox режиме** | `GET /api/user/mode` запрашивает `lastLog` без `challengeId` фильтра → после завершения challenge дашборд показывает баланс challenge вместо sandbox. Fix: добавить `challengeId: null` в запрос `lastLog` (как в D28). Закроется автоматически при реализации [A1] wallet model |
 
 ---
 
@@ -548,6 +564,15 @@ Notes:
 **Sandbox starter balance**
 - Новые юзеры: $10 (для UX-знакомства)
 - Не для серьёзной торговли — `SANDBOX_MAX_POSITION_PCT = 2` (~$0.20 max позиция)
+
+**[A1] Wallet model (архитектура утверждена 2026-05-11, реализация отложена)**
+- Sandbox wallet: иммутабельный, `challengeId = null` — все sandbox позиции/логи
+- Challenge wallet: 1:1 с Challenge, `challengeId = challenge.id`
+- Active wallet: computed — active challenge → challenge wallet, иначе sandbox wallet
+- Текущее состояние: `challengeId` поле уже в Position/BalanceLog — wallet model добавит `walletId` поле (Step 2 из WALLET_MODEL.md)
+- TODO [A1] маркеры в коде указывают что нужно заменить после реализации
+- D29 ghost balance закроется автоматически при реализации [A1]
+- Детали: `docs/WALLET_MODEL.md`
 
 **On-chain payment architecture**
 - Network DEV: Base Sepolia (chainId 84532) + USDC testnet
@@ -647,6 +672,10 @@ Header auth fix:      ███████████████████�
 Rate limiting SEC-1:  ████████████████████  100%  (31349d3)
 D20 positions filter: ████████████████████  100%  (274eeab)
 D15 checkout popup:   ████████████████████  100%  (47f4ebd)
+D27 full-reload:      ████████████████████  100%  (6773a37)
+D28 positions filter: ████████████████████  100%  (6773a37)
+D26 challenges UI:    ████████████████████  100%  (00370d0+6dbfbc3)
+D29 ghost balance:    ░░░░░░░░░░░░░░░░░░░░    0%  (P2 #18, закроется с [A1])
 Legal content:        ████████░░░░░░░░░░░░   40%  (drafts, lawyer pending)
 Security audit:       ░░░░░░░░░░░░░░░░░░░░    0%
 Admin Site Settings:  ░░░░░░░░░░░░░░░░░░░░    0%
@@ -662,6 +691,8 @@ P3 refactors:         ░░░░░░░░░░░░░░░░░░░�
 ---
 
 ## История сессий
+
+- **2026-05-11 (продолжение)** — D27/D28: full-reload + challengeId isolation (6773a37), D26 backend: /api/user/challenges + sandbox summary in /api/user/mode (00370d0), D26 frontend: PastChallengesSection + SandboxSecondaryCard + ChallengeDetailModal (6dbfbc3), D29 ghost balance discovered (sandbox mode показывает баланс challenge — P2 #18). docs/WALLET_MODEL.md создан (архитектура [A1] утверждена).
 
 - **2026-05-11** — Demo-blockers: 4 задачи одной сессией. Header bug fix (mounted-pattern, 584f0f4), SEC-1 rate limiting failsafe (31349d3), D20 positions filter (274eeab), D15 checkout popup + fallback polling (47f4ebd). Контекстный файл docs/SESSION_LOG.md создан.
 
