@@ -9,6 +9,28 @@
 
 ---
 
+## Session 2026-05-11 (continuation 2) — TFP audit + decisions
+
+### Получено от заказчика
+- 10 decisions по бизнес-модели (см. BACKLOG)
+- 4 предупреждения решены (migration, partial sell, trading days, порядок P0)
+
+### Зафиксировано
+- BACKLOG реструктурирован: P0/P1/P2/P3
+- Старые блокеры → Archive section
+- Оценка P0: ~86ч (~11 дней)
+- Оценка P1: ~136ч (~17 дней)
+
+### Pre-prod plan
+- Перед катом P0 в prod: synthetic users simulation (10-20 ботов)
+- Existing test data (test6/7/8) маркированы как legacy
+
+### Следующий шаг
+- Создать MIGRATION_PLAN_P0.md с детальным порядком работы
+- НЕ начинать implementation до подтверждения backlog
+
+---
+
 ## 2026-05-11 (продолжение) — D26 + ghost balance discovery
 
 ### Контекст сессии

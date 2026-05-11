@@ -1,723 +1,359 @@
-# FundedForecast — Backlog
+# FundedForecast Backlog
+Last updated: 2026-05-11
+Source: Бизнес-аудит TFP + 10 decisions заказчика
 
-Точка правды по статусу проекта. Обновляется после каждой завершённой задачи.
-
-Последнее обновление: 2026-05-11 (Header fix + SEC-1 + D20 + D15 + D27/D28 + D26 + D29 found).
-
----
-
-## ✅ Закрыто (production)
-
-### Demo-blockers session (2026-05-11)
-
-**Header bug fix — гостевой хедер у авторизованных пользователей** — `584f0f4`
-- Корень: `HeaderWrapper` рендерился на сервере (SSR), `getToken()` → localStorage недоступен → всегда null → LandingHeader
-- Fix: mounted-паттерн в `HeaderWrapper.tsx` — рендер только после гидратации. `getToken()` вызывается только на клиенте
-- `Header.tsx` упрощён: убраны все гостевые ветки (он рендерится только для залогиненных)
-- `src/app/affiliates/page.tsx`: убраны дублирующий импорт и рендер `LandingHeader`
-
-**SEC-1 Rate limiting via proxy.ts** — `31349d3`
-- `getLimiter()` не знал о 3 affiliate endpoints (apply, wallet, payouts) → они падали в default 60/мин вместо 5/ч
-- `proxy.ts` не имел bypass для cron/webhook → планировщик мог получить 429
-- `proxy.ts` без try/catch → Redis недоступен = все API запросы 500
-- Fix Option B: добавлены 3 маппинга в `getLimiter()` + bypass blocks + try/catch failsafe
-
-**D20 — Скрыть open positions в failed challenges** — `274eeab`
-- Пользователь видел "активные" позиции в мёртвом challenge → вводило в заблуждение
-- Fix: `NOT: { challenge: { status: "failed" } }` в `GET /api/user/positions` и счётчик в `GET /api/user/me`
-- Prisma semantics: NOT на optional relation включает строки где `challengeId IS NULL`
-- TODO [A2] в коде — архитектурный fix (auto-close при fail) отложен
-
-**D15 — Popup "Payment confirmed" + fallback polling** — `47f4ebd`
-- Silent `catch {}` глотал ошибки → при 429/500 polling invoice.status никогда не обновлялся
-- `router.push("/dashboard")` вызывался тихо без визуального feedback
-- Fix 1: `catch (err) { console.error("[checkout] polling error:", err) }` во всех catch блоках
-- Fix 2: `setShowSuccessPopup(true)` вместо `router.push`. `SuccessPopup` компонент: план, аккаунт, profit target, tx hash с BaseScan link, кнопка "Go to Dashboard →"
-- Fix 3: 4-й useEffect — fallback polling `/api/payments/me/active` каждые 10 сек. Если `recentConfirmed.challengeId` есть → popup. Защита от race condition с основным polling
-
-**D27/D28 — Full-reload после покупки + изоляция позиций по challengeId** — `6773a37`
-- After failed challenge: старый фильтр `NOT:{challenge:{status:"failed"}}` не разделял sandbox/challenge wallets
-- Fix D27: `router.push("/dashboard")` → `window.location.href` в checkout (full reload, не SPA)
-- Fix D28: positions и openPositionsCount фильтруют по `challengeId: activeChallenge.id` (challenge mode) или `challengeId: null` (sandbox mode)
-- Запрос `activeChallenge` в `GET /api/user/me` перемещён выше счётчика — reuse без extra query
-- TODO [A1] маркеры в обоих route файлах
-
-**D26 — История challenges + sandbox secondary card** — `00370d0` (backend), `6dbfbc3` (frontend)
-- Новый `GET /api/user/challenges` — terminal challenges (passed/failed/expired) с вычисленными pnl/profitTargetProgress/drawdownUsed. `_count.positions` через Prisma select
-- `GET /api/user/mode` расширен полями `sandboxBalance` + `sandboxPositionsCount` при active challenge
-- `PastChallengesSection`: таблица с badge (passed/failed/expired) + hover border + caret + click → modal
-- `SandboxSecondaryCard`: PAUSED badge, мутный фон — только при active challenge
-- `ChallengeDetailModal`: ESC + ✕ + backdrop close. Stats как `{label, value, color?}[]` (не `React.ReactNode` — React не импортирован, только хуки). Violation reason block если есть
-- 4-й fetch в `Promise.all` с `.catch(() => null)` failsafe
+## Status overview
+- Demo blockers: ✓ закрыты (см. Archive)
+- Wallet model: ✓ APPROVED (docs/WALLET_MODEL.md)
+- Decisions: ✓ получены от заказчика (см. ниже)
+- Production readiness: requires P0 work (~7-10 дней)
 
 ---
 
-### Security revamp (2026-05-05)
+## Подтверждённые decisions
 
-**Закрытие бесплатного challenge flow** — `a40e135`
-- Удалён `/api/user/start-challenge/route.ts` (создавал challenge без оплаты)
-- В `/login/page.tsx` убран `startChallengeIfNeeded` (легаси из NowPayments era)
-- В `/dashboard/page.tsx` кнопка "Start Challenge" → ссылка "Get Funded →" на `/account/plans`
-- В `/api/user/payout/route.ts` добавлены guards: `planId IS NULL → 400`, `no verified Payment → 400`
-
-**STARTING_BALANCE = $10** — `343e66b`
-- В `/api/register/route.ts` константа 10000 → 10 для новых юзеров
-- Существующие юзеры остаются с $10000 в BalanceLog (cleanup при следующем reset)
-
-**Plan selection UI** — `20210df`
-- `/account/plans` — authenticated страница с 3 карточками (Starter / Pro / Elite)
-- Pro помечен "BEST VALUE" badge через `isPopular`
-- Клик → `/checkout?planId=X` (старый checkout flow остался)
-
-**Конфигурация планов** — SQL update
-- Starter: maxLossPct 6→10, dailyLossPct 4→5
-- Pro: maxLossPct 10→8, dailyLossPct 5→4
-- Elite: maxLossPct 8→6, dailyLossPct 4→3
-- Логика выправлена: дороже план — строже правила
-
-**Mobile responsive** — `718e513`, `912bef2`
-- `LandingHeader` hamburger menu ≤768px
-- `Header` (authenticated) hamburger menu + balance compact ≤480px
-- `/affiliate` tabs whiteSpace nowrap + overflow-x scroll
-
-**Cron auto-fail expired challenges** — `fcef76f`
-- Новый `/api/cron/expire-challenges` (GET, Bearer CRON_SECRET)
-- Coolify Scheduled Task hourly `0 * * * *`
-- Logic: `WHERE status='active' AND expiresAt < now() AND profitTargetMet=false`
-- Не failит юзеров с достигнутым profit target (ждут админ pass)
-
-**Post-challenge dashboard banner** — `e1b1ca8`
-- `/api/user/mode` возвращает `lastChallenge` если нет active
-- `/dashboard/page.tsx` `PostChallengeBanner` 3 состояния:
-  - Passed: green, CTA "Request payout" → `/account`
-  - Expired (failed + violationReason="Challenge period expired"): amber, CTA "Buy new challenge" → `/account/plans`
-  - Failed (other): red, body=violationReason, CTA "Buy new challenge" → `/account/plans`
-
-### On-chain Payment subsystem schema (2026-05-06) — `b0eba69`
-
-**Полная замена NowPayments на on-chain.**
-
-Schema changes:
-- DROP: старая `Payment` (Int id, orderId, nowPaymentId, amount, currency, status string)
-- DROP: `ProcessedStripeEvent` (NowPayments idempotency table)
-- ADD: новая `Payment` с on-chain полями (cuid id, chainId, tokenAddress, expectedAmountUnits BigInt, planAmountUsd Decimal)
-- ADD: `PaymentTransaction` (source of truth для on-chain transfers, idempotent на chainId+txHash+logIndex)
-- ADD: `PaymentWatcherState` (per-receiver lastProcessedBlock tracking)
-- ADD: enums `PaymentStatus` (10 значений), `PaymentTransactionStatus` (5 значений)
-- CHANGE: `AffiliateConversion.paymentId` Int → String (cuid)
-- ADD: partial unique index `Payment_active_amount_unique` на active payments
-
-Code changes:
-- `/api/payments/create/route.ts` → 410 Gone (заглушка, заменена реальной реализацией в Step 2)
-- `/api/payments/webhook/route.ts` → 410 Gone
-- `/api/payments/status/route.ts` → 410 Gone (удалена в Step 2, заменена на `[id]/status`)
-- `src/lib/affiliate/conversions.ts`: `paymentId` number → string, `PaymentStatus.CONFIRMED` enum, `Number(payment.planAmountUsd)` для netAmount
-- `/api/user/payout/route.ts`: payment status check через `PaymentStatus.CONFIRMED`
-- `scripts/e2e-step11.ts` — DELETED (NowPayments E2E test, устарел)
-- `scripts/test-affiliate-conversion.ts` — DELETED (использовал старые типы)
-
-Migration applied: вручную через Coolify Database Terminal (Coolify не запускает `prisma migrate deploy` автоматически — это P1 #6). Записи в `_prisma_migrations` сделаны.
-
-### On-chain invoice API (2026-05-06) — `5514c82`
-
-**Step 2 из 5 — invoice creation + status polling.**
-
-- `POST /api/payments/create` — создаёт Payment invoice:
-  - Idempotent: возвращает существующий `AWAITING_PAYMENT` для (userId, planId) если не истёк
-  - Per-user cap: max 3 активных invoice, иначе 409
-  - Rate limit: 5/мин на пользователя (`rl:payment-create`)
-  - Postgres `pg_advisory_xact_lock` на (chainId, receiver) предотвращает race на уникальность суммы
-  - Поиск свободной суммы: ±50 cents от цены плана, шаг 1 cent
-  - BigInt serialized как string в JSON
-  - IP → SHA-256 hash (`createdByIp`), GDPR-compliant
-- `GET /api/payments/[id]/status` — polling endpoint для UI:
-  - Возвращает `status`, `isExpired`, `confirmationsSeen`, `expectedAmountUnits`, `expiresAt`
-  - `isExpired` — derived flag (watcher может не успеть обновить status=EXPIRED)
-  - Фильтр по `userId` из JWT — пользователь видит только свои платежи
-- Удалена `/api/payments/status/route.ts` (старый 410 stub, заменён динамическим роутом)
-
-New files: `src/lib/payment/config.ts`, `src/lib/payment/amount.ts`, `src/lib/payment/validators.ts`
-
-Modified: `tsconfig.json` target ES2017 → ES2020 (BigInt literals требуют ES2020; Node 22 + Next.js 16 SWC поддерживают полностью)
-
-**Network architecture (settled, не реализовано):**
-- DEV: Base Sepolia (chainId 84532) + USDC testnet
-- PROD: Base Mainnet (chainId 8453) + USDC native (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`)
-- USDC decimals: 6
-- Confirmations: 6 blocks (~12-15 sec)
-- Address model: один receiver address + уникальная сумма платежа (±50 cents, шаг 1 cent, окно 30 мин)
-- Watcher: отдельный Node.js worker, batch poll каждые 5 sec
-- Server stores: только public receiver address. NO private key on server.
-- RPC: Alchemy primary, public Base RPC fallback only
-
-### Dashboard header inconsistency (2026-05-07) — P1 closed
-
-Header показывал "@user · Free Plan" и "BALANCE $0.00" при активном Challenge.
-
-Корень: dashboard читал legacy Stripe-поля (User.membershipStatus) и balance из BalanceLog (пустого для нового Challenge без трейдов).
-
-Fix:
-- /api/user/me — balance fallback на activeChallenge.realizedBalance если BalanceLog пуст
-- dashboard/page.tsx — label из activeChallenge.plan.name вместо membershipStatus
-
-Коммиты:
-1. `00dd021` — fix(api): /me balance fallback to active challenge realizedBalance
-2. `b5f1796` — fix(dashboard): show plan name from active challenge in header + docs
+1. MLL Trailing — использовать существующий peakBalance
+2. Consistency Rule — 25% в challenge / 35% в payout
+3. Min Resolved Positions — 35 (только market-resolved, БЕЗ sold)
+4. Inactivity Timer — 72ч challenge / 120ч funded
+5. Funded phase — Deduction model (TFP-style)
+6. KYC — Sumsub (Web SDK, crypto-friendly)
+7. Refundable Fee — УБРАТЬ полностью (не переименовывать)
+8. Instant Reset — да, 30% off от боевых ($27.99/$69.99/$139.99)
+9. Гео-блок — OFAC + санкционные через MaxMind GeoLite2
+10. Multi-account — 1 device fingerprint + 1 IP hash (FingerprintJS open-source)
 
 ---
 
-### BalanceLog seed missing on activation (2026-05-07) — P0 closed
+## Migration approach
 
-Активные Challenge созданные через activation.ts не имели начальной записи BalanceLog. Trade routes (buy/sell) проверяют currentBalance из BalanceLog — без seed currentBalance=0 → INSUFFICIENT_BALANCE на любую сделку. Deadlock: нет лога → нет сделки → нет лога.
+### Existing test данные (test6/7/8) — legacy, не ломаем
+- Existing active challenges: UPDATE peakBalance = GREATEST(startBalance, realizedBalance)
+- Existing positions с partial sell в истории: остаются как есть
+- minTradingDays=10 у старых challenges доигрываются, новые покупки = 15
+- Refundable fee: значения в БД обнуляются, поле удаляется в migration после P0
 
-Fix:
-- activation.ts — tx.balanceLog.create в той же $transaction что Challenge.create (type=challenge_start, runningBalance=plan.accountSize)
-- Manual SQL backfill для existing challenges id=10, 11, 12 (созданных до fix'а)
-
-Коммит: `b80a229` — fix(activation): seed BalanceLog on challenge creation
-
-E2E подтверждение: userId=2 (adminer) успешно купил 10 YES shares за $9.19, balance уменьшился $1000 → $990.81.
-
----
-
-### Auto-pass logic on sell + email helper refactor (2026-05-08) — P0 closed
-
-При закрытии trade через sell — автоматический переход Challenge.status в "passed" если выполнены условия (profitTargetMet + tradingDaysCount >= minTradingDays + !drawdownViolated). Раньше требовал ручного админа.
-
-Архитектура:
-- sell/route.ts — auto-pass блок внутри $transaction после tradingDaysCount update. effectiveTradingDays учитывает +1 если isNewTradingDay. Race-safe через одиночный update.
-- Email уведомление — fire-and-forget после транзакции через shared helper.
-- AuditLog — два события: challenge_profit_target_met (при первом достижении target) + challenge_auto_passed (при переходе статуса).
-
-Email refactor:
-- src/lib/email.ts NEW — singleton getResend(), sendEmail() (never throws), buildBrandTemplate(), buildKeyValueTable(), escapeHtml()
-- contact/route.ts — переключён на shared helper, brand-стиль сохранён
-- sell/route.ts auto-pass email — light-theme template совпадает с contact (зелёный заголовок, key-value table, серый footer)
-
-E2E test:
-- Симуляция: realizedBalance=$1150, tradingDaysCount=9, lastTradingDay=вчера
-- Sell 10 YES shares → balance $1159.19, profitPct 15.92%, effectiveTradingDays=10
-- Challenge.status: active → passed, endedAt set
-- AuditLog id=39 (profit_target_met) + id=40 (auto_passed)
-- Resend POST /emails → 200, email доставлен на root@alexadminer.com в Inbox с brand-styling
-
-Коммиты:
-1. `6303c22` — feat(challenge): auto-pass challenge on sell when profit target + min days met
-2. `e9fd5fc` — refactor(email): shared sendEmail helper + brand template
+### Pre-prod testing
+Перед катом P0 в prod — pre-prod environment + симуляция на 10-20 синтетических юзеров.
 
 ---
 
-### On-chain activation flow (2026-05-07) — Step 5 closed
+## P0 — Production blockers (~7-10 дней)
 
-**Замыкает on-chain payment loop: CONFIRMED Payment → создание Challenge → redirect на /dashboard.**
+### P0.1 Refundable Fee — УБРАТЬ полностью
+- Scope: убрать поле + текст + логику bonus в payout
+- Файлы:
+  - prisma migration: UPDATE refundableFeeCents=0 для всех Plans
+  - src/app/api/user/payout: убрать bonus calculation
+  - Лендинг + Risk Disclosure + Terms: убрать упоминания
+  - Админка Plans editor: удалить поле из формы
+- Миграция БД: следующим релизом DROP COLUMN refundableFeeCents
+- Тесты: payout считается без bonus
+- Оценка: 4ч
 
-Архитектура:
-- `src/lib/payment/activation.ts` — `activatePayment(paymentId)`: pg_advisory_xact_lock по paymentId (FNV-1a hash), re-read inside tx, создаёт Challenge из plan fields, обновляет Payment.challengeId, recordAffiliateConversionFromPayment() outside tx (fire-and-forget). MAX_ACTIVATION_ATTEMPTS=3 → MANUAL_REVIEW. Попытки хранятся в Payment.metadata.
-- `src/app/api/cron/activate-payments/route.ts` — sweep: находит все CONFIRMED Payment с challengeId=null, вызывает activatePayment() для каждого. Bearer CRON_SECRET. maxDuration=60.
-- `GET /api/payments/[id]/status` — теперь возвращает challengeId в ответе.
-- `/checkout` — CONFIRMED state: polling каждые 3 сек, как только challengeId появляется → router.push("/dashboard"). Сообщение меняется "Activating..." → "Redirecting to dashboard...".
-- `/api/payments/me/active` — расширен полем recentConfirmed (CONFIRMED Payment в 10-min окне). Используется /checkout при mount: redirect на /dashboard если challengeId есть, или resume payment иначе. Закрывает F5-zombie артефакт.
+### P0.2 MLL Trailing
+- Scope: переключить drawdown с fixed на trailing через peakBalance
+- Файлы:
+  - src/app/api/trade/buy: peakBalance update logic
+  - src/app/api/trade/sell: то же + drawdown check от peakBalance
+  - SQL migration: UPDATE peakBalance = GREATEST(startBalance, realizedBalance) для всех active challenges
+- Логика:
+  - При каждом trade: peakBalance = MAX(peakBalance, newRealizedBalance)
+  - Drawdown check: (peakBalance - realizedBalance) / peakBalance * 100 >= maxTotalDdPct
+  - peakBalance НИКОГДА не уменьшается
+- Тесты:
+  - profit → peakBalance растёт, MLL "поднимается"
+  - loss → peakBalance не падает, проверка от пика
+  - test6/7/8: migration корректно проставила peakBalance
+- Оценка: 6ч
 
-Idempotency:
-- activatePayment() безопасно вызывать несколько раз: если challengeId уже есть → return early
-- Cron может срабатывать параллельно с advisory lock → второй воркер получит lock, увидит challengeId≠null, вернёт existing
-- bumpAttempts() в отдельном transaction — счётчик сохраняется даже если основной tx rollback'нулся
+### P0.3 Недостающие challenge rules
 
-Коммиты Step 5:
-1. `c85811f` — activation.ts + activate-payments cron + status endpoint challengeId + checkout redirect
-2. `86d85cd` — feat(checkout): F5 fix — recover invoice or redirect after CONFIRMED
+#### P0.3.a Consistency Rule
+- Scope: запретить passing если biggest day > 25% от total profit
+- БД: новая таблица ChallengeDailyPnL (id, challengeId, date, dailyPnl, dailyTrades, isWinningDay)
+- Логика:
+  - Cron daily: агрегация из Trade за прошлый день
+  - При попытке passing: max(dailyPnl WHERE >0) / totalProfit <= 0.25
+  - Для payout: <= 0.35 (мягче)
+- Файлы:
+  - prisma/schema.prisma: новая модель
+  - src/app/api/cron/daily-pnl-aggregate (новый)
+  - src/app/api/trade/sell: учёт consistency перед auto-pass
+  - src/app/api/user/payout: учёт consistency перед approval
+- Тесты:
+  - День с большим profit + остальные малые → fail consistency
+  - Равномерные дни → pass consistency
+- Оценка: 12ч
 
----
+#### P0.3.b Min Resolved Positions 35
+- Scope: для passing требуется ≥35 market-resolved positions (НЕ sold)
+- БД: Challenge.resolvedPositionsCount Int @default(0)
+- Логика:
+  - Инкремент ТОЛЬКО при market.status → resolved (cron resolve-markets)
+  - sold positions НЕ считаются
+  - Проверка при auto-pass: resolvedPositionsCount >= 35
+- Файлы:
+  - prisma/schema.prisma: новое поле
+  - src/app/api/admin/resolve-markets: инкремент counter
+  - src/app/api/trade/sell: учёт в auto-pass
+- Тесты:
+  - 34 resolved → не passing
+  - 35 resolved + target met → passing
+  - 100 sold + 30 resolved → не passing
+- Оценка: 8ч
 
-### On-chain watcher service (2026-05-07) — Step 4 closed
+#### P0.3.c Unique Events 30
+- Scope: для passing требуется trade на ≥30 уникальных Polymarket events
+- БД:
+  - Market: добавить polymarketEventId String?
+  - Challenge: добавить uniqueEventsCount Int @default(0)
+- Логика:
+  - Polymarket sync: тянуть event_id из Polymarket API
+  - При новом trade: пересчитать uniqueEventsCount = COUNT(DISTINCT market.eventId WHERE position.challengeId=X)
+  - Проверка при auto-pass: uniqueEventsCount >= 30
+- Файлы:
+  - prisma/schema.prisma
+  - src/lib/polymarket.ts: парсинг event_id
+  - src/app/api/admin/sync-markets: сохранение eventId
+  - src/app/api/trade/buy: пересчёт counter
+- Тесты:
+  - 50 trades на 25 событий → не passing
+  - 30 trades на 30 событий → passing
+- Оценка: 10ч
 
-**Watcher детектирует USDC Transfer events на receiverAddress, матчит с Payment по amount, advances confirmations и promote'ит в CONFIRMED.**
+#### P0.3.d Inactivity Timer 72ч
+- Scope: failed если нет new position >72ч (challenge) / 120ч (funded)
+- БД: Challenge.lastNewPositionAt DateTime?
+- Логика:
+  - Update lastNewPositionAt при NEW position (не update existing)
+  - Cron каждый час: status=active AND now - lastNewPositionAt > 72h → failed
+  - Для funded: > 120h
+- Файлы:
+  - prisma/schema.prisma
+  - src/app/api/trade/buy: update timer при NEW position
+  - src/app/api/cron/inactivity-check (новый)
+- Тесты:
+  - 73ч без new position → failed
+  - 71ч без new position → active
+  - Update existing position НЕ resetит таймер
+- Оценка: 6ч
 
-End-to-end test passed: 2 транзакции по 1 USDC из MetaMask на Base Sepolia подтверждены через нашу систему.
+#### P0.3.e Trading Days дефолт 10 → 15
+- Scope: обновить дефолт через админку
+- Existing challenges с minTradingDays=10 НЕ трогать
+- Файлы: только UPDATE через Plans editor
+- Оценка: 0.5ч
 
-Архитектура:
-- `src/lib/payment/alchemy.ts` — viem PublicClient wrapper. getCurrentBlock() + getTransferLogs(). ReturnType<typeof makeClient> избегает viem PublicClient generic несовместимости.
-- `src/lib/payment/watcher.ts` — runWatcher() orchestrator: процессит chunks по 10 блоков (Alchemy Free tier inclusive limit), на каждый Transfer event делает processTransferLog() (idempotent insert PaymentTransaction + match against Payment by amount), затем advanceConfirmations() для всех in-flight rows.
-- `src/app/api/cron/watch-payments/route.ts` — HTTP wrapper с Bearer CRON_SECRET auth.
-- Coolify Scheduled Task `* * * * *` (каждую минуту).
+### P0.4 Position mechanics
+- Scope: progressive buy spread, buy cap $0.85, sell spread 4%, min position 2%, full sell only
+- БД: новая таблица EngineSettings (key, value, updatedAt) для spread конфига
+- Конфиг (значения по умолчанию):
+  - buyspread_below_60: 0
+  - buyspread_60_70: 2
+  - buyspread_70_80: 4
+  - buyspread_80_85: 7
+  - buy_cap: 0.85
+  - sell_spread: 4
+  - min_position_pct: 2
+- Логика:
+  - src/app/api/trade/buy: применить spread + reject если price > 0.85
+  - src/app/api/trade/sell: применить spread + reject partial sell
+  - Min position check: cost >= realizedBalance * 0.02
+- Файлы:
+  - prisma migration: EngineSettings + seed data
+  - src/app/api/trade/buy, sell
+  - src/lib/engine-settings (новый, кэш на 60 сек)
+- Тесты:
+  - buy на price 0.65 → spread 2% применился
+  - buy на price 0.86 → reject
+  - sell 50% shares → reject (only full)
+  - position cost < 2% balance → reject
+- Оценка: 14ч
 
-Match outcomes:
-- exact amount → MATCHED + Payment SEEN_ON_CHAIN
-- overpayment (±50¢) → MATCHED + Payment SEEN_ON_CHAIN + flagReason="overpaid"
-- underpayment (±50¢) → MATCHED + Payment UNDERPAID + flagReason="underpaid"
-- orphan (нет matching invoice) → IGNORED
-- duplicate event (chainId+txHash+logIndex unique) → skip
+### P0.5 On-chain txHash verification (SEC-5)
+- Scope: verify USDC transfer перед approving payout
+- Логика (через Alchemy):
+  - tx exists на Base
+  - to address = expected (из PayoutRequest.address)
+  - amount = approved amount (с tolerance ±1 cent)
+  - asset = USDC contract
+  - confirmations >= 5
+- Файлы:
+  - src/lib/onchain-verify (новый)
+  - src/app/api/admin/payouts/[id]/complete: integration
+- Тесты:
+  - Valid USDC tx → approved
+  - Wrong amount → rejected
+  - Wrong recipient → rejected
+  - Insufficient confirmations → pending
+- Оценка: 8ч
 
-Confirmation flow:
-- Каждый run пересчитывает confirmations = currentBlock - blockNumber + 1 для всех DETECTED/MATCHED
-- Когда MATCHED достигает 6 confirmations И Payment в SEEN_ON_CHAIN/CONFIRMING:
-  - PaymentTransaction.status = CONFIRMED
-  - Payment.status = CONFIRMED + confirmedAt + actualAmountUnits + primaryTxHash + primaryBlockNumber + primaryLogIndex + confirmationsSeen
+### P0.6 Валютная унификация USDC (SEC-4)
+- Scope: убрать hardcoded "USDT" в PayoutRequest
+- Файлы:
+  - prisma migration: PayoutRequest.currency default 'USDC'
+  - src/app/api/user/payout: явный USDC
+  - src/app/api/admin/payouts: validation
+- Оценка: 2ч
 
-Lessons learned:
-- **Alchemy Free tier inclusive limit:** eth_getLogs принимает MAX 10 блоков inclusive (toBlock - fromBlock <= 9, не <= 10). Изначальный 10n chunk возвращал 'JSON is not a valid request object' — Alchemy в этом случае шлёт HTML вместо JSON, viem ломается на парсинге.
-- **viem PublicClient generic** — нельзя присвоить переменной с явной аннотацией. Решение: `ReturnType<typeof makeClient>` — TypeScript инферит конкретный тип.
-- **Coolify env update требует Save + Redeploy** — простое сохранение env не перезапускает контейнер.
-- **Console.log critical для дебага runtime** в Next.js + Coolify — без него Alchemy ошибки невидимы в curl ответе.
+### P0.7 Multi-account защита (минимум)
+- Scope: detection + soft block при purchase + retroactive cron
+- Технологии: FingerprintJS open-source (CDN или npm)
+- БД:
+  - User.deviceFingerprint String?
+  - AuditLog.deviceFingerprint String?
+  - Новая таблица MultiAccountFlag (id, userIds[], reason, status, createdAt)
+- Логика:
+  - Регистрация: захватить deviceFingerprint + IP hash
+  - При оплате: query active challenges с тем же fingerprint OR ipHash → если есть → soft block
+  - Cron detect-multi-accounts: hourly группировка → MultiAccountFlag
+- Файлы:
+  - frontend: интеграция FingerprintJS на /register
+  - src/app/api/register
+  - src/app/api/payments/create: check before payment
+  - src/app/api/cron/detect-multi-accounts (новый)
+  - admin UI для review flags
+- Flow при detection:
+  - Soft block: показать "We need to verify your account. Contact support."
+  - Email админу
+  - Manual review через admin panel
+- Тесты:
+  - Регистрация с тем же fingerprint → flag
+  - Покупка challenge другого user на том же IP → soft block
+- Оценка: 16ч
 
-Performance на Free tier:
-- Chunk: 10 блоков inclusive
-- MAX_CHUNKS_PER_RUN: 30 → до 300 блоков за минуту
-- Base Sepolia: ~30 блоков/минуту → watcher всегда впереди или в пределах 1 минуты
-- Latency от Transfer event до Payment.status=CONFIRMED: 30-90 секунд
+### P0.8 Юридические дисклеймеры + гео-блок
+- Scope: обновить тексты + добавить гео-блок
+- Тексты (footer, Risk Disclosure):
+  - "100% simulated trading. You are NOT trading with real money."
+  - "Payouts are made from company revenue, not actual trading profits."
+  - "We are NOT a broker. NOT registered with SEC, FINRA, or CFTC."
+- Terms: явный non-refundable subscription пункт
+- Гео-блок:
+  - MaxMind GeoLite2 (бесплатная база)
+  - Список запрещённых: US, North Korea, Iran, Syria, Cuba, Russia, Belarus, Crimea, LNR/DNR
+  - Блок на /register + при /payments/create
+- Файлы:
+  - src/components/Footer
+  - src/app/risk-disclosure, terms, register
+  - src/lib/geo-block (новый, MaxMind интеграция)
+  - download MaxMind DB в Docker build
+- Тесты:
+  - IP из RU → reject on register
+  - IP из UA → allow
+- Оценка: 10ч
 
-Известные ограничения (deferred):
-- Multi-tx aggregation — для MVP one tx, one Payment
-- Reorg detection — Base reorgs редки, проигнорировано
-- MANUAL_REVIEW для двусмысленных matches — пока два одновременных amount match'а первая wins, вторая IGNORED
-- UI на /checkout не реагирует на CONFIRMED после возвращения юзера → создаёт новый AWAITING (артефакт) — закрыто в Step 5
+### P0.9 UPDATE цены — ОТЛОЖЕНО
+- Тестовые цены остаются для closed-test phase
+- При финальном launch: UPDATE через админку
 
-Коммиты Step 4:
-1. `5bf63d5` — feat: on-chain watcher service (alchemy.ts + watcher.ts + cron route, ~870 строк)
-2. `1a31d82` — fix: Alchemy Free tier 10-block limit
-3. `ac0a409` — debug: console.log для loop debugging
-4. last — fix: chunk size 10 → 9 (inclusive limit)
-
-E2E test results:
-- Test 1: 1 USDC sent → CONFIRMED через 22 минуты (watcher отставал и догонял)
-- Test 2: 1 USDC sent → CONFIRMED через 2 минуты (watcher уже в актуальном состоянии)
-
----
-
-### Checkout UX + zombie cleanup (2026-05-07) — P0 #1 closed
-
-**5 коммитов одной сессией. Закрывает 503 'Concurrent invoice creation conflict' bug + полный UX для pending payments.**
-
-Корневая причина 503 (root cause):
-- Partial unique index `Payment_active_amount_unique` фильтрует только по `status` — Postgres не позволяет immutable functions типа `now()` в predicate
-- Когда AWAITING_PAYMENT с истёкшим `expiresAt` остаётся в БД, его `expectedAmountUnits` всё ещё "занят" в индексе
-- Idempotency check в `/api/payments/create` фильтрует `expiresAt > now` → не находит зомби → пытается INSERT новый Payment с тем же amount → P2002 → 503
-
-Layered defense (теперь):
-
-| Layer | Что делает | Когда |
-|---|---|---|
-| 1. Inline cleanup | При POST /api/payments/create находит зомби, флипает в EXPIRED, потом создаёт новый | Мгновенно при попытке юзера |
-| 2. Cron `/api/cron/expire-payments` | UPDATE all expired AWAITING → EXPIRED, UNDERPAID → EXPIRED_UNDERPAID | Раз в минуту через Coolify Scheduled Task |
-| 3. partial unique index | Защита от реальных race conditions | Database-level |
-
-UX для pending payments:
-- На `/checkout` — кнопка "Cancel and choose another plan" (видна в AWAITING_PAYMENT и UNDERPAID)
-- На `/account/plans` — banner сверху если есть active invoice, с countdown + "Continue" + "Cancel"
-- POST `/api/payments/[id]/cancel` — endpoint с auth+ownership check (нельзя отменить чужой)
-- GET `/api/payments/me/active` — endpoint для banner на plans
-
-Коммиты P0 #1:
-1. `f3886e2` — cron expire-payments + Coolify Scheduled Task `* * * * *`
-2. `0d49c36` — inline zombie cleanup в idempotency check
-3. `feef8b0` — POST /api/payments/[id]/cancel + 5 base + 3 cross-user security tests
-4. `0cb186d` — Cancel button на /checkout (с confirm dialog + cancelling state)
-5. (этот коммит) — Banner на /account/plans + GET /api/payments/me/active
-
-Lessons learned:
-- Postgres partial unique indexes не могут содержать `now()` в predicate (immutable function требуется) — нужны или application-level cleanup, или запланированный cron
-- Layered defense > single fix: inline cleanup решает 95%, cron — оставшиеся 5% когда юзер ушёл навсегда
-- Cross-user security test обязателен для любого endpoint с `[id]` в path
-
----
-
-### On-chain checkout UI (2026-05-06) — `4e577fd`, `c6d21dc`, `22b3c10`
-
-**Step 3 из 5 — клиентский UI оплаты.**
-
-`/checkout?planId=X` — full rewrite (NowPayments redirect → embedded on-chain UI):
-- Auto-creates invoice via `POST /api/payments/create` on mount (одна попытка через `useRef` flag)
-- Status polling каждые 5 сек via `GET /api/payments/[id]/status`
-- Countdown тикает каждую 1 сек, при <60 sec становится красным
-- 7 UI states: loading-plan / creating-invoice / error / AWAITING_PAYMENT / SEEN_ON_CHAIN+CONFIRMING / UNDERPAID / CONFIRMED / EXPIRED
-- QR код только receiver address (не EIP-681) — большинство кошельков не парсят token URI на Base/USDC надёжно
-- Copy buttons для address и amount с "Copied ✓" feedback на 1.5 сек
-- Warning text про exact amount/network/token
-- "Card payment Coming soon" placeholder сохранён (P3)
-
-Critical fix `c6d21dc` — infinite loop:
-- Старый useEffect зависел от `creatingInvoice` state → setState внутри → re-trigger → бесконечный цикл
-- При попадании rate limit (429) → setError → новый re-trigger → flood запросов
-- Fix: replaced state с useRef flag (refs не вызывают re-render и не триггерят deps)
-- Catch block теперь differentiate 429/401/other для понятных error messages
-
-UX fix `22b3c10` — "Copied ✓" feedback:
-- При копировании address или amount кнопка показывает "Copied ✓" 1.5 сек
-- Без библиотек, без иконок — простой setState + setTimeout
-
-New dep: `qrcode.react@^4.2.0` (10KB, MIT, ships .d.ts).
-
-Notes:
-- After CONFIRMED — редирект на /dashboard добавлен в Step 5
-- Watcher (Step 4) будет advance Payment.status по ERC-20 Transfer events на Base
-- Lesson learned: useEffect deps array никогда не должен включать state который сам effect изменяет
-
-Известные проблемы (закрываются P0 #1):
-- Zombie AWAITING_PAYMENT payments: после истечения expiresAt partial unique index всё ещё блокирует новые invoice пока status не обновлён в EXPIRED. Workaround: `UPDATE "Payment" SET status='EXPIRED' WHERE status='AWAITING_PAYMENT' AND "expiresAt" < NOW()` вручную.
-- Нет кнопки отмены invoice на /checkout — пользователь не может явно отменить и создать новый без ожидания истечения.
-- 503 "Concurrent invoice creation conflict" иногда появляется при первом создании invoice (root cause: partial unique index срабатывает раньше advisory lock освобождения предыдущего zombie). Reload fixes it.
-
----
-
-### Affiliate program — full MVP (2026-05-04)
-
-**Schema & infrastructure**
-- Prisma schema: 8 enums + 5 моделей (Affiliate, AffiliateClick, AffiliateConversion, AffiliateLedger, AffiliatePayout) + RLS — `cbe5a80`
-- `src/lib/affiliate/constants.ts` — TIER_CONFIG, HOLD_DAYS, COMMISSION, ATTRIBUTION + helpers — `842c59f`
-- `src/lib/affiliate/ledger.ts` — атомарная writeLedgerEntries + reconcileAffiliate — `842c59f`
-- Schema migration: enum suspended, поля rejectedAt/suspendedAt/bannedAt, User.referredByAffiliateId, User.registrationIpHash (Step 9.1)
-
-**Click tracking & attribution**
-- GET /r/[code] — редирект + AffiliateClick row + cookie aff_id 60d — `18962f8`
-- POST /api/affiliate/attach-click — JWT auth — `b2a4463`
-- src/lib/affiliate/attribution.ts — attachAffiliateClickIfNeeded — `2274690`
-- src/lib/ip.ts — SHA-256 IP hash helper
-- /api/register пишет registrationIpHash + вызывает attachAffiliateClickIfNeeded
-- attach-click пишет referredByAffiliateId + same-IP fraud check → suspiciousFlag
-
-**Conversion creation**
-- src/lib/affiliate/conversions.ts — recordAffiliateConversionFromPayment — `a1f4978`
-- First-purchase only, idempotent (paymentId @unique)
-- ВАЖНО: после миграции 2026-05-06 paymentId — string, status check через PaymentStatus.CONFIRMED enum
-
-**Cron pending → available**
-- /api/cron/affiliate-hold daily 03:00 UTC (на Coolify Scheduled Tasks)
-- Batch 200, исключает suspended/banned, atomic per conversion
-
-**Apply / approval**
-- POST /api/affiliate/apply + GET /api/affiliate/me (Step 6)
-- Admin approve/reject endpoints
-- Apply form /affiliate/apply + status page /affiliate
-- Validation, rate limiting 3/hour, AuditLog
-
-**Affiliate cabinet UI** — Overview / Referrals / Conversions / Ledger / Settings / Payouts
-
-**Admin UI**
-- /admin/affiliate — список с фильтрами и пагинацией
-- /admin/affiliate/[id] — 6 табов
-- Admin actions: suspend / unsuspend / ban / forfeit (atomic)
-- /admin/affiliate/payouts — cross-affiliate список
-
-**Payout flow (Step 9.4–9.7)**
-- POST /api/affiliate/payouts — request (1/day rate limit)
-- Admin: approve / complete с adminLabel + reason + transactionHash
-- Atomic transitions, min payout check, wallet validation
-
-**Public pages**
-- /affiliates лендинг (Step 10A)
-- /privacy, /terms, /risk-disclosure — drafts (Step 10B)
-- LandingHeader / Footer / CookieBanner
-
-**Visual fix legal/contact (2026-05-04)** — `3b73350` + `e715691`
-- HeaderWrapper показывает LandingHeader на /privacy /terms /risk-disclosure /contact
-- /contact превращён в форму (name/email/subject/message)
-- /api/contact endpoint (валидация + AuditLog)
-- Padding fix: 32px → 80px top на /privacy и /terms
-
-**Auth / Security базовая**
-- JWT + bcrypt, IP hashing SHA-256
-- Rate limiting Upstash (login 5/15m, apply 3/h, wallet 5/h, payout 1/day)
-- x-admin-key для admin endpoints
-
-**Тесты (legacy, частично устарели)**
-- Step 5A — scripts/test-affiliate-flow.ts (T1–T7 PASS)
-- ~~Step 5B — scripts/test-affiliate-conversion.ts~~ — DELETED 2026-05-06 (старые типы)
-- ~~Step 11 — scripts/e2e-step11.ts~~ — DELETED 2026-05-06 (NowPayments flow)
-- Новые E2E тесты пишутся под on-chain после Step 4 watcher
-
-**Sandbox VPS infrastructure (2026-05-04)**
-- Hetzner CX23 Helsinki, IP 204.168.178.81, Ubuntu 24.04
-- Coolify GUI: https://coolify.tradepredictions.online
-- Application: https://tradepredictions.online (SSL Let's Encrypt, auto-deploy из main)
-- PostgreSQL 17-alpine в Coolify
-- Cron affiliate-hold ежедневно 03:00 UTC
-- Cron expire-challenges ежечасно (2026-05-05)
-- Бэкапы PostgreSQL ежедневно 04:00 UTC в Backblaze B2 (retention 30 дней)
-- Vercel остался как fallback на funded-forecast.vercel.app
-
-**Email delivery (2026-05-04)**
-- Resend integration в /api/contact — commit cc0805e
-- Custom domain tradepredictions.online verified в Resend (eu-west-1)
-- Sender: noreply@tradepredictions.online
-- Recipient: alexadmiener@gmail.com (через CONTACT_RECIPIENT_EMAIL env var)
-
-**Referral redirect fixes (2026-05-04)**
-- /r/[code]/route.ts использует x-forwarded-host вместо request.url — `cdf8a5c`
-- Редирект /r/[code] → /login?mode=register — `721d845`
-
-**Referrals tab в /affiliate (2026-05-04)**
-- /api/affiliate/referrals — GET с pagination, summary aggregations
-- /affiliate/referrals — UI с masked usernames, status badges
-- Privacy: маска username (первые 3 символа + ***)
+### Summary P0
+**Общая оценка P0: ~86 часов = ~11 рабочих дней при 1 разработчике**
 
 ---
 
-## 🔴 P0 — критичные (блокирующие функционал)
+## P1 — Первая неделя после launch
 
-✅ Все P0 задачи закрыты.
+### P1.0 [A1] Wallet isolation
+- Из WALLET_MODEL.md (APPROVED)
+- БАЗА для P1.1 Funded phase
+- Зависимости: нет
+- Оценка: L (40ч)
 
----
+### P1.1 Funded phase (Deduction model)
+- Зависит от: P1.0 (A1 wallet isolation)
+- Scope: active → passed → funded → cycles → closed
+- БД:
+  - Challenge.status: enum +funded
+  - Новая таблица PayoutCycle (challengeId, cycleNumber, startBalance, endBalance, profitInCycle, payoutAmount, paidAt)
+  - Challenge.completedPayoutsCount Int
+- Логика:
+  - При passing → challenge.status = 'funded' (НЕ closed)
+  - В funded: trailing MLL + Inactivity 120ч + Prohibited (DLL OFF)
+  - После payout: balance -= payoutAmount, peakBalance НЕ трогать, Safe Balance НЕ падает
+- Оценка: 30ч
 
-## 🟡 P1 — важно, не блокирует
+### P1.2 6 Payout requirements
+- Зависит от: P1.1
+- Проверки:
+  1. profit_since_last_payout >= $200
+  2. consistency in cycle <= 35%
+  3. resolved_positions_in_cycle >= 15
+  4. winning_days_in_cycle >= 5
+  5. days_since_last_payout >= 14
+  6. balance_after_withdraw >= Safe Balance
+- Оценка: 12ч
 
-| # | Задача | Описание |
-|---|---|---|
-| 1 | Сменить пароль root@alexadminer.com | Засветился в чате при Step 11. Откладывается до pre-launch |
-| 2 | Pre-prod security audit | Rotate ADMIN_API_KEY + DATABASE_URL password + sync Vercel envs + git history scan |
-| 3 | LEGAL_CONFIG fill-in | src/lib/legal/company.ts — после получения домена и юрлица. Закроется автоматически при P2 #5 Admin Site Settings |
-| 4 | Restricted jurisdictions list | Section 2 Terms — список стран где prediction markets запрещены |
-| 5 | Lawyer review | Внешний юрист по Terms / Privacy / Risk Disclosure до public launch |
-| 6 | **Coolify start command — `prisma migrate deploy`** | Сейчас миграции применяются ВРУЧНУЮ через Database Terminal. Добавить `npx prisma migrate deploy && npm start` в Custom Start Command в Coolify. Без этого следующая миграция тоже потребует ручного применения |
-| 7 | Admin dashboard 403 bug | `GET /api/admin/stats 403` → `Uncaught (in promise) Error: Forbidden`. Frontend не handle'ит 4xx. Страница "висит". Воспроизведение есть в console |
-| 8 | JWT session expiry / "сайт висит" | После долгой сессии (12-24 часа с двумя ролями admin+user) сайт не загружается до Sign out + Sign in. Возможно связано с #7 |
-| 9 | Affiliate commission revert при refund | В webhook на статусах refunded/cancelled ничего не делается. После реальных платежей — добавить revert AffiliateConversion + AffiliateLedger |
-| 10 | Update legal pages — убрать NowPayments | privacy/terms/how-it-works/checkout — текстовые упоминания NowPayments. После Step 2-5 заменить на on-chain payment text |
+### P1.3 KYC интеграция (Sumsub)
+- Зависит от: нет
+- Scope: блокировка первого payout до KYC verified
+- БД: User.kycStatus (pending|verified|rejected), User.kycVerifiedAt
+- Технологии: Sumsub Web SDK
+- Файлы:
+  - frontend: KYC flow перед payout request
+  - src/app/api/user/payout: блок если !kycVerified
+  - src/app/api/webhooks/sumsub (новый)
+- Оценка: 20ч
 
----
+### P1.4 Прогрессивный profit split
+- Зависит от: P1.1
+- Логика: Challenge.completedPayoutsCount → split:
+  - 1-2: 70%
+  - 3-4: 80%
+  - 5+: 90%
+- Plan.profitSharePct → override (если задан) или прогрессив (если null)
+- Оценка: 4ч
 
-## 🟢 P2 — улучшения
+### P1.5 Instant Reset продукт
+- Scope: новый продукт для failed challenges
+- Цены: 30% off от боевых ($27.99/$69.99/$139.99)
+- Логика:
+  - Endpoint /api/user/instant-reset
+  - Только при Challenge.status=failed
+  - Crypto-only оплата
+  - При CONFIRMED: новый Challenge с тем же планом, balance reset
+- Оценка: 16ч
 
-| # | Задача | Описание |
-|---|---|---|
-| 1 | UI Failed Challenge — что с open positions | После failed challenge у юзера остались open positions от закрытого challengeId. Решить: автозакрывать при fail или оставлять как историю |
-| 2 | Review challenge difficulty | После реальных платежей анализировать pass rate. Может потребовать пересмотра max loss / profit target. Цель: 2-3% pass rate Elite, 5-7% Starter |
-| 3 | AffiliateLedger reconciliation cron | reconcileAffiliate() есть в коде, нигде регулярно не вызывается. Cron + alert при mismatch |
-| 4 | Verified threshold automation | Проверить реализована ли автоматика перехода в isVerified=true (90d + 10 sales + 0 fraud + ≤2% rate) |
-| 5 | lifetimeEarned auto-update | Сейчас обновляется только lifetimePaid (в admin complete) |
-| 6 | **Admin Site Settings / Content CMS** | Объединённая задача после выбора финального бренда. Brand identity + Homepage SEO + Footer + Legal CMS + Cached server-side reads. Требует БД модель SiteSettings + LegalPage. Связана с P1 #3 |
-| 7 | AffiliateClick FK без onDelete: Cascade | Удаление user оставит orphan clicks |
-| 8 | Existing approve/reject non-atomic | Affiliate update + auditLog как 2 операции — риск потери audit при крэше |
-| 9 | Admin Approve/Reject loading state | Double-click risk без disable во время запроса |
-| 10 | LeaderboardEntry без RLS | Supabase Security Advisor warning |
-| 11 | Email notifications | suspend / ban / payout / wallet_change — нет |
-| 12 | Freeze action для admin payout | Deferred MVP, нет enum value |
-| 13 | Blockchain explorer links | transactionHash plaintext в admin UI, нет ссылок на BaseScan/Etherscan |
-| 14 | Cookie consent infra | Banner есть, non-essential cookies не блокируются |
-| 15 | Wallet review UI | walletRequiresReview=true flag есть, UI для админа нет |
-| 16 | Bug fix admin/expire-challenges balanceLog query | Запрос без `challengeId` фильтра — может подхватить sandbox-лог. Используется только админом вручную, не критично |
-| 17 | Mock webhook E2E test | Альтернатива sandbox NowPayments (sandbox недоступен). Genenerate HMAC + curl на наш webhook. После Step 4 watcher — обновить под on-chain |
-| 18 | **D29 — Ghost balance в sandbox режиме** | `GET /api/user/mode` запрашивает `lastLog` без `challengeId` фильтра → после завершения challenge дашборд показывает баланс challenge вместо sandbox. Fix: добавить `challengeId: null` в запрос `lastLog` (как в D28). Закроется автоматически при реализации [A1] wallet model |
+### P1.6 Dashboard widgets
+- Зависит от: P0.3 (правила реализованы)
+- Виджеты:
+  - Per-rule progress: Positions X/35, Events X/30, Days X/15
+  - Safe Balance + buffer
+  - Daily P&L vs DLL gauge
+  - Inactivity countdown
+  - Consistency: biggest day %
+- Оценка: 14ч
 
----
-
-## 🔵 P3 — потом / refactor / cleanup
-
-| # | Задача |
-|---|---|
-| 1 | Cleanup legacy challenges с `planId=NULL` или `expiresAt=NULL` (зомби от старого free flow) |
-| 2 | Cleanup всех тестовых юзеров перед prod (DELETE FROM User CASCADE) |
-| 3 | KYC integration (Persona / Veriff / Sumsub) |
-| 4 | Sub-affiliate flow (5% / 12 mo) — parentAffiliateId в schema, RESERVED |
-| 5 | Multi-reason fraud flags — сейчас single string |
-| 6 | Frozen status между active и suspended |
-| 7 | Negative balance auto-suspend $1000 |
-| 8 | RefTracker fallback — auto-attach после login |
-| 9 | Refactor: attribution.ts + attach-click — единый путь |
-| 10 | Refactor: admin auth gate в shared layout |
-| 11 | Refactor: cabinet nav в shared layout (6 pages) |
-| 12 | Refactor: r/[code] inline IP hash → src/lib/ip.ts |
-| 13 | Удалить ContentBlock model — unused dead code |
-| 14 | TRC20/USDT поддержка (после Base USDC заработает) |
-| 15 | Credit/Debit Card payments (placeholder "Coming soon" на /checkout) |
-| 16 | Hardware wallet / multisig для receiver address (auto-transfer hot → cold > $500) |
-
----
-
-## 📋 Архитектурные константы (immutable)
-
-Не задачи, а зафиксированные решения. Не пересматривать без явного запроса.
-
-**Commission tiers**
-- Starter: 10% / Bronze: 15% / Silver: 20% / Gold: 25%
-- Hard cap: 30%
-
-**Hold periods**
-- Default: 30 days / Verified: 14 days / Suspicious: 45 days
-
-**Verified threshold (auto-promote)**
-- 90+ days as affiliate / 10+ successful sales / 0 fraud incidents / ≤2% fraud rate
-
-**Attribution**
-- Last-click wins, 60-day cookie lifetime, 10-min grace period
-- First successful purchase only is commissionable
-- referredByAffiliateId на регистрации (через aff_id cookie) или payment (fallback)
-
-**Successful payment status (on-chain era, после 2026-05-06)**
-- Single source of truth: `Payment.status === PaymentStatus.CONFIRMED`
-- Payment activates Challenge только когда:
-  - `confirmationsSeen >= 6`
-  - `actualAmountUnits >= expectedAmountUnits`
-  - `actualAmountUnits <= expectedAmountUnits * 1.01` (overpayment ≤1% accepted)
-  - tx within `expiresAt + 5min buffer`
-- Overpayment >1% → `MANUAL_REVIEW`
-- Underpayment → `UNDERPAID`, может быть topped up до `expiresAt`
-
-**Plan rules (после 2026-05-05)**
-| Plan | Account | Fee | Profit Target | Max Loss | Daily Loss | Min Days | Profit Share |
-|------|---------|-----|---------------|----------|------------|----------|--------------|
-| Starter | $1,000 | $39.99 | 15% | 10% | 5% | 10 | 70% |
-| Pro | $5,000 | $99.99 | 15% | 8% | 4% | 10 | 80% |
-| Elite | $15,000 | $199.99 | 15% | 6% | 3% | 10 | 90% |
-
-Активные challenges не меняются при апдейте плана — параметры копируются в Challenge при создании.
-
-**Sandbox starter balance**
-- Новые юзеры: $10 (для UX-знакомства)
-- Не для серьёзной торговли — `SANDBOX_MAX_POSITION_PCT = 2` (~$0.20 max позиция)
-
-**[A1] Wallet model (архитектура утверждена 2026-05-11, реализация отложена)**
-- Sandbox wallet: иммутабельный, `challengeId = null` — все sandbox позиции/логи
-- Challenge wallet: 1:1 с Challenge, `challengeId = challenge.id`
-- Active wallet: computed — active challenge → challenge wallet, иначе sandbox wallet
-- Текущее состояние: `challengeId` поле уже в Position/BalanceLog — wallet model добавит `walletId` поле (Step 2 из WALLET_MODEL.md)
-- TODO [A1] маркеры в коде указывают что нужно заменить после реализации
-- D29 ghost balance закроется автоматически при реализации [A1]
-- Детали: `docs/WALLET_MODEL.md`
-
-**On-chain payment architecture**
-- Network DEV: Base Sepolia (chainId 84532) + USDC testnet
-- Network PROD: Base Mainnet (chainId 8453) + native USDC (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`)
-- USDC decimals: 6 (1 USDC = 1,000,000 units)
-- Money math: BigInt only для amounts. Decimal для UI/USD display.
-- Confirmations: 6 blocks (~12-15 sec on Base)
-- Address model: один receiver + unique amount (±50 cents range, 1 cent step)
-- Invoice window: 30 min from `createdAt`
-- Watcher: batch poll каждые 5 sec (Alchemy primary)
-- Server: NO private key. Receiver address public-only. Manual withdrawal to cold wallet.
-- Idempotency on transactions: `(chainId, txHash, logIndex) @unique`
-
-**Payouts**
-- Manual, 1st & 15th of month
-- Min: $100 TRC-20 / $200 ERC-20
-- Wallet change: 7-day lock + manual review
-
-**KYC thresholds**
-- $500 first sale / $1000 lifetime
-- Manual via email
-
-**Sub-affiliate (RESERVED, не реализовано в MVP)**
-- 5% от sub-affiliate sales / 12 месяцев
-- parentAffiliateId в schema
-
-**Privacy Referrals UI**
-- Username mask: первые 3 символа + ***, либо первый символ + *** если username < 3
-- Не показываем: email, IP, wallet, full username, internal user ID
+### Summary P1
+**Общая оценка P1: ~136ч = ~17 рабочих дней**
 
 ---
 
-## ⚠️ Риски и quirks
+## P2 — Первый месяц
 
-**Инфраструктурные риски**
-- Coolify не запускает `prisma migrate deploy` автоматически — миграции вручную через Database Terminal (закрывается P1 #6)
-- prisma db push зависает → DDL только через Supabase SQL Editor вручную (production)
-- Sandbox БД через Coolify Database Terminal (psql -U postgres -d fundedforecast)
-- Локальный .env смотрит в production Supabase — НЕ путать с sandbox
-- Sandbox БД хост резолвится только внутри Coolify контейнеров
-- ADMIN_API_KEY риск попадания в Vercel logs при ошибках (закрывается P1 #2)
-
-**psql quirks (важно при ручных миграциях)**
-- `q` в pager (например `\d "Payment"`) **не закрывает psql сессию**, только pager. Но при отсутствии pager выходит из psql целиком — будь осторожен
-- DDL в открытой транзакции (BEGIN; ... ;) могут оставить часть catalog updates даже после ROLLBACK. CREATE TYPE может "залипнуть" если транзакция не закоммитилась чисто
-- Зависшая `idle in transaction` сессия блокирует DDL других сессий. Лечится `SELECT pg_terminate_backend(pid)`
-- Перед DDL миграцией — проверить `SELECT pid, state FROM pg_stat_activity WHERE state = 'idle in transaction'` и убить зависшие
-
-**Coolify quirks**
-- При изменении env vars нужен полный rebuild, не Restart (особенно NEXT_PUBLIC_*)
-- Если Coolify видит тот же commit SHA — пропускает build. Лечится empty commit + push
-- Coolify reverse proxy ломал request.url до localhost:3000 — фикс через x-forwarded-host (commit cdf8a5c)
-- Coolify Background Services / Scheduled Tasks: Container name можно оставить пустым если один контейнер на сервис
-
-**Quirks разработки**
-- Markdown auto-link в чат-клиенте: точка в `payment.id` создаёт markdown-ссылку. После 2026-05-06 `payment.id` — cuid string, не Int — это всё ещё проблема для логов и URL.
-- Claude Code сворачивает большие output'ы (`+N lines (ctrl+o to expand)`). Для pre-check больших файлов писать через `> /tmp/file.txt` и читать `cat` в обычном Terminal.app.
-- Write tool теряет строки в больших файлах. Для файлов >100 строк использовать `cat > file << 'EOF'` или python3 string replace.
-- Upstash @upstash/ratelimit v2: ключи формата `{prefix}:{identifier}:{windowIndex}`. Для сброса лимита нужен SCAN+DEL по конкретному префиксу. После DEL не вызывать `limit()` для проверки — он съест окно.
-
-**Resend quirks**
-- Тестовый домен onboarding@resend.dev пускает письма только на email с которым регистрировался Resend account
-- Suppression list — невалидные email auto-block. Удаляются вручную через UI
-- Новый домен warm-up: первые письма доставляются ~10 минут
-
-**NowPayments status (2026-05-06)**
-- Полностью удалён из кода
-- Sandbox среда NowPayments в maintenance mode — не блокер, мы перешли на on-chain
-- Production keys в Coolify env остались (будут удалены после Step 4)
-
-**Тестовые остатки**
-- User id=51 vapinkov (va.pinkov@gmail.com) — Challenge id=9 status=failed (legacy free), violationReason="Legacy free challenge closed during security fix". Сносится при cleanup всех тестовых юзеров (P3 #2)
-- Все тестовые юзеры будут удалены перед prod launch — P3 #2
+- P2.1 Bot/VPN detection (IPQualityScore + behavior analysis) — 16ч
+- P2.2 In-app notifications (MLL/DLL/inactivity warnings) — 12ч
+- P2.3 Account states UI (LOCKED, FUNDED states) — 10ч
+- P2.4 AuditLog для всех trades — 6ч
+- P2.5 Risk Disclosure статистика (после accumulating data) — 4ч
 
 ---
 
-## 📊 Прогресс
+## P3 — По запросу заказчика
 
-```
-Affiliate MVP:        ████████████████████  100%
-Public pages UI:      ████████████████████  100%
-Email infra:          ████████████████████  100%
-Sandbox VPS:          ████████████████████  100%
-Mobile responsive:    ████████████████████  100%
-Security revamp:      ████████████████████  100%  (free flow closed, $10 starter)
-Plan selection UI:    ████████████████████  100%  (/account/plans)
-Cron auto-fail:       ████████████████████  100%  (expired challenges)
-Post-challenge UI:    ████████████████████  100%  (passed/failed/expired banner)
-On-chain schema:      ████████████████████  100%  (Step 1 done, b0eba69)
-On-chain invoice API: ████████████████████  100%  (Step 2 done, 5514c82)
-On-chain checkout UI: ████████████████████  100%  (Step 3 done, 4e577fd+c6d21dc+22b3c10)
-Checkout UX + cleanup: ████████████████████  100%  (P0 #1 done, f3886e2+0d49c36+feef8b0+0cb186d+last)
-On-chain watcher:     ████████████████████  100%  (Step 4 done, 5bf63d5+1a31d82+ac0a409+last)
-On-chain activation:  ████████████████████  100%  (Step 5 done)
-Auto-pass logic:      ████████████████████  100%  (P0 done, 6303c22+e9fd5fc)
-Header auth fix:      ████████████████████  100%  (584f0f4)
-Rate limiting SEC-1:  ████████████████████  100%  (31349d3)
-D20 positions filter: ████████████████████  100%  (274eeab)
-D15 checkout popup:   ████████████████████  100%  (47f4ebd)
-D27 full-reload:      ████████████████████  100%  (6773a37)
-D28 positions filter: ████████████████████  100%  (6773a37)
-D26 challenges UI:    ████████████████████  100%  (00370d0+6dbfbc3)
-D29 ghost balance:    ░░░░░░░░░░░░░░░░░░░░    0%  (P2 #18, закроется с [A1])
-Legal content:        ████████░░░░░░░░░░░░   40%  (drafts, lawyer pending)
-Security audit:       ░░░░░░░░░░░░░░░░░░░░    0%
-Admin Site Settings:  ░░░░░░░░░░░░░░░░░░░░    0%
-P1 cleanup:           ██░░░░░░░░░░░░░░░░░░   10%  (10 задач)
-P2 cleanup:           ░░░░░░░░░░░░░░░░░░░░    0%  (17 задач)
-P3 refactors:         ░░░░░░░░░░░░░░░░░░░░    0%  (16 задач)
-```
-
-**Public launch ready чек-лист:** все P0 + P1 закрыто, mock-payment E2E прошёл.
-
-**Estimated до launch:** 3-5 рабочих сессий. P0 #1-4 (on-chain) — это основной remaining work, ~2-3 сессии. P0 #5 auto-pass + P1 #6-10 — 1 сессия. Внешние блокеры: домен, юрист.
+- P3.1 Stripe subscription интеграция (параллельно crypto) — 30ч
 
 ---
 
-## История сессий
+## Archive — Closed in demo prep (2026-05-01..05-11)
 
-- **2026-05-11 (продолжение)** — D27/D28: full-reload + challengeId isolation (6773a37), D26 backend: /api/user/challenges + sandbox summary in /api/user/mode (00370d0), D26 frontend: PastChallengesSection + SandboxSecondaryCard + ChallengeDetailModal (6dbfbc3), D29 ghost balance discovered (sandbox mode показывает баланс challenge — P2 #18). docs/WALLET_MODEL.md создан (архитектура [A1] утверждена).
-
-- **2026-05-11** — Demo-blockers: 4 задачи одной сессией. Header bug fix (mounted-pattern, 584f0f4), SEC-1 rate limiting failsafe (31349d3), D20 positions filter (274eeab), D15 checkout popup + fallback polling (47f4ebd). Контекстный файл docs/SESSION_LOG.md создан.
-
-- **2026-05-07** — Step 4 On-chain watcher service. 4 коммита: main implementation (alchemy.ts + watcher.ts + cron route), 2 fix'а (Alchemy Free tier 10-block limit + 10n→9n inclusive), 1 debug commit. End-to-end test passed: 2 транзакции по 1 USDC через MetaMask → CONFIRMED. Lessons: Alchemy free tier inclusive limit (10 = max 10 blocks not 11), viem PublicClient generic несовместимость → ReturnType<typeof makeClient>, console.log critical для runtime дебага.
-
-- **2026-05-07** — P0 #1 Checkout UX + zombie cleanup (5 коммитов одной сессией). Layered defense против 503 'Concurrent invoice creation conflict': inline cleanup в idempotency check + cron expire-payments каждую минуту. UX flow: cancel button на /checkout + banner с countdown на /account/plans. Cross-user security verified (нельзя отменить чужой invoice). Lessons: Postgres partial unique indexes не могут содержать now() в predicate.
-
-- **2026-05-06** — On-chain Step 3: checkout UI — `4e577fd` + `c6d21dc` (infinite loop fix) + `22b3c10` (Copied feedback). Полный rewrite /checkout/page.tsx (NowPayments → embedded on-chain). QR + countdown + polling + copy buttons + 7 UI states. Critical fix infinite loop через useRef flag в useEffect. New dep qrcode.react. Lesson: useEffect deps не должны включать state который effect сам меняет.
-
-- **2026-05-06** — On-chain Step 2: invoice API — `5514c82`. POST /api/payments/create (advisory lock, amount uniqueness ±50 cents, idempotent, rate limit 5/min, BigInt as string). GET /api/payments/[id]/status (polling endpoint для UI, isExpired derived flag). Новые либы: payment/config.ts, amount.ts, validators.ts. tsconfig target ES2017→ES2020 для BigInt. Удалена старая /api/payments/status 410 stub. On-chain Step 1 schema — `b0eba69`. NowPayments полностью удалён из кода. Новые модели Payment/PaymentTransaction/PaymentWatcherState с BigInt + cuid. Миграция применена вручную через Coolify DB Terminal. Backlog обновлён.
-
-- **2026-05-05** — Security revamp: 7 коммитов. Закрыт бесплатный challenge flow (`a40e135`), STARTING_BALANCE = $10 (`343e66b`), `/account/plans` plan selection UI (`20210df`), конфигурация планов выправлена через SQL (Starter 10/5, Pro 8/4, Elite 6/3), mobile responsive headers (`718e513`, `912bef2`), cron auto-fail expired challenges hourly (`fcef76f`), post-challenge dashboard banner с CTA (`e1b1ca8`).
-
-- **2026-05-04** — Step 11 E2E (T0-T26 ALL PASS) на production, visual fix legal/contact + контактная форма + Resend интеграция, sandbox VPS migration на Coolify (tradepredictions.online + auto-deploy), redirect fixes на /r/[code] (x-forwarded-host + /login?mode=register), Referred Users tab в /affiliate (privacy-aware с masked usernames), webhook fix (Number coercion + guards), backlog consolidated в repo
-
----
-
-## Pre-production checklist
-
-Перед публичным запуском обязательно:
-
-- [ ] Ротировать все секреты: JWT_SECRET, CRON_SECRET, ALCHEMY_API_KEY, любые DB passwords. Все ключи которые могли попасть в логи / чат-историю Claude / git diff'ы.
-- [ ] Удалить всех тестовых юзеров из БД: `DELETE FROM "User" WHERE id IN (1, 2, 4, 46, 50, 51, 52, 53, 54)`. Сначала — связанные Challenge, BalanceLog, Payment, AffiliateConversion, AffiliateClick, Trade, Position, PayoutRequest.
-- [ ] Вернуть Starter priceCents=100 → 3999 (или текущая prod-цена) в ChallengePlan.
-- [ ] Обнулить watcher state: `UPDATE "PaymentWatcherState" SET "lastBlockNumber"=<текущий block на mainnet>` если переключаемся с Base Sepolia на Base mainnet.
-- [ ] Сменить env vars: USDC_CONTRACT_ADDRESS, RECEIVER_ADDRESS, CHAIN_ID — с Sepolia (84532, 0x036C...) на Base mainnet (8453, 0x833589...).
-- [ ] Verify: PaymentWatcherState не содержит данных от тестовых транзакций.
-- [ ] Disable cleanup: cron `docker image prune` уже стоит на VPS (3:00 daily, 72h retention).
+- [D14] Цены /plans vs /checkout (commit 0f09b70)
+- [D6+D25] Auth-aware шапка
+- [D15] Checkout popup (commit 47f4ebd)
+- [D20] Hide failed positions (commit 274eeab)
+- [D26] Past Challenges + Sandbox secondary UX (commits 00370d0, 6dbfbc3)
+- [D27][D28] Full reload + active challenge filter
+- [D29] Ghost balance fix (commit ad3e283)
+- [SEC-1] Rate limits via proxy (commit 31349d3)
+- Docker cleanup retention=3
