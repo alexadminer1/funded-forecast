@@ -159,6 +159,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Scope: обновить дефолт через админку
 - Existing challenges с minTradingDays=10 НЕ трогать
 - Файлы: только UPDATE через Plans editor
+- Status: ✓ DONE 2026-05-11 (SQL UPDATE через Coolify DB Terminal, sandbox)
 - Оценка: 0.5ч
 
 ### P0.4 Position mechanics

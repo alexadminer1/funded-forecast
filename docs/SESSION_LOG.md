@@ -9,6 +9,20 @@
 
 ---
 
+## Session 2026-05-11 (continuation 4) — P0.3.e Trading Days default 10→15
+
+### Done
+- ChallengePlan.minTradingDays UPDATED 10 → 15 для всех 3 планов (Starter/Pro/Elite)
+- Применено напрямую через Coolify DB Terminal (sandbox БД)
+- Existing active challenges не затронуты (minTradingDays — snapshot в Challenge таблице, NOT NULL без default)
+- SQL: BEGIN; UPDATE "ChallengePlan" SET "minTradingDays" = 15; COMMIT;
+
+### Not done yet
+- Production БД (когда переключимся с sandbox на mainnet) — повторить SQL
+- В админке UI Plans editor проверить что новое значение отображается корректно
+
+---
+
 ## Session 2026-05-11 (continuation 3) — Backlog audit + corrections
 
 ### Получено
