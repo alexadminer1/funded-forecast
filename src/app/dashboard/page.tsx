@@ -33,7 +33,30 @@ interface ModeData {
   currentBalance: number;
   challenge: Challenge | null;
   lastChallenge: LastChallenge | null;
+  sandboxBalance: number | null;
+  sandboxPositionsCount: number | null;
 }
+
+type PastChallenge = {
+  id: number;
+  planName: string | null;
+  status: "passed" | "failed" | "expired";
+  startedAt: string;
+  endedAt: string | null;
+  startBalance: number;
+  finalBalance: number;
+  pnl: number;
+  profitTargetPct: number;
+  profitTargetProgress: number;
+  maxTotalDdPct: number;
+  drawdownUsed: number;
+  tradingDaysCount: number;
+  minTradingDays: number;
+  profitTargetMet: boolean;
+  drawdownViolated: boolean;
+  violationReason: string | null;
+  positionsCount: number;
+};
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -41,6 +64,8 @@ export default function DashboardPage() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [modeData, setModeData] = useState<ModeData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pastChallenges, setPastChallenges] = useState<PastChallenge[]>([]);
+  const [selectedChallenge, setSelectedChallenge] = useState<PastChallenge | null>(null);
 
   const loadData = useCallback(() => {
     if (!getToken()) { router.push("/login"); return; }
@@ -48,15 +73,20 @@ export default function DashboardPage() {
       apiFetch<{ success: boolean; user: User }>("/api/user/me"),
       apiFetch<{ success: boolean; positions: Position[] }>("/api/user/positions"),
       apiFetch<ModeData & { success: boolean }>("/api/user/mode"),
-    ]).then(([userData, posData, mode]) => {
+      apiFetch<{ success: boolean; challenges: PastChallenge[] }>("/api/user/challenges")
+        .catch(() => null),
+    ]).then(([userData, posData, mode, challengesData]) => {
       if (userData.success) setUser(userData.user);
       if (posData.success) setPositions(posData.positions);
       if (mode.success) setModeData({
-        mode:          mode.mode,
-        currentBalance: mode.currentBalance,
-        challenge:     mode.challenge,
-        lastChallenge: mode.lastChallenge,
+        mode:                  mode.mode,
+        currentBalance:        mode.currentBalance,
+        challenge:             mode.challenge,
+        lastChallenge:         mode.lastChallenge,
+        sandboxBalance:        mode.sandboxBalance ?? null,
+        sandboxPositionsCount: mode.sandboxPositionsCount ?? null,
       });
+      if (challengesData?.success) setPastChallenges(challengesData.challenges);
     }).finally(() => setLoading(false));
   }, [router]);
 
@@ -86,6 +116,12 @@ export default function DashboardPage() {
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg-page)" }}>
+      {selectedChallenge && (
+        <ChallengeDetailModal
+          challenge={selectedChallenge}
+          onClose={() => setSelectedChallenge(null)}
+        />
+      )}
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "48px 24px", animation: "fadeIn 0.3s ease" }}>
 
         {/* Page header */}
@@ -134,6 +170,22 @@ export default function DashboardPage() {
               <ChallengeCard challenge={modeData.challenge} />
             ) : null}
           </div>
+        )}
+
+        {/* Past Challenges */}
+        {pastChallenges.length > 0 && (
+          <PastChallengesSection
+            challenges={pastChallenges}
+            onSelect={(c) => setSelectedChallenge(c)}
+          />
+        )}
+
+        {/* Sandbox secondary — shown only during active challenge */}
+        {modeData?.mode === "challenge" && modeData.sandboxBalance !== null && (
+          <SandboxSecondaryCard
+            balance={modeData.sandboxBalance}
+            positionsCount={modeData.sandboxPositionsCount ?? 0}
+          />
         )}
 
         {/* Positions */}
@@ -441,6 +493,265 @@ function PostChallengeBanner({ last }: LastChallengeBannerProps) {
       >
         {ctaLabel}
       </a>
+    </div>
+  );
+}
+
+/* ── Past Challenges ───────────────────────────────────────────────── */
+
+function PastChallengesSection({
+  challenges,
+  onSelect,
+}: {
+  challenges: PastChallenge[];
+  onSelect: (c: PastChallenge) => void;
+}) {
+  return (
+    <div style={{ marginBottom: 32 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+        <h2 style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--text-primary)", margin: 0 }}>
+          Past Challenges
+        </h2>
+        <span style={{
+          fontSize: 11, fontWeight: 700, color: "#64748B",
+          background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: 20, padding: "2px 8px",
+        }}>{challenges.length}</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {challenges.map((c) => (
+          <PastChallengeRow key={c.id} challenge={c} onClick={() => onSelect(c)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PastChallengeRow({ challenge: c, onClick }: { challenge: PastChallenge; onClick: () => void }) {
+  const cfg = {
+    passed:  { color: "#22C55E", bg: "rgba(34,197,94,0.1)",   border: "rgba(34,197,94,0.2)",   label: "PASSED"  },
+    failed:  { color: "#EF4444", bg: "rgba(239,68,68,0.1)",   border: "rgba(239,68,68,0.2)",   label: "FAILED"  },
+    expired: { color: "#64748B", bg: "rgba(100,116,139,0.1)", border: "rgba(100,116,139,0.2)", label: "EXPIRED" },
+  }[c.status];
+
+  const dateStr = new Date(c.endedAt ?? c.startedAt).toLocaleDateString("en-US", {
+    month: "short", day: "numeric", year: "numeric",
+  });
+  const subtext = c.status === "passed" ? "Profit target reached"
+    : c.status === "expired" ? "Time expired"
+    : (c.violationReason ?? "Challenge failed");
+  const pnlColor = c.pnl >= 0 ? "#22C55E" : "#EF4444";
+  const pnlStr = `${c.pnl >= 0 ? "+" : "−"}$${Math.abs(c.pnl).toFixed(2)}`;
+
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        background: "linear-gradient(160deg, var(--bg-surface) 0%, var(--bg-page) 100%)",
+        border: "1px solid var(--border)",
+        borderRadius: 10,
+        padding: "13px 16px",
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+        transition: "border-color 0.15s",
+      }}
+      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.12)"; }}
+      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--border)"; }}
+    >
+      <span style={{
+        fontSize: 10, fontWeight: 700, letterSpacing: "0.07em",
+        color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.border}`,
+        borderRadius: 4, padding: "3px 7px", flexShrink: 0,
+      }}>{cfg.label}</span>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>
+          {c.planName ?? "Challenge"} · {dateStr}
+        </div>
+        <div style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {subtext}
+        </div>
+      </div>
+
+      <div style={{ textAlign: "right", flexShrink: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>
+          ${c.finalBalance.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+        </div>
+        <div style={{ fontSize: 11, fontWeight: 600, color: pnlColor }}>{pnlStr}</div>
+      </div>
+
+      <div style={{ color: "#334155", fontSize: 16, flexShrink: 0, lineHeight: 1 }}>›</div>
+    </div>
+  );
+}
+
+/* ── Sandbox Secondary ─────────────────────────────────────────────── */
+
+function SandboxSecondaryCard({ balance, positionsCount }: { balance: number; positionsCount: number }) {
+  return (
+    <div style={{
+      background: "rgba(15,23,42,0.6)",
+      border: "1px solid rgba(255,255,255,0.05)",
+      borderRadius: 12,
+      padding: "16px 20px",
+      marginBottom: 32,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 16,
+    }}>
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+            Sandbox
+          </span>
+          <span style={{
+            fontSize: 10, fontWeight: 600, color: "#334155",
+            background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)",
+            borderRadius: 4, padding: "1px 6px",
+          }}>PAUSED</span>
+        </div>
+        <div style={{ fontSize: 11, color: "#334155", marginBottom: 12 }}>Paused during active challenge</div>
+        <div style={{ display: "flex", gap: 24 }}>
+          <div>
+            <div style={{ fontSize: 10, color: "#334155", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Balance</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#475569" }}>
+              ${balance.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: "#334155", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Positions</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#475569" }}>{positionsCount}</div>
+          </div>
+        </div>
+      </div>
+      <div style={{ fontSize: 11, color: "#1E293B", maxWidth: 220, textAlign: "right", lineHeight: 1.6 }}>
+        Your sandbox balance and history are preserved. Trading resumes after this challenge ends.
+      </div>
+    </div>
+  );
+}
+
+/* ── Challenge Detail Modal ────────────────────────────────────────── */
+
+function ChallengeDetailModal({
+  challenge: c,
+  onClose,
+}: {
+  challenge: PastChallenge;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const cfg = {
+    passed:  { color: "#22C55E", label: "PASSED"  },
+    failed:  { color: "#EF4444", label: "FAILED"  },
+    expired: { color: "#64748B", label: "EXPIRED" },
+  }[c.status];
+
+  const fmt = (d: string | null) => d
+    ? new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : "—";
+
+  const pnlPct = c.startBalance > 0 ? ((c.pnl / c.startBalance) * 100).toFixed(2) : "0.00";
+  const pnlColor = c.pnl >= 0 ? "#22C55E" : "#EF4444";
+  const pnlLabel = `${c.pnl >= 0 ? "+" : "−"}$${Math.abs(c.pnl).toFixed(2)} (${c.pnl >= 0 ? "+" : ""}${pnlPct}%)`;
+
+  const rows: Array<{ label: string; value: string; color?: string }> = [
+    { label: "Started",          value: fmt(c.startedAt) },
+    { label: "Ended",            value: fmt(c.endedAt) },
+    { label: "Starting balance", value: `$${c.startBalance.toLocaleString("en-US", { minimumFractionDigits: 2 })}` },
+    { label: "Final balance",    value: `$${c.finalBalance.toLocaleString("en-US", { minimumFractionDigits: 2 })}` },
+    { label: "P&L",              value: pnlLabel, color: pnlColor },
+    { label: "Profit target",    value: `${c.profitTargetPct}% ($${(c.startBalance * c.profitTargetPct / 100).toFixed(0)})` },
+    { label: "Target progress",  value: `${c.profitTargetProgress}% of ${c.profitTargetPct}%` },
+    { label: "Max drawdown",     value: `${c.maxTotalDdPct}% ($${(c.startBalance * c.maxTotalDdPct / 100).toFixed(0)})` },
+    { label: "Drawdown used",    value: `${c.drawdownUsed}% of ${c.maxTotalDdPct}%` },
+    { label: "Trading days",     value: `${c.tradingDaysCount} / ${c.minTradingDays}` },
+    { label: "Positions",        value: String(c.positionsCount) },
+  ];
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0,
+        background: "rgba(0,0,0,0.75)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 200, padding: "0 20px",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#1E293B",
+          border: "1px solid #334155",
+          borderRadius: 14,
+          padding: "24px 28px",
+          maxWidth: 480,
+          width: "100%",
+          maxHeight: "90vh",
+          overflowY: "auto",
+        }}
+      >
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 }}>
+              {c.planName ?? "Challenge"} Challenge
+            </div>
+            <span style={{
+              fontSize: 10, fontWeight: 700, letterSpacing: "0.07em",
+              color: cfg.color,
+              background: `${cfg.color}1a`,
+              border: `1px solid ${cfg.color}40`,
+              borderRadius: 4, padding: "3px 8px",
+            }}>{cfg.label}</span>
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: "transparent", border: "none",
+              color: "#475569", cursor: "pointer",
+              fontSize: 20, lineHeight: 1, padding: "0 2px",
+            }}
+          >✕</button>
+        </div>
+
+        {/* Stats */}
+        <div>
+          {rows.map(({ label, value, color }) => (
+            <div key={label} style={{
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              padding: "9px 0", borderBottom: "1px solid rgba(255,255,255,0.04)",
+            }}>
+              <span style={{ fontSize: 12, color: "#64748B" }}>{label}</span>
+              <span style={{ fontSize: 13, fontWeight: 500, color: color ?? "var(--text-primary)" }}>{value}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Violation reason */}
+        {c.violationReason && (
+          <div style={{
+            marginTop: 16,
+            background: "rgba(239,68,68,0.07)",
+            border: "1px solid rgba(239,68,68,0.15)",
+            borderRadius: 8, padding: "10px 14px",
+          }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#EF4444", letterSpacing: "0.07em", marginBottom: 4 }}>
+              VIOLATION REASON
+            </div>
+            <div style={{ fontSize: 12, color: "#FCA5A5", lineHeight: 1.5 }}>{c.violationReason}</div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
