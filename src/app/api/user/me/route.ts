@@ -49,12 +49,6 @@ export async function GET(req: NextRequest) {
       select: { runningBalance: true },
     });
 
-    // Get open positions count (exclude positions in failed challenges)
-    // TODO [A2]: replace with proper auto-close after challenge failed (architectural fix)
-    const openPositionsCount = await prisma.position.count({
-      where: { userId, status: "open", NOT: { challenge: { status: "failed" } } },
-    });
-
     // Get active challenge if any
     const activeChallenge = await prisma.challenge.findFirst({
       where: { userId, status: "active" },
@@ -74,6 +68,13 @@ export async function GET(req: NextRequest) {
         planId: true,
         plan: { select: { name: true } },
       },
+    });
+
+    // TODO [A1]: replace with native walletId filter after wallet model implementation
+    const openPositionsCount = await prisma.position.count({
+      where: activeChallenge
+        ? { userId, status: "open", challengeId: activeChallenge.id }
+        : { userId, status: "open", challengeId: null },
     });
 
     // Balance fallback: if no BalanceLog yet (new challenge, no trades),

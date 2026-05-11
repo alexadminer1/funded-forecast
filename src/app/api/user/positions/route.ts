@@ -19,9 +19,16 @@ export async function GET(req: NextRequest) {
   const userId = payload.userId as number;
 
   try {
-    // TODO [A2]: replace with proper auto-close after challenge failed (architectural fix)
+    // TODO [A1]: replace with native walletId filter after wallet model implementation
+    const activeChallenge = await prisma.challenge.findFirst({
+      where: { userId, status: "active" },
+      select: { id: true },
+    });
+
     const positions = await prisma.position.findMany({
-      where: { userId, status: "open", NOT: { challenge: { status: "failed" } } },
+      where: activeChallenge
+        ? { userId, status: "open", challengeId: activeChallenge.id }
+        : { userId, status: "open", challengeId: null },
       include: {
         market: {
           select: {

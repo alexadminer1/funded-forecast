@@ -388,7 +388,7 @@ function CheckoutInner() {
   if (!plan) return null;
 
   if (showSuccessPopup && invoice) {
-    return <SuccessPopup plan={plan} invoice={invoice} onGo={() => router.push("/dashboard")} />;
+    return <SuccessPopup plan={plan} invoice={invoice} onGo={() => { window.location.href = "/dashboard"; }} />;
   }
 
   // Error state (shown when no invoice could be created).
