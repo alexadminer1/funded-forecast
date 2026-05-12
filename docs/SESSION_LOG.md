@@ -9,6 +9,76 @@
 
 ---
 
+## Session 2026-05-12 (continued) — Session 10 — P0.2.e CLOSED
+
+### Закрыто
+- P0.2.e Stale market cleanup (auto-resolve)
+  - Новый файл: src/app/api/admin/cleanup-stale-markets/route.ts
+    - POST endpoint с x-admin-key auth
+    - Берёт markets со status='live' и lastSyncedAt < NOW() - 24h
+    - Батчинг по 10 параллельных fetch к Polymarket /markets/{id}, 200ms между батчами
+    - Для closed && umaResolutionStatus="resolved" с converged prices:
+      → update Market.status='resolved', winningOutcome
+      → вызов resolveMarketPositions (переиспользует Wave A+C логику)
+    - Tolerance 0.01 для определения winner (prices ≈ [1,0] или [0,1])
+    - Disputed markets (prices не converged) → skip + лог
+  - Helpers в src/lib/polymarket.ts:
+    - PolymarketResolvedMarket interface
+    - fetchMarketById(id) — single market lookup
+    - getWinningOutcome(market) — парсинг outcomePrices JSON-string,
+      возвращает "yes" | "no" | null
+  - Commit: ff54927
+  - Coolify deploy: ✅ Success (webhook auto-deploy сработал этот раз)
+
+  - Manual run результат (228 stale markets):
+    - resolved: 128 (на Polymarket закрыты, prices converged)
+    - stillActive: 100 (Polymarket вернул closed=false — реально живые)
+    - disputed: 0
+    - errors: 0
+    - totalPositionsProcessed: 15 user positions
+
+  - Challenge #18 (test1, active) verify после cleanup:
+    - 2 open positions резолвлены:
+      - Position #27 (2133404 "Iran airspace", side=yes, winner=no): -$0.33
+      - Position #28 (2037907 "Clavicular pregnancy", side=yes, winner=yes): +$0.40
+    - Net change: realizedBalance 1000 → 1000.07
+    - peakEquity: 1000 → 1000.40 (Wave C peak фиксировался выше cash peak)
+    - drawdownViolated: false, challenge остался active ✓
+
+  - Coolify Scheduled Task создан:
+    - Name: cleanup-stale-markets
+    - Frequency: 0 * * * * (каждый час)
+    - Verify Execute Now: 100 checked, 0 resolved, 0 errors
+
+### Critical findings (для будущих задач)
+- Polymarket поле umaResolutionStatus (SINGULAR) — авторитативный сигнал
+- Polymarket поле umaResolutionStatuses (PLURAL, массив) — НЕ использовать,
+  у всех проверенных resolved маркетов = ["proposed"] (врёт)
+- outcomes и outcomePrices в API — JSON-encoded STRINGS, не нативные массивы
+  (нужен JSON.parse())
+
+### Wave C дополнительная проверка (bonus)
+- Challenge #18: peakEquity > peakBalance после резолва ($1000.40 vs $1000.07)
+- Это подтверждает что Wave C peak трекинг работает независимо от cash peak —
+  equity на момент когда обе позиции были open и market.yesPrice был favourable
+
+### Что осталось (НЕ блокер, новая мелкая задача)
+- 98 markets status='live' но lastSyncedAt > 7 дней
+- Polymarket возвращает closed=false для них — реально активные, выпали из
+  top-1000 по volume24hr
+- Когда они закроются на Polymarket — следующий cron auto-resolve их подхватит
+- Можно добавить policy "delist after 30 days stale" в будущем (P0.2.f)
+
+### Lessons learned
+- Backup через CSV \copy работает когда pg_dump недоступен
+  (app-контейнер vs database-контейнер)
+- TypeScript stale state в Coolify build: первая попытка показала 0 ошибок
+  но в Write был артефакт display (склейка строк), реальный файл был чистый
+- Polymarket API: closed=true может быть proposed (не финально resolved),
+  поэтому umaResolutionStatus === "resolved" обязательная проверка
+
+---
+
 ## Session 2026-05-12 (continued) — Session 10 — P0.2.d CLOSED
 
 ### Закрыто

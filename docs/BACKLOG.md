@@ -8,7 +8,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Decisions: ✓ получены от заказчика (см. ниже)
 - Open questions: 4 блокера → docs/OPEN_QUESTIONS_P0.md
 - Production readiness: requires P0 work (~17 дней)
-- 8 задач закрыто (P0.3.e, P0.6, P0.10 drafts, P0.1, P0.2 Wave A, P0.2.b, P0.2.c, P0.2.d)
+- 9 задач закрыто (P0.3.e, P0.6, P0.10 drafts, P0.1, P0.2 Wave A, P0.2.b, P0.2.c, P0.2.d, P0.2.e)
 - P0 production blockers: +2 новых (P0.2.d, P0.2.e)
 
 ---
@@ -122,6 +122,8 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Оценка: 2ч
 
 ### P0.2.e Stale market cleanup
+- [x] CLOSED 2026-05-12 (commit ff54927) — 128 resolved, 15 positions
+      processed, challenge #18 verified
 - Зависит от: ничего
 - Блокирует: production readiness (overdue маркеты остаются live)
 - Scope:
@@ -141,6 +143,19 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
   - src/lib/polymarket.ts (новый helper fetchResolvedMarket?)
   - Coolify Scheduled Task (новый)
 - Оценка: 8ч
+
+### P0.2.f Delist persistently-stale markets (низкий приоритет)
+- Зависит от: ничего
+- Блокирует: ничего (косметика админ-панели и /markets UI)
+- Scope:
+  - 98 маркетов status='live' но lastSyncedAt > 7 дней
+  - Polymarket возвращает closed=false → реально живые, но выпали из feed
+  - Логика: если lastSyncedAt > 30 дней и Polymarket НЕ резолвен → status='delisted'
+  - НЕ автоматически — manual review через admin panel
+- Файлы:
+  - src/app/api/admin/cleanup-stale-markets/route.ts: добавить delist branch
+  - src/app/admin/page.tsx: вкладка "Delisted markets" (optional)
+- Оценка: 2ч
 
 ### P0.3 Недостающие challenge rules
 
