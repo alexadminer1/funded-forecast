@@ -215,6 +215,7 @@ model Challenge {
   startedAt            DateTime  @default(now())
   endedAt              DateTime?
   lastNewPositionAt    DateTime?
+  resolvedPositionsCount Int     @default(0)
 
   user           User            @relation(fields: [userId], references: [id])
   plan           ChallengePlan?  @relation(fields: [planId], references: [id])
