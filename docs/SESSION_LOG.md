@@ -9,6 +9,35 @@
 
 ---
 
+## Session 2026-05-12 — Session 11 — P0.3.d CLOSED
+
+### Закрыто
+- **P0.3.d Inactivity Timer 72ч** (commits e21ec56, a418c47, 15de268, f0c436a)
+  - Schema: добавлено поле `Challenge.lastNewPositionAt DateTime?`
+  - SQL миграция: `ALTER TABLE "Challenge" ADD COLUMN "lastNewPositionAt"` + bootstrap для 5 active challenges (через NOW(), мягкий рестарт таймера чтобы не сжечь существующие)
+  - Activation hook: `src/lib/payment/activation.ts` — при создании Challenge устанавливает `lastNewPositionAt = now`
+  - Trade hook: `src/app/api/trade/buy/route.ts` — UPDATE Challenge.lastNewPositionAt только в else-ветке (INSERT новой Position), не при увеличении shares существующей
+  - Cron endpoint: `src/app/api/cron/inactivity-check/route.ts` — evaluation 72h / funded 120h, violationReason `inactivity_72h` / `inactivity_120h`
+  - Coolify Scheduled Task: `inactivity-check` * `0 * * * *`
+  - Verify: cron вернул `{"failedCount":0,"updatedChallengeIds":[],"errors":[]}` — корректно (все active с свежим таймером)
+
+### Замечания
+- Использован `Challenge.startedAt` как точка отсчёта (поле `activatedAt` решено не добавлять — startedAt совпадает с моментом активации payment)
+- Position уже имеет `challengeId` — отдельной миграции связи не потребовалось
+- Реальный тест inactivity → failed произойдёт естественно: первый юзер который не торгует 72ч после деплоя
+
+### Инфраструктура (актуальные кроны)
+- watch-payments         * * * * *
+- activate-payments      * * * * *
+- expire-payments        * * * * *
+- expire-challenges      0 * * * *
+- affiliate-hold         0 3 * * *
+- sync-prices            */15 * * * *
+- cleanup-stale-markets  0 * * * *
+- inactivity-check       0 * * * *  ← новое (P0.3.d)
+
+---
+
 ## Session 2026-05-12 (continued) — Session 10 — P0.2.e CLOSED
 
 ### Закрыто

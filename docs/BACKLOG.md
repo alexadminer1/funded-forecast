@@ -220,7 +220,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
   - 30 trades на 30 событий → passing
 - Оценка: 10ч
 
-#### P0.3.d Inactivity Timer 72ч
+#### P0.3.d Inactivity Timer 72ч ✓ CLOSED (Session 11, 2026-05-12)
 - Scope: failed если нет new position >72ч (challenge) / 120ч (funded)
 - БД: Challenge.lastNewPositionAt DateTime?
 - Логика:
