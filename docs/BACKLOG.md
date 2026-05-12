@@ -8,7 +8,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Decisions: ✓ получены от заказчика (см. ниже)
 - Open questions: 4 блокера → docs/OPEN_QUESTIONS_P0.md
 - Production readiness: requires P0 work (~17 дней)
-- 4 задачи закрыто (P0.3.e, P0.6, P0.10 drafts, P0.1)
+- 5 задач закрыто (P0.3.e, P0.6, P0.10 drafts, P0.1, P0.2 Wave A)
 
 ---
 
@@ -57,25 +57,48 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Оценка: 4ч
 
 ### P0.2 MLL Trailing
-- Scope: переключить drawdown с fixed на trailing через peakBalance
-- Файлы:
-  - src/app/api/trade/buy: peakBalance update logic
-  - src/app/api/trade/sell: то же + drawdown check от peakBalance
-  - SQL migration: UPDATE peakBalance = GREATEST(startBalance, realizedBalance) для всех active challenges
-- Логика:
-  - При каждом trade: peakBalance = MAX(peakBalance, newRealizedBalance)
-  - Drawdown check: (peakBalance - realizedBalance) / peakBalance * 100 >= maxTotalDdPct
-  - peakBalance НИКОГДА не уменьшается
+- [x] Wave A CLOSED 2026-05-12 (commit f2f46bb) — TFP-style fixed drawdown
+      realized-based, БД миграция выполнена (5 active challenges)
+- [ ] Wave C: equity-aware upgrade (отдельная задача P0.2.c, требует свежих цен)
+- Формула финал: maxLossAmount = startBalance × maxLossPct / 100 (FIXED)
+- MLL = peakBalance − maxLossAmount (trailing вверх)
+- Применено: trade/buy, trade/sell, marketResolve
 - Funded phase carry-forward:
   - При passing: peakBalance переносится 1:1 в funded
   - В funded: peakBalance растёт при profit, никогда не падает
   - После withdrawal: balance -= amount, peakBalance НЕ меняется
   - Safe Balance = peakBalance × (1 - maxLossPct/100) → стабильный
-- Тесты:
-  - profit → peakBalance растёт, MLL "поднимается"
-  - loss → peakBalance не падает, проверка от пика
-  - test6/7/8: migration корректно проставила peakBalance
-- Оценка: 6ч
+- Оценка: 6ч (выполнено)
+
+### P0.2.b Sync-prices cron infrastructure
+- Зависит от: ничего (изолированная задача)
+- Блокирует: P0.2.c
+- Scope:
+  - Фикс fallback URL bug в src/app/api/cron/sync/route.ts
+    (хардкод "https://funded-forecast.vercel.app" — Vercel мёртв)
+  - Verify NEXT_PUBLIC_APP_URL в Coolify env = https://tradepredictions.online
+  - Настроить Coolify Scheduled Task для GET /api/cron/sync
+  - Расписание: */15 * * * * (каждые 15 минут)
+  - Verify после запуска: SELECT MAX("lastSyncedAt") FROM "Market"
+- Файлы:
+  - src/app/api/cron/sync/route.ts (фикс URL)
+  - Coolify GUI (новый scheduled task)
+- Оценка: 2ч
+
+### P0.2.c Equity-aware MLL upgrade (Wave C)
+- Зависит от: P0.2.b (sync-prices работает стабильно)
+- Scope:
+  - Заменить MLL check на equity-based
+  - equity = realizedBalance + Σ(position.shares × market.currentPrice)
+  - peakBalance = MAX(peakBalance, equity) — peak от EQUITY
+  - MLL = peakBalance − maxLossAmount (FIXED, как сейчас)
+  - failed if currentEquity < MLL
+- Файлы:
+  - src/lib/equity.ts (новый helper computeEquity)
+  - src/app/api/trade/buy/route.ts
+  - src/app/api/trade/sell/route.ts
+  - src/lib/marketResolve.ts
+- Оценка: 4-6ч
 
 ### P0.3 Недостающие challenge rules
 

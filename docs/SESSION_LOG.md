@@ -9,6 +9,53 @@
 
 ---
 
+## Session 2026-05-12 (continued) — Session 10 — P0.2 Wave A CLOSED
+
+### Закрыто
+- P0.2 Wave A — MLL Trailing (TFP-style fixed drawdown, realized-based)
+  - Формула: maxLossAmount = startBalance × maxLossPct/100 (FIXED)
+  - MLL = peakBalance − maxLossAmount (trailing вверх)
+  - isFailed = realizedBalance < MLL
+  - Файлы (3):
+    - src/app/api/trade/buy/route.ts (~204 строка)
+    - src/app/api/trade/sell/route.ts (~191 строка)
+    - src/lib/marketResolve.ts (~108 строка)
+  - violationReason единый формат:
+    "Max Loss hit: balance $XXX below limit $YYY (peak $ZZZ)"
+  - Commit: f2f46bb
+  - Coolify deploy: ✅ Success
+  - БД миграция (Алексей вручную в Coolify Terminal):
+    UPDATE "Challenge" SET "peakBalance" = GREATEST("startBalance", "realizedBalance")
+    WHERE status = 'active';
+  - 5 active challenges мигрированы
+
+### Discovery findings
+- peakBalance уже было в schema (из подготовки)
+- newPeakBalance уже обновлялся в buy/sell/resolve (правильно)
+- Был сломан только MLL check — считал от startBalance вместо peakBalance
+- violationReason нигде не парсится — можно менять формат свободно
+
+### НЕ ДЕЛАЛИ (отложено)
+- P0.2.b Sync-prices cron infrastructure (новая задача в BACKLOG)
+- P0.2.c Equity-aware MLL upgrade (новая задача в BACKLOG)
+  - Цены в БД stale: 0 маркетов обновлены за 24ч, 313/501 > 7 дней
+  - Wave C невозможен пока цены не свежие
+  - Текущий Wave A безопасен на realizedBalance
+
+### Critical findings (для P0.2.b)
+- BUG: src/app/api/cron/sync/route.ts хардкодит fallback URL
+  "https://funded-forecast.vercel.app" — Vercel мёртв, sync падает
+- Нет sync-prices cron в Coolify Scheduled Tasks
+- Все 501 live маркетов имеют stale цены
+
+### Lessons learned
+- Claude Code предлагал неправильную формулу: drawdown = (peak-realized)/peak × 100
+  Это НЕ TFP-style. Правильно: maxLossAmount FIXED от startBalance
+- Architecture decision требует проверки данных до выбора (вариант B vs C решён
+  по результатам discovery)
+
+---
+
 ## Session 2026-05-12 — Session 10 — P0.1 Refundable Fee CLOSED
 
 ### Закрыто
