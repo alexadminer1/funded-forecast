@@ -9,6 +9,32 @@
 
 ---
 
+## Session 2026-05-12 (continued) — Session 11 — P0.3.b CLOSED
+
+### Закрыто
+- **P0.3.b Min Resolved Positions 35** (commits c29d578, 8363624, eb3842b, 9feda94, f6e0566)
+  - Schema: добавлено поле `Challenge.resolvedPositionsCount Int @default(0)`
+  - SQL миграция: `ALTER TABLE "Challenge" ADD COLUMN "resolvedPositionsCount" INTEGER NOT NULL DEFAULT 0` (без backfill — тестовые данные)
+  - Constants: новый файл `src/lib/engine/constants.ts` экспортирует `MIN_RESOLVED_POSITIONS = 35` (в P0.4 переедет в EngineSettings)
+  - Helper: новый файл `src/lib/challengeStatus.ts` — функция `checkAndMarkPassed(tx, challengeId)` для атомарной проверки passing-условий
+  - marketResolve.ts: инкремент `resolvedPositionsCount: { increment: 1 }` в challenge.update + вызов helper при `!drawdownViolated`
+  - sell/route.ts: третье условие в auto-pass — `&& activeChallenge.resolvedPositionsCount >= MIN_RESOLVED_POSITIONS` (помимо profitTargetMet + minTradingDays)
+  - Verify smoke: SELECT по Challenge возвращает новое поле, 5 active далеки от passing, prod стабилен
+
+### Замечания
+- Helper НЕ используется в sell-route — там сохранены побочные эффекты (autoPass flag, passMeta, auditLog `challenge_auto_passed`), которые helper не покрывает
+- Helper используется ТОЛЬКО в marketResolve — там passing может произойти без вызова sell endpoint (юзер ничего не продавал, market сам резолвится)
+- Race condition защита: `{ increment: 1 }` атомарный Prisma operator
+- Backfill отложен — все 10 challenges с `resolvedPositionsCount=0`, реальные данные будут с момента следующего market resolve
+
+### Инфраструктура disk cleanup (важно)
+- В процессе сессии VPS забился до 100% (Docker images накопились после 4 деплоев)
+- Удалено вручную 19 старых images + build cache → освобождено ~28 GB
+- Активный image на момент чистки: `s141eg1kymnmhed70b9jwu7a:3725eb8d`
+- TODO (отложено): автоматический cron для очистки images старше 7 дней
+
+---
+
 ## Session 2026-05-12 — Session 11 — P0.3.d CLOSED
 
 ### Закрыто

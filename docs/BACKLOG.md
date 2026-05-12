@@ -181,7 +181,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
   - Равномерные дни → pass consistency
 - Оценка: 12ч
 
-#### P0.3.b Min Resolved Positions 35
+#### P0.3.b Min Resolved Positions 35 ✓ CLOSED (Session 11, 2026-05-12)
 - Scope: для passing требуется ≥35 market-resolved positions (НЕ sold)
 - БД: Challenge.resolvedPositionsCount Int @default(0)
 - Логика:
