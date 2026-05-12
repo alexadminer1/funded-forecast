@@ -198,7 +198,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
   - 100 sold + 30 resolved → не passing
 - Оценка: 8ч
 
-#### P0.3.c Unique Events 30
+#### P0.3.c Unique Events 30 ✓ CLOSED (Session 12, 2026-05-12, commit ab092ac)
 - Scope: для passing требуется trade на ≥30 уникальных Polymarket events
 - БД:
   - Market: добавить polymarketEventId String?

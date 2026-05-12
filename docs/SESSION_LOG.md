@@ -9,6 +9,37 @@
 
 ---
 
+## Session 2026-05-12 (continued) — Session 12 — P0.3.c CLOSED
+
+### Закрыто
+- **P0.3.c Unique Events 30** (commit ab092ac)
+  - Schema: `Market.polymarketEventId String?` + `@@index([polymarketEventId])`; `Challenge.uniqueEventsCount Int @default(0)`
+  - SQL миграция (выполнена Алексеем в Coolify DB Terminal):
+    ```sql
+    ALTER TABLE "Market" ADD COLUMN IF NOT EXISTS "polymarketEventId" TEXT;
+    CREATE INDEX CONCURRENTLY IF NOT EXISTS "Market_polymarketEventId_idx" ON "Market" ("polymarketEventId");
+    ALTER TABLE "Challenge" ADD COLUMN IF NOT EXISTS "uniqueEventsCount" INTEGER NOT NULL DEFAULT 0;
+    ```
+  - Constants: `src/lib/engine/constants.ts` — добавлен `MIN_UNIQUE_EVENTS = 30` рядом с `MIN_RESOLVED_POSITIONS = 35`
+  - Helper `checkAndMarkPassed` расширен: 4-е условие `c.uniqueEventsCount < MIN_UNIQUE_EVENTS → return false`; поле добавлено в `select`
+  - `sell/route.ts` inline auto-pass расширен: 4-е условие `&& activeChallenge.uniqueEventsCount >= MIN_UNIQUE_EVENTS`
+  - `sync-markets/route.ts`: парсит `m.events[0]?.id ?? null` → `polymarketEventId`; `console.warn` при `events.length >= 2` с форматом `[sync-markets] market {id} has {N} events: [{ids}] — using first`
+  - `trade/buy/route.ts`: внутри `if (activeChallenge && challengeId)` после trading days counter — `findMany` всех positions, `Set` с fallback `market:${id}`, `challenge.update({ uniqueEventsCount })`
+  - Разведка (подшаги 2a/2a.5): топ-50 markets по volume24hr — 100% имеют ровно 1 event; поле `events[0].id` — строка типа `"435920"`
+
+### Verify результаты
+- 869/1098 live markets с `polymarketEventId IS NOT NULL` после первого sync cycle (79%)
+- Пример группировки: Brazil election markets `601819` + `601824` → один `polymarketEventId = 45915` (два market contract-а → один event)
+- 5 active challenges все с `uniqueEventsCount = 0` — никто не торговал после деплоя (ожидаемо)
+
+### Замечания
+- Backfill не делался — legacy positions (test6/7/8) без eventId; все три далеки от passing → не критично
+- `market:${id}` префикс в fallback защищает от коллизий если числовой `eventId` совпадёт с `market.id`
+- Multi-event `console.warn` начнут появляться в логах Coolify когда/если Polymarket будет возвращать рынки с `events.length >= 2`
+- 21% markets без `polymarketEventId` (229 markets) — выпавшие из top-1000 по volume24hr; заполнятся со временем при следующих sync-циклах
+
+---
+
 ## Session 2026-05-12 (continued) — Session 11 — P0.3.b CLOSED
 
 ### Закрыто
