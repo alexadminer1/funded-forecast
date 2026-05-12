@@ -104,10 +104,9 @@ export async function resolveMarketPositions(
             );
             const profitTargetMet = profitPct >= challenge.profitTargetPct;
 
-            const totalDrawdownPct = parseFloat(
-              (((challenge.startBalance - newRealizedBalance) / challenge.startBalance) * 100).toFixed(2)
-            );
-            const drawdownViolated = totalDrawdownPct >= challenge.maxTotalDdPct;
+            const maxLossAmount = challenge.startBalance * (challenge.maxTotalDdPct / 100);
+            const mll = newPeakBalance - maxLossAmount;
+            const drawdownViolated = newRealizedBalance < mll;
 
             await tx.challenge.update({
               where: { id: fresh.challengeId },
@@ -118,7 +117,7 @@ export async function resolveMarketPositions(
                 ...(drawdownViolated ? {
                   drawdownViolated: true,
                   status: "failed",
-                  violationReason: `Drawdown ${totalDrawdownPct}% after market resolve`,
+                  violationReason: `Max Loss hit: balance $${newRealizedBalance.toFixed(2)} below limit $${mll.toFixed(2)} (peak $${newPeakBalance.toFixed(2)})`,
                   endedAt: new Date(),
                 } : {}),
               },

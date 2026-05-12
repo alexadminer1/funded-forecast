@@ -200,14 +200,14 @@ export async function POST(req: NextRequest) {
         const newRealizedBalance = parseFloat((activeChallenge.realizedBalance - cost).toFixed(2));
         const newPeakBalance = Math.max(activeChallenge.peakBalance, newRealizedBalance);
 
-        const totalDrawdownPct = parseFloat(
-          (((activeChallenge.startBalance - newRealizedBalance) / activeChallenge.startBalance) * 100).toFixed(2)
-        );
+        const maxLossAmount = activeChallenge.startBalance * (activeChallenge.maxTotalDdPct / 100);
+        const mll = newPeakBalance - maxLossAmount;
+        const isFailed = newRealizedBalance < mll;
 
-        if (totalDrawdownPct >= activeChallenge.maxTotalDdPct) {
+        if (isFailed) {
           throw new DrawdownViolatedError(
             challengeId,
-            `Total drawdown ${totalDrawdownPct}% exceeded limit ${activeChallenge.maxTotalDdPct}%`
+            `Max Loss hit: balance $${newRealizedBalance.toFixed(2)} below limit $${mll.toFixed(2)} (peak $${newPeakBalance.toFixed(2)})`
           );
         }
 
