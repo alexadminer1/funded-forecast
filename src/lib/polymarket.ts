@@ -69,3 +69,52 @@ export function inferCategory(market: PolymarketMarket): string {
 
   return "other";
 }
+
+export interface PolymarketResolvedMarket {
+  id: string;
+  closed: boolean;
+  umaResolutionStatus: string | null;
+  outcomes: string;
+  outcomePrices: string;
+}
+
+export async function fetchMarketById(id: string): Promise<PolymarketResolvedMarket | null> {
+  try {
+    const res = await fetch(`${POLYMARKET_API}/markets/${id}`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return {
+      id: String(data.id),
+      closed: Boolean(data.closed),
+      umaResolutionStatus: data.umaResolutionStatus ?? null,
+      outcomes: data.outcomes ?? '[]',
+      outcomePrices: data.outcomePrices ?? '[]',
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function getWinningOutcome(market: PolymarketResolvedMarket): "yes" | "no" | null {
+  if (!market.closed) return null;
+  if (market.umaResolutionStatus !== "resolved") return null;
+
+  let prices: string[];
+  try {
+    prices = JSON.parse(market.outcomePrices);
+  } catch {
+    return null;
+  }
+
+  if (!Array.isArray(prices) || prices.length !== 2) return null;
+  const yesPrice = parseFloat(prices[0]);
+  const noPrice = parseFloat(prices[1]);
+
+  const TOLERANCE = 0.01;
+  if (Math.abs(yesPrice - 1) < TOLERANCE && Math.abs(noPrice) < TOLERANCE) return "yes";
+  if (Math.abs(yesPrice) < TOLERANCE && Math.abs(noPrice - 1) < TOLERANCE) return "no";
+
+  return null;
+}
