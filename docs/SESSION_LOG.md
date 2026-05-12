@@ -9,6 +9,39 @@
 
 ---
 
+## Session 2026-05-12 — Session 10 — P0.1 Refundable Fee CLOSED
+
+### Закрыто
+- P0.1 Refundable Fee removal (backend + БД + Admin, без текстов)
+  - БД: UPDATE "ChallengePlan" SET "refundableFeeCents" = 0 (3 plans)
+  - Backend: src/app/api/user/payout/route.ts — убран bonus calculation
+    (priorPaid query + refundableFeeCents → finalAmount = amount)
+  - Backend: src/app/api/admin/payouts/[id]/route.ts — убрана установка
+    refundableFeePaidAt при approve payout
+  - Frontend: src/app/admin/page.tsx — 7 точечных правок
+    (поле из emptyNew, startEdit, saveEdit, addPlan + 2 input-поля
+     из Edit/Add forms + Fee bonus из payouts list + grid 3→2 и 4→3)
+  - Commit: 841a536
+  - Coolify deploy: ✅ Success (5m 41s)
+  - Production test: Edit Plan ✓, New Plan ✓, Payouts list ✓
+
+### НЕ ТРОНУТО (deferred)
+- prisma/schema.prisma — поле refundableFeeCents остаётся
+- src/lib/payment/activation.ts — копирование оставлено (default 0 из БД)
+- src/app/api/admin/plans/route.ts + [id]/route.ts — API backward compatible
+- src/app/page.tsx — тексты "Refundable Fee" на лендинге (отложено)
+- DROP COLUMN миграция — через 7 дней после стабильной работы P0
+
+### Lessons learned
+- Claude Code изначально хотел делать больше (Prisma schema, activation.ts,
+  admin/plans API) — Архитектор скорректировал scope
+- В git add попали лишние файлы (.gitignore от прошлого коммита) —
+  Claude Code сделал git restore --staged, всё прошло чисто
+- БД UPDATE выполнен Алексеем вручную в Coolify DB Terminal (по правилу
+  CLAUDE.md — не через Claude Code)
+
+---
+
 ## Session 2026-05-11 (continuation 4) — P0.3.e Trading Days default 10→15
 
 ### Done

@@ -8,6 +8,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Decisions: ✓ получены от заказчика (см. ниже)
 - Open questions: 4 блокера → docs/OPEN_QUESTIONS_P0.md
 - Production readiness: requires P0 work (~17 дней)
+- 4 задачи закрыто (P0.3.e, P0.6, P0.10 drafts, P0.1)
 
 ---
 
@@ -42,6 +43,9 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 ## P0 — Production blockers
 
 ### P0.1 Refundable Fee — УБРАТЬ полностью
+- [x] CLOSED 2026-05-12 (commit 841a536) — backend + БД + Admin (без текстов)
+- [ ] Wave 4: тексты "Refundable Fee" на лендинге, FAQ, Risk, Terms
+- [ ] Deferred (after 7 days stable): DROP COLUMN refundableFeeCents
 - Scope: убрать поле + текст + логику bonus в payout
 - Файлы:
   - prisma migration: UPDATE refundableFeeCents=0 для всех Plans
