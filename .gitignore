@@ -51,3 +51,12 @@ prisma/schema.prisma.backup*
 *.save
 *.swp
 *.swo
+
+# IDE / agent dirs
+.cursor/
+.claude/
+
+# Local notes / backups
+*.local.md
+.env.save
+*.bak
