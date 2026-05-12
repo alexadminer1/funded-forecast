@@ -214,6 +214,7 @@ model Challenge {
   lastApprovedPayoutAt DateTime?
   startedAt            DateTime  @default(now())
   endedAt              DateTime?
+  lastNewPositionAt    DateTime?
 
   user           User            @relation(fields: [userId], references: [id])
   plan           ChallengePlan?  @relation(fields: [planId], references: [id])
