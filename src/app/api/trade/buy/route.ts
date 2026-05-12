@@ -171,6 +171,14 @@ export async function POST(req: NextRequest) {
             realizedPnl: 0,
           },
         });
+
+        // P0.3.d Inactivity Timer — reset on NEW position only (not on shares increment)
+        if (challengeId) {
+          await tx.challenge.update({
+            where: { id: challengeId },
+            data: { lastNewPositionAt: new Date() },
+          });
+        }
       }
 
       const trade = await tx.trade.create({
