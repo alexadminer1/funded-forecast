@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { verifyToken } from "@/lib/auth";
 import { sendEmail, buildBrandTemplate, buildKeyValueTable, escapeHtml } from "@/lib/email";
 import { computeEquity } from "@/lib/equity";
+import { MIN_RESOLVED_POSITIONS } from "@/lib/engine/constants";
 
 const MAX_SLIPPAGE = 0.02;
 
@@ -260,7 +261,11 @@ export async function POST(req: NextRequest) {
           },
         });
 
-        if (profitTargetMet && effectiveTradingDays >= activeChallenge.minTradingDays) {
+        if (
+            profitTargetMet
+            && effectiveTradingDays >= activeChallenge.minTradingDays
+            && activeChallenge.resolvedPositionsCount >= MIN_RESOLVED_POSITIONS
+          ) {
           autoPass = true;
           passMeta = {
             profitPct,
