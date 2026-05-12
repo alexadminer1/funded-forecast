@@ -8,7 +8,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Decisions: ✓ получены от заказчика (см. ниже)
 - Open questions: 4 блокера → docs/OPEN_QUESTIONS_P0.md
 - Production readiness: requires P0 work (~17 дней)
-- 5 задач закрыто (P0.3.e, P0.6, P0.10 drafts, P0.1, P0.2 Wave A)
+- 6 задач закрыто (P0.3.e, P0.6, P0.10 drafts, P0.1, P0.2 Wave A, P0.2.b)
 
 ---
 
@@ -71,6 +71,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Оценка: 6ч (выполнено)
 
 ### P0.2.b Sync-prices cron infrastructure
+- [x] CLOSED 2026-05-12 (commit 0f2ce7d) — cron */15, verified DB
 - Зависит от: ничего (изолированная задача)
 - Блокирует: P0.2.c
 - Scope:

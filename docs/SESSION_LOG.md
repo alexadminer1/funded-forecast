@@ -9,6 +9,39 @@
 
 ---
 
+## Session 2026-05-12 (continued) — Session 10 — P0.2.b CLOSED
+
+### Закрыто
+- P0.2.b Sync-prices cron infrastructure
+  - Bug fix: убран хардкод "https://funded-forecast.vercel.app"
+    в src/app/api/cron/sync/route.ts (2 места)
+  - Заменено на getBaseUrl() helper с throw if NEXT_PUBLIC_APP_URL missing
+  - Добавлена проверка ADMIN_API_KEY с throw (было ! non-null assertion)
+  - sync-prices fetch теперь захватывает response (раньше терялся)
+  - console.error при failure (раньше silent)
+  - Commit: 0f2ce7d
+  - Coolify deploy: ✅ Success
+  - Coolify Scheduled Task создан:
+    - Name: sync-prices
+    - Command: curl -fsS -H "Authorization: Bearer $CRON_SECRET"
+               https://tradepredictions.online/api/cron/sync
+    - Frequency: */15 * * * *
+    - Timeout: 300s
+  - Verify (Coolify Recent executions): 2 Success runs
+  - Verify (DB): MAX("lastSyncedAt")=2026-05-12 05:54:12,
+    128 markets synced last 5 minutes, 537 total live markets
+
+### Lessons learned
+- NEXT_PUBLIC_APP_URL был выставлен правильно в Coolify,
+  настоящая проблема была в отсутствии cron task (никто не вызывал endpoint)
+- Хардкод Vercel fallback — бомба замедленного действия (silent fail
+  если кто-то удалит env), убран ради diagnostics
+
+### Unblocked
+- P0.2.c Equity-aware MLL upgrade (требовал свежих цен)
+
+---
+
 ## Session 2026-05-12 (continued) — Session 10 — P0.2 Wave A CLOSED
 
 ### Закрыто
