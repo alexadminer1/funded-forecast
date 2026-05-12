@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { computeEquity } from "@/lib/equity";
+import { checkAndMarkPassed } from "@/lib/challengeStatus";
 
 export interface ResolveMarketResult {
   positionsProcessed: number;
@@ -129,6 +130,7 @@ export async function resolveMarketPositions(
                 peakBalance: newPeakBalance,
                 peakEquity: newPeakEquity,
                 profitTargetMet,
+                resolvedPositionsCount: { increment: 1 },
                 ...(drawdownViolated ? {
                   drawdownViolated: true,
                   status: "failed",
@@ -137,6 +139,11 @@ export async function resolveMarketPositions(
                 } : {}),
               },
             });
+
+              // P0.3.b — auto-pass check (only if not failed by drawdown)
+              if (!drawdownViolated) {
+                await checkAndMarkPassed(tx, fresh.challengeId);
+              }
           }
         }
 
