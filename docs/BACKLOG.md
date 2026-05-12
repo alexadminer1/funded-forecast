@@ -8,7 +8,8 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Decisions: ✓ получены от заказчика (см. ниже)
 - Open questions: 4 блокера → docs/OPEN_QUESTIONS_P0.md
 - Production readiness: requires P0 work (~17 дней)
-- 6 задач закрыто (P0.3.e, P0.6, P0.10 drafts, P0.1, P0.2 Wave A, P0.2.b)
+- 7 задач закрыто (P0.3.e, P0.6, P0.10 drafts, P0.1, P0.2 Wave A, P0.2.b, P0.2.c)
+- P0 production blockers: +2 новых (P0.2.d, P0.2.e)
 
 ---
 
@@ -87,6 +88,8 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Оценка: 2ч
 
 ### P0.2.c Equity-aware MLL upgrade (Wave C)
+- [x] CLOSED 2026-05-12 (commit 4b2b487) — equity check + peakEquity,
+      verified на test8 challenge id=17
 - Зависит от: P0.2.b (sync-prices работает стабильно)
 - Scope:
   - Заменить MLL check на equity-based
@@ -100,6 +103,42 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
   - src/app/api/trade/sell/route.ts
   - src/lib/marketResolve.ts
 - Оценка: 4-6ч
+
+### P0.2.d Sync coverage fix
+- Зависит от: ничего
+- Блокирует: production readiness (stale prices в БД)
+- Scope:
+  - В src/app/api/admin/sync-markets/route.ts: const limit = 30 → 100
+  - Альтернатива: в src/app/api/cron/sync/route.ts использовать nextOffset
+    из response для proper pagination до конца Polymarket feed
+  - Verify: после одного cron запуска SELECT COUNT(*) FROM "Market"
+    WHERE "lastSyncedAt" > NOW() - INTERVAL '20 minutes' AND status = 'live'
+    Должно быть > 50% от total live
+- Файлы:
+  - src/app/api/admin/sync-markets/route.ts (только limit)
+  - ИЛИ src/app/api/cron/sync/route.ts (pagination loop)
+- Оценка: 2ч
+
+### P0.2.e Stale market cleanup
+- Зависит от: ничего
+- Блокирует: production readiness (overdue маркеты остаются live)
+- Scope:
+  - Новый cron /api/cron/cleanup-stale-markets (или встроить в /api/cron/sync)
+  - Расписание: 0 * * * * (каждый час)
+  - Логика:
+    1. SELECT * FROM "Market" WHERE "endDate" < NOW() AND status = 'live'
+    2. Для каждого: попытаться get winningOutcome через Polymarket API
+       (separate endpoint /events/{id} или markets resolved feed)
+    3. Если есть outcome → status='resolved' + resolveMarketPositions(id, outcome)
+    4. Если нет outcome спустя 7 дней после endDate → status='expired',
+       все open positions → refund по avgPrice или forfeit (TBD)
+  - Edge case: positions на expired markets — что с ними?
+    → решение Архитектора при реализации
+- Файлы:
+  - src/app/api/cron/cleanup-stale-markets/route.ts (новый)
+  - src/lib/polymarket.ts (новый helper fetchResolvedMarket?)
+  - Coolify Scheduled Task (новый)
+- Оценка: 8ч
 
 ### P0.3 Недостающие challenge rules
 

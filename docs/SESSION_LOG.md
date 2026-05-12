@@ -9,6 +9,48 @@
 
 ---
 
+## Session 2026-05-12 (continued) — Session 10 — P0.2.c CLOSED + new findings
+
+### Закрыто
+- P0.2.c Equity-aware MLL upgrade (Wave C)
+  - Новый файл: src/lib/equity.ts (computeOpenPositionsValue + computeEquity)
+  - Schema: добавлено Challenge.peakEquity Float?
+  - SQL migration: ALTER TABLE + UPDATE backfill 5 active challenges
+  - 3 правки: src/app/api/trade/buy/route.ts, sell/route.ts, marketResolve.ts
+    - В каждом: isFailedByCash || isFailedByEquity
+    - violationReason: разный формат для cash-fail vs equity-fail
+    - peakEquity: MAX(peakEquity ?? peakBalance, equity)
+  - Commit: 4b2b487
+  - Coolify deploy: ✅ Success (после одного разового retry)
+  - БД миграция: ALTER + UPDATE выполнен Алексеем 12 мая
+  - Sanity test (test8 Starter, challenge id=17):
+    - Before buy: realizedBalance=1000, peakBalance=1000, peakEquity=1000
+    - After buy 75 sh @ 0.0652 (cost $4.89):
+      realizedBalance=995.11, peakBalance=1000, peakEquity=1000
+    - Formula verified: equity = 995.11 + 75×0.065 = 999.99 < 1000
+    - peakEquity stayed at 1000 (MAX(1000, 999.99))
+
+### Discovery findings (НЕ блокеры, новые задачи)
+- Coverage gap в sync-markets: limit=30, но cron шлёт offset += 100
+  → пропускаются индексы 30-100, 130-200, 230+
+  → 298/541 (55%) live маркетов stale > 7 дней
+- Stale market accumulation: 70 маркетов с endDate < NOW status='live'
+  → Polymarket их не возвращает в active feed, никогда не cleanup
+- Эти проблемы влияют на equity accuracy (Wave C считает на старых ценах
+  для маркетов, которые не sync'аются)
+
+### Создано в BACKLOG
+- P0.2.d Sync coverage fix
+- P0.2.e Stale market cleanup
+
+### Lessons learned
+- Wave A (cash-based MLL) — backstop check, остался работать после Wave C
+- На buy equity почти не меняется (cash↓ балансирует position value↑),
+  Wave C полезен в первую очередь в sell/marketResolve
+- Округление: cost $4.89 vs avgPrice 0.0652 × 75 = $4.89 (нет drift)
+
+---
+
 ## Session 2026-05-12 (continued) — Session 10 — P0.2.b CLOSED
 
 ### Закрыто
