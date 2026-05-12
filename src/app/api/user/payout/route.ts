@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
   const requests = await prisma.payoutRequest.findMany({
     where: { userId },
     orderBy: { requestedAt: "desc" },
-    select: { id: true, amount: true, netAmount: true, status: true, requestedAt: true, processedAt: true, paidAt: true, walletAddress: true, walletNetwork: true, txHash: true, currency: true, rejectionReason: true, baseAmountCents: true, refundableFeeBonusCents: true, finalAmountCents: true },
+    select: { id: true, amount: true, netAmount: true, status: true, requestedAt: true, processedAt: true, paidAt: true, walletAddress: true, walletNetwork: true, txHash: true, currency: true, rejectionReason: true, baseAmountCents: true, finalAmountCents: true },
   });
   return NextResponse.json({ success: true, requests });
 }
@@ -163,14 +163,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Payout already requested for this challenge" }, { status: 400 });
   }
 
-  // 5. Refundable fee bonus (only on first payout — no prior paid requests)
-  const priorPaid = await prisma.payoutRequest.findFirst({
-    where: { challengeId, status: "paid" },
-  });
-  const bonus = (priorPaid === null && challenge.refundableFeeCents != null)
-    ? challenge.refundableFeeCents / 100
-    : 0;
-  const finalAmount = round2(amount + bonus);
+  const finalAmount = amount;
 
   const maxPayoutAmount = baseAmount;
   const feePct = 0;
@@ -190,7 +183,6 @@ export async function POST(req: NextRequest) {
       walletNetwork: network,
       currency: "USDC",
       baseAmountCents: Math.round(amount * 100),
-      refundableFeeBonusCents: Math.round(bonus * 100),
       finalAmountCents: Math.round(finalAmount * 100),
     },
   });

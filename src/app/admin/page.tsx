@@ -693,7 +693,7 @@ function PlansSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestInit
     name: "", price: "", accountSize: "", profitTargetPct: "10", maxLossPct: "10",
     dailyLossPct: "5", maxPositionSizePct: "2", minTradingDays: "10", order: "0",
     profitSharePct: "80", challengePeriodDays: "30", maxPayoutCapDollars: "0",
-    minPayoutDollars: "50", payoutCooldownDays: "14", refundableFeeDollars: "0",
+    minPayoutDollars: "50", payoutCooldownDays: "14",
     isPopular: "false", isActive: "true",
   };
   const [newPlan, setNewPlan] = useState(emptyNew);
@@ -715,7 +715,6 @@ function PlansSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestInit
       maxPayoutCapDollars: p.maxPayoutCapCents > 0 ? p.maxPayoutCapCents / 100 : 0,
       minPayoutDollars: p.minPayoutCents > 0 ? p.minPayoutCents / 100 : 50,
       payoutCooldownDays: p.payoutCooldownDays ?? 14,
-      refundableFeeDollars: p.refundableFeeCents > 0 ? p.refundableFeeCents / 100 : 0,
     });
   }
 
@@ -739,7 +738,6 @@ function PlansSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestInit
         maxPayoutCapDollars: Number(editData.maxPayoutCapDollars),
         minPayoutDollars: Number(editData.minPayoutDollars),
         payoutCooldownDays: Number(editData.payoutCooldownDays),
-        refundableFeeDollars: Number(editData.refundableFeeDollars),
       }),
     });
     setSaving(false); setEditId(null); load();
@@ -768,7 +766,6 @@ function PlansSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestInit
         maxPayoutCapDollars: Number(newPlan.maxPayoutCapDollars),
         minPayoutDollars: Number(newPlan.minPayoutDollars),
         payoutCooldownDays: Number(newPlan.payoutCooldownDays),
-        refundableFeeDollars: Number(newPlan.refundableFeeDollars),
         isPopular: newPlan.isPopular === "true",
         isActive: newPlan.isActive === "true",
       }),
@@ -795,10 +792,9 @@ function PlansSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestInit
 
             <div style={{ marginBottom: 20 }}>
               <div style={groupTitleS}>Pricing</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div><label style={labelS}>Price ($)</label><input style={inpS} type="number" step="0.01" value={ed("price")} onChange={e => setEd("price", e.target.value)} /></div>
                 <div><label style={labelS}>Account size ($)</label><input style={inpS} type="number" value={ed("accountSize")} onChange={e => setEd("accountSize", e.target.value)} /></div>
-                <div><label style={labelS}>Refundable fee ($)</label><input style={inpS} type="number" step="0.01" value={ed("refundableFeeDollars")} onChange={e => setEd("refundableFeeDollars", e.target.value)} /></div>
               </div>
             </div>
 
@@ -861,11 +857,10 @@ function PlansSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestInit
 
           <div style={{ marginBottom: 14 }}>
             <div style={groupTitleS}>Pricing</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
               <div><label style={labelS}>Name</label><input style={inpS} value={newPlan.name} onChange={e => setNewPlan(p => ({ ...p, name: e.target.value }))} /></div>
               <div><label style={labelS}>Price ($)</label><input style={inpS} type="number" step="0.01" value={newPlan.price} onChange={e => setNewPlan(p => ({ ...p, price: e.target.value }))} /></div>
               <div><label style={labelS}>Account size ($)</label><input style={inpS} type="number" value={newPlan.accountSize} onChange={e => setNewPlan(p => ({ ...p, accountSize: e.target.value }))} /></div>
-              <div><label style={labelS}>Refundable fee ($)</label><input style={inpS} type="number" step="0.01" value={newPlan.refundableFeeDollars} onChange={e => setNewPlan(p => ({ ...p, refundableFeeDollars: e.target.value }))} /></div>
             </div>
           </div>
 
@@ -1427,7 +1422,6 @@ function PayoutsSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestIn
                 </div>
                 <div style={{ fontSize: 12, color: "#475569", display: "flex", gap: 16, flexWrap: "wrap" }}>
                   <span>Base: <span style={{ color: "#22C55E", fontWeight: 700 }}>${item.baseAmountCents != null ? (item.baseAmountCents / 100).toFixed(2) : item.amount}</span></span>
-                  {(item.refundableFeeBonusCents ?? 0) > 0 && <span>Fee bonus: <span style={{ color: "#F59E0B", fontWeight: 700 }}>+${(item.refundableFeeBonusCents / 100).toFixed(2)}</span> <span style={{ color: "#22C55E", fontSize: 10 }}>1st</span></span>}
                   <span>Final: <span style={{ color: "#F1F5F9", fontWeight: 700 }}>${item.finalAmountCents != null ? (item.finalAmountCents / 100).toFixed(2) : item.netAmount}</span></span>
                   <span>Network: <span style={{ color: "#94A3B8" }}>{item.walletNetwork}</span></span>
                   <span>Wallet: <span style={{ color: "#94A3B8", fontFamily: "monospace" }}>{item.walletAddress?.slice(0, 12)}...</span></span>

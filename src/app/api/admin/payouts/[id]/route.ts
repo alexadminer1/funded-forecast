@@ -101,9 +101,6 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (newStatus === "paid") {
     const now = new Date();
     const challengeUpdates: Record<string, unknown> = { lastApprovedPayoutAt: now };
-    if ((current.refundableFeeBonusCents ?? 0) > 0) {
-      challengeUpdates.refundableFeePaidAt = now;
-    }
     const [payout] = await prisma.$transaction([
       prisma.payoutRequest.update({ where: { id }, data }),
       prisma.challenge.update({ where: { id: current.challengeId }, data: challengeUpdates }),
