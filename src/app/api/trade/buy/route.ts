@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyToken } from "@/lib/auth";
+import { computeEquity } from "@/lib/equity";
 
 const MAX_SLIPPAGE = 0.02;
 const SANDBOX_MAX_POSITION_PCT = 2;
@@ -202,13 +203,22 @@ export async function POST(req: NextRequest) {
 
         const maxLossAmount = activeChallenge.startBalance * (activeChallenge.maxTotalDdPct / 100);
         const mll = newPeakBalance - maxLossAmount;
-        const isFailed = newRealizedBalance < mll;
+        const isFailedByCash = newRealizedBalance < mll;
+
+        // Wave C: equity-aware MLL check
+        const equity = parseFloat((await computeEquity(tx, challengeId, newRealizedBalance)).toFixed(2));
+        const currentPeakEquity = activeChallenge.peakEquity ?? activeChallenge.peakBalance;
+        const newPeakEquity = Math.max(currentPeakEquity, equity);
+        const equityMLL = newPeakEquity - maxLossAmount;
+        const isFailedByEquity = equity < equityMLL;
+
+        const isFailed = isFailedByCash || isFailedByEquity;
 
         if (isFailed) {
-          throw new DrawdownViolatedError(
-            challengeId,
-            `Max Loss hit: balance $${newRealizedBalance.toFixed(2)} below limit $${mll.toFixed(2)} (peak $${newPeakBalance.toFixed(2)})`
-          );
+          const reason = isFailedByEquity && !isFailedByCash
+            ? `Max Loss hit (equity): equity $${equity.toFixed(2)} below limit $${equityMLL.toFixed(2)} (peak equity $${newPeakEquity.toFixed(2)})`
+            : `Max Loss hit: balance $${newRealizedBalance.toFixed(2)} below limit $${mll.toFixed(2)} (peak $${newPeakBalance.toFixed(2)})`;
+          throw new DrawdownViolatedError(challengeId, reason);
         }
 
         // Daily drawdown check
@@ -227,7 +237,7 @@ export async function POST(req: NextRequest) {
 
         await tx.challenge.update({
           where: { id: challengeId },
-          data: { realizedBalance: newRealizedBalance, peakBalance: newPeakBalance },
+          data: { realizedBalance: newRealizedBalance, peakBalance: newPeakBalance, peakEquity: newPeakEquity },
         });
 
         // Counting trading days (race-safe via conditional update)

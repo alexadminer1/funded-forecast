@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { computeEquity } from "@/lib/equity";
 
 export interface ResolveMarketResult {
   positionsProcessed: number;
@@ -106,18 +107,32 @@ export async function resolveMarketPositions(
 
             const maxLossAmount = challenge.startBalance * (challenge.maxTotalDdPct / 100);
             const mll = newPeakBalance - maxLossAmount;
-            const drawdownViolated = newRealizedBalance < mll;
+            const isFailedByCash = newRealizedBalance < mll;
+
+            // Wave C: equity-aware MLL check
+            const equity = parseFloat((await computeEquity(tx, fresh.challengeId, newRealizedBalance)).toFixed(2));
+            const currentPeakEquity = challenge.peakEquity ?? challenge.peakBalance;
+            const newPeakEquity = Math.max(currentPeakEquity, equity);
+            const equityMLL = newPeakEquity - maxLossAmount;
+            const isFailedByEquity = equity < equityMLL;
+
+            const drawdownViolated = isFailedByCash || isFailedByEquity;
+
+            const violationReason = isFailedByEquity && !isFailedByCash
+              ? `Max Loss hit (equity): equity $${equity.toFixed(2)} below limit $${equityMLL.toFixed(2)} (peak equity $${newPeakEquity.toFixed(2)})`
+              : `Max Loss hit: balance $${newRealizedBalance.toFixed(2)} below limit $${mll.toFixed(2)} (peak $${newPeakBalance.toFixed(2)})`;
 
             await tx.challenge.update({
               where: { id: fresh.challengeId },
               data: {
                 realizedBalance: newRealizedBalance,
                 peakBalance: newPeakBalance,
+                peakEquity: newPeakEquity,
                 profitTargetMet,
                 ...(drawdownViolated ? {
                   drawdownViolated: true,
                   status: "failed",
-                  violationReason: `Max Loss hit: balance $${newRealizedBalance.toFixed(2)} below limit $${mll.toFixed(2)} (peak $${newPeakBalance.toFixed(2)})`,
+                  violationReason,
                   endedAt: new Date(),
                 } : {}),
               },
