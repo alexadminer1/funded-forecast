@@ -28,12 +28,18 @@ export async function POST(req: NextRequest) {
       const endDate = new Date(m.endDateIso);
       if (endDate < new Date()) { skipped++; continue; }
       const category = inferCategory(m);
+      const eventId = Array.isArray(m.events) && m.events.length > 0
+        ? (m.events[0]?.id ?? null)
+        : null;
+      if (Array.isArray(m.events) && m.events.length >= 2) {
+        console.warn(`[sync-markets] market ${m.id} has ${m.events.length} events: [${m.events.map(e => e.id).join(", ")}] — using first`);
+      }
       try {
         const existing = await prisma.market.findUnique({ where: { id: m.id } });
         if (existing) {
           await prisma.market.update({
             where: { id: m.id },
-            data: { yesPrice, noPrice, volume24h: m.volume24hr ?? 0, lastSyncedAt: new Date(), status: "live" },
+            data: { yesPrice, noPrice, volume24h: m.volume24hr ?? 0, lastSyncedAt: new Date(), status: "live", polymarketEventId: eventId },
           });
           updated++;
         } else {
@@ -49,6 +55,7 @@ export async function POST(req: NextRequest) {
               negRisk: m.negRisk ?? false,
               isRestricted: m.restricted ?? false,
               lastSyncedAt: new Date(),
+              polymarketEventId: eventId,
             },
           });
           created++;

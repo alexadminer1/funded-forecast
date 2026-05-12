@@ -6,3 +6,4 @@
  */
 
 export const MIN_RESOLVED_POSITIONS = 35;
+export const MIN_UNIQUE_EVENTS = 30;

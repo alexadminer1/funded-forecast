@@ -264,6 +264,20 @@ export async function POST(req: NextRequest) {
             lastTradingDay: todayUtcStart,
           },
         });
+
+        // P0.3.c: recalculate unique events count across all positions for this challenge.
+        // Fallback: market:${id} prefix prevents collisions between real eventIds and market ids.
+        const challengePositions = await tx.position.findMany({
+          where: { challengeId },
+          select: { market: { select: { id: true, polymarketEventId: true } } },
+        });
+        const uniqueEvents = new Set(
+          challengePositions.map(p => p.market.polymarketEventId ?? `market:${p.market.id}`)
+        ).size;
+        await tx.challenge.update({
+          where: { id: challengeId },
+          data: { uniqueEventsCount: uniqueEvents },
+        });
       }
 
       await tx.user.update({ where: { id: userId }, data: { lastTradeAt: new Date() } });

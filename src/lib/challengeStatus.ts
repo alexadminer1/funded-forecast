@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import { MIN_RESOLVED_POSITIONS } from "@/lib/engine/constants";
+import { MIN_RESOLVED_POSITIONS, MIN_UNIQUE_EVENTS } from "@/lib/engine/constants";
 
 /**
  * P0.3.b — Check passing conditions and mark challenge as passed if all met.
@@ -33,6 +33,7 @@ export async function checkAndMarkPassed(
       tradingDaysCount: true,
       minTradingDays: true,
       resolvedPositionsCount: true,
+      uniqueEventsCount: true,
     },
   });
 
@@ -41,6 +42,7 @@ export async function checkAndMarkPassed(
   if (!c.profitTargetMet) return false;
   if (c.tradingDaysCount < c.minTradingDays) return false;
   if (c.resolvedPositionsCount < MIN_RESOLVED_POSITIONS) return false;
+  if (c.uniqueEventsCount < MIN_UNIQUE_EVENTS) return false;
 
   await tx.challenge.update({
     where: { id: challengeId },

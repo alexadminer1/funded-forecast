@@ -15,6 +15,7 @@ export interface PolymarketMarket {
   bestBid: number;
   bestAsk: number;
   events: Array<{
+    id?: string;
     title: string;
   }>;
 }

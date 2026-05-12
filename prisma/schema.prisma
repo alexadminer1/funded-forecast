@@ -76,6 +76,7 @@ model Market {
   resolvedExternalAt DateTime?
   lastSyncedAt       DateTime
   createdAt          DateTime  @default(now())
+  polymarketEventId  String?
 
   trades    Trade[]
   positions Position[]
@@ -83,6 +84,7 @@ model Market {
   @@index([status])
   @@index([status, negRisk])
   @@index([endDate])
+  @@index([polymarketEventId])
 }
 
 model Trade {
@@ -214,8 +216,9 @@ model Challenge {
   lastApprovedPayoutAt DateTime?
   startedAt            DateTime  @default(now())
   endedAt              DateTime?
-  lastNewPositionAt    DateTime?
+  lastNewPositionAt      DateTime?
   resolvedPositionsCount Int     @default(0)
+  uniqueEventsCount      Int     @default(0)
 
   user           User            @relation(fields: [userId], references: [id])
   plan           ChallengePlan?  @relation(fields: [planId], references: [id])
