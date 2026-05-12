@@ -191,6 +191,7 @@ model Challenge {
   startBalance         Float     @default(10000)
   realizedBalance      Float
   peakBalance          Float
+  peakEquity           Float?
   profitTargetPct      Float
   maxDailyDdPct        Float
   maxTotalDdPct        Float
