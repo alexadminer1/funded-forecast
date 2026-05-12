@@ -141,6 +141,7 @@ export async function activatePayment(paymentId: string): Promise<ActivationResu
           payoutCapCents: plan.maxPayoutCapCents > 0 ? plan.maxPayoutCapCents : null,
           expiresAt,
           startedAt: now,
+          lastNewPositionAt: now,
         },
       });
 
