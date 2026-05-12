@@ -9,6 +9,43 @@
 
 ---
 
+## Session 2026-05-12 (continued) — Session 10 — P0.2.d CLOSED
+
+### Закрыто
+- P0.2.d Sync coverage fix
+  - src/app/api/admin/sync-markets/route.ts:
+    - limit: 30 → 100 (совпадает с cron шагом)
+    - response: added hasMore flag (markets.length === limit)
+  - src/app/api/cron/sync/route.ts:
+    - maxDuration: 30 → 60s
+    - paginate offset < MAX_OFFSET (1000) с early break по hasMore===false
+    - summary counters: iterations, totalCreated, totalUpdated, totalSkipped
+  - Commit: 0f52644
+  - Coolify deploy: ✅ Success (Manual redeploy — webhook упал второй раз
+    подряд за день, обе разово, без pattern в коде)
+  - Execute Now verify:
+    - iterations: 10, totalCreated: 522, totalUpdated: 322, totalSkipped: 156
+    - hasMore: true на всех 10 → Polymarket feed > 1000 active markets
+  - БД coverage verify:
+    - До: 145 fresh_1h из 541 total live (27%)
+    - После: 840 fresh_1h из 1072 total live (78%)
+    - just_synced (за 5 мин): 0 → 837
+
+### Что осталось stale (НЕ блокер P0.2.d)
+- 201 markets в БД с status='live' но lastSyncedAt > 7 дней
+- Причина: эти маркеты выпали из top-1000 по volume24hr на Polymarket
+- Решение: P0.2.e Stale market cleanup (уже в backlog)
+
+### Lessons learned
+- Coolify webhook auto-deploy — упал 2 раза подряд за день (07:31 и 07:35),
+  manual redeploy всегда чистый. Не блокер, но trend для monitoring
+- maxDuration на Next.js cron endpoint: дефолт 30s, увеличили до 60s;
+  фактическое время выполнения ~30 секунд (10 fetch к Polymarket + DB upserts)
+- hasMore flag в API response — простой и надёжный stop condition
+  когда API не имеет has_more/total_count
+
+---
+
 ## Session 2026-05-12 (continued) — Session 10 — P0.2.c CLOSED + new findings
 
 ### Закрыто

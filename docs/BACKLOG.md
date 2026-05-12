@@ -8,7 +8,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Decisions: ✓ получены от заказчика (см. ниже)
 - Open questions: 4 блокера → docs/OPEN_QUESTIONS_P0.md
 - Production readiness: requires P0 work (~17 дней)
-- 7 задач закрыто (P0.3.e, P0.6, P0.10 drafts, P0.1, P0.2 Wave A, P0.2.b, P0.2.c)
+- 8 задач закрыто (P0.3.e, P0.6, P0.10 drafts, P0.1, P0.2 Wave A, P0.2.b, P0.2.c, P0.2.d)
 - P0 production blockers: +2 новых (P0.2.d, P0.2.e)
 
 ---
@@ -105,6 +105,8 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Оценка: 4-6ч
 
 ### P0.2.d Sync coverage fix
+- [x] CLOSED 2026-05-12 (commit 0f52644) — verified coverage 27% → 78%,
+      10 iterations × 100 markets
 - Зависит от: ничего
 - Блокирует: production readiness (stale prices в БД)
 - Scope:
