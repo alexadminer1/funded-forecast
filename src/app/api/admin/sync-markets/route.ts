@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const offset = parseInt(body.offset ?? 0);
-    const limit = 30;
+    const limit = 100;  // P0.2.d: было 30, теперь 100 — совпадает с cron шагом offset
     const markets = await fetchActiveMarkets(limit, offset);
     let created = 0;
     let updated = 0;
@@ -55,7 +55,14 @@ export async function POST(req: NextRequest) {
         }
       } catch { skipped++; }
     }
-    return NextResponse.json({ success: true, total: markets.length, created, updated, skipped, offset, nextOffset: offset + limit });
+    return NextResponse.json({
+      success: true,
+      total: markets.length,
+      created, updated, skipped,
+      offset,
+      nextOffset: offset + limit,
+      hasMore: markets.length === limit   // P0.2.d: stop condition signal для cron
+    });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
