@@ -13,8 +13,7 @@
   где разрешён русский) — **английский**.
 - **Если Claude Code в чём-то не уверен** — спрашивает **Архитектора** (Claude в
   отдельном чате), НЕ Алексея. Алексей и Архитектор всё решают вместе перед
-  тем как задача попадает в Claude Code. Алексею задавать только вопросы вида
-  "запустить эту команду?" / "применить этот diff?", не вопросы по логике.
+  тем как задача попадает в Claude Code.
 
 ---
 
@@ -22,10 +21,8 @@
 
 - **Repo:** `github.com/alexadminer1/funded-forecast`
 - **Stack:** Next.js 16 + Prisma 5.22 + PostgreSQL 17 + TypeScript
-- **Production:** `tradepredictions.online` (Hetzner CX23, Helsinki)
-- **Sandbox БД:** PostgreSQL 17 внутри Coolify-контейнера
 - **Working directory:** `~/funded-app`
-- **Payments:** on-chain USDC, Base Sepolia (sandbox) → Base Mainnet (planned)
+- **Payments:** on-chain USDC, Base Sepolia (sandbox) -> Base Mainnet (planned)
 
 ### Что за проект
 
@@ -42,82 +39,199 @@ funded status → request payouts через on-chain USDC transfer.
 
 ---
 
-## 3. Сервисы — что используем
+## 3. Environments — Production vs Development
 
-| Сервис | Назначение |
-|---|---|
-| Hetzner CX23 | VPS (Helsinki) — единственный production-сервер |
-| Coolify | Deploys, cron jobs, DB Terminal, GUI на coolify.tradepredictions.online |
-| GitHub | Repo + source of truth |
-| PostgreSQL 17 | БД, живёт внутри Coolify-контейнера |
-| Resend | Транзакционная почта (`RESEND_API_KEY` в Coolify env) |
-| Alchemy | Base RPC + USDC watcher (`ALCHEMY_API_KEY`) |
-| Upstash Redis | Rate limiting через proxy.ts |
-| Backblaze B2 | Backups (статус: финальный выбор отложен — OPEN_QUESTIONS_P0.md #4) |
-| Sumsub | KYC, Web SDK (планируется в P1) |
-| MaxMind GeoLite2-City | Geo-block (статус отложен) |
+**Critical: два полностью изолированных окружения. НЕ путать.**
 
-### Сервисы которые НЕ используем
+### Production (НЕ ТРОГАТЬ без явного approval)
 
-- **Supabase** — локальный `.env` исторически смотрит на Supabase, но это НЕ
-  sandbox-БД. Не пушить туда схему, не считать живой.
-- **Vercel** — забыли, не используем.
-- **Stripe** — нет, только on-chain USDC.
-- **NowPayments** — удалён 2026-05-06.
+- App container: `ff-prod-app`
+- Postgres container: `ff-sandbox-db` (hostname: `n6a214z1jmhhlogwdf4pllxj`)
+- Domain: https://tradepredictions.online
+- Branch: `main`
+- Chain: Base Sepolia (sandbox stage), CHAIN_ID=84532
 
-### Главное правило по инфраструктуре
+### Development (рабочее окружение для Claude Code)
 
-**Только наш собственный сервер.** Все данные, БД, бэкапы, cron, deploys —
-на Hetzner через Coolify. Никаких managed-БД, никаких external hosted services
-для основной логики.
+- App container: `app-dev` (hostname: `wlugzzo3b2482ji68l6r3zcv-045726055218`)
+- Postgres container: `postgres-dev` (hostname: `ku2yqi907qdi78bk3xb5zy3p`)
+- Domain: https://dev.tradepredictions.online
+- Branch: `develop`
+- Database name: `fundedforecast` (внутри postgres-dev)
 
-### Запрещённые сервисы
+### Важно про данные
 
-**Российские товары, услуги, компании — никогда** (хостинг, CDN, библиотеки,
-шрифты, аналитика). Если возникает вопрос "взять Yandex/VK/Mail.ru что-то" —
-ответ нет, искать альтернативу.
+- БД `postgres-dev` содержит копию прод-данных (dump 2026-05-13)
+- Env-переменные в `app-dev` сейчас идентичны проду (Resend, Alchemy, JWT_SECRET и т.д.)
+- Это временное решение пока прод в sandbox-режиме
+- Перед выходом в боевой режим — разделить secrets (см. P1 task в BACKLOG)
 
 ---
 
-## 4. Что Claude Code может делать сам (auto-actions OK)
+## 4. Git workflow
 
-- Читать любой файл в `~/funded-app/`
-- Создавать, редактировать, удалять файлы в `src/`, `prisma/`, `scripts/`, `docs/`
-- `git add` + `git commit` + `git push` после завершения задачи
-- `npm install` новых пакетов (если задача требует)
-- Запускать `npm run build`, `npm run lint`, `npx tsc --noEmit` для проверки
-- Запускать `npx prisma generate` (только client, не schema!)
+### Branches
+
+- `main` — production. Защищён branch protection rules. Прямой push ЗАПРЕЩЁН.
+- `develop` — рабочая ветка для активной разработки. Все изменения идут сюда.
+- `feature/*` — опционально для длинных задач (>1 день), мерджатся в `develop`.
+
+### Стандартный цикл задачи
+
+1. Убедиться что находимся в develop: `git checkout develop && git pull`
+2. Внести изменения
+3. `git diff` (показать Алексею перед коммитом)
+4. Дождаться подтверждения
+5. `git add . && git commit -m "..." && git push origin develop`
+6. Coolify подхватывает push в develop → auto-deploy в app-dev
+7. Тест на https://dev.tradepredictions.online
+
+### Production release: develop → main
+
+Только Алексей выполняет этот процесс. Claude Code НЕ создаёт PR в main самостоятельно.
+
+1. Develop стабилен и протестирован на dev.tradepredictions.online
+2. Алексей создаёт PR develop → main на GitHub
+3. PR review (Алексей approve себя)
+4. Merge (strategy: Merge commit, не squash — сохраняем историю)
+5. Push в main НЕ триггерит auto-deploy (webhook выключен)
+6. Алексей вручную нажимает Deploy в Coolify для ff-prod-app
+7. Перед deploy — пройти PROD_RELEASE_CHECKLIST.md
 
 ### Стиль коммитов
 
-```
-feat [P0.X] short description
-fix [DXX] description
-docs short description
-refactor [area] description
-```
+- `feat [P0.X] short description`
+- `fix [DXX] description`
+- `docs short description`
+- `refactor [area] description`
+- `chore [scope] description`
 
-Тело commit message — английский, можно многострочное. Использовать heredoc через
-`git commit -m "..." -m "..."` или `-F` файл.
+Тело commit message — английский, можно многострочное.
 
 ---
 
-## 5. Что Claude Code НЕ делает без явного ОК (Архитектор → Алексей)
+## 5. SSH access и работа на VPS
+
+### Подключение
+
+- User: `claude`
+- Auth: ed25519 key-based only (passwordless disabled)
+- Alias на ноутбуке Алексея: `ssh ff-dev`
+- Group: `docker` (доступ к docker daemon)
+
+### Container access policy
+
+**READ-ONLY operations — разрешены на ВСЕХ контейнерах (включая prod):**
+- `docker logs <container>` — диагностика, сравнение dev vs prod
+- `docker ps`, `docker inspect`, `docker stats`
+- `docker exec ... cat /path/file` (без write)
+
+**WRITE operations — ТОЛЬКО на dev-контейнерах:**
+- `docker exec` с modification (npm install, edit file, run script)
+- `docker restart`, `docker stop`, `docker rm`
+- `psql` с DML/DDL операциями
+
+### Whitelist для WRITE
+
+Разрешены ТОЛЬКО:
+- `wlugzzo3b2482ji68l6r3zcv-*` (app-dev и его варианты)
+- `ku2yqi907qdi78bk3xb5zy3p` (postgres-dev)
+
+ЗАПРЕЩЕНО WRITE:
+- `ff-prod-app` (production app)
+- `n6a214z1jmhhlogwdf4pllxj` (production database)
+- Любые системные контейнеры Coolify
+
+### Bash helpers (настроены на VPS для пользователя claude)
+
+- `dev-logs <service>` — логи только dev-контейнеров
+- `dev-exec <cmd>` — exec только в dev-app
+- `dev-psql` — psql на postgres-dev
+- `prod-*` — намеренно отсутствуют
+
+### Sudo restrictions
+
+`/etc/sudoers.d/claude-restrictions` блокирует для пользователя claude:
+- `docker stop/rm/exec` на `ff-prod-*`
+- Изменение `/etc/coolify` и `/var/lib/docker/volumes/ff-prod-*`
+
+---
+
+## 6. GitHub App @claude workflow
+
+GitHub App `@claude` установлен на репо `funded-forecast`. Permissions:
+read+write для issues, PRs, code, workflows.
+
+### Как использовать
+
+- Алексей или Архитектор создают issue с описанием задачи
+- В комментарии issue или PR упомянуть `@claude` с инструкцией
+- Claude Code работает по @claude-mentions автономно
+- Все изменения идут в `develop` (НЕ в main)
+
+### Что НЕ может делать @claude автономно
+
+- Создавать PR в `main` (только Алексей вручную)
+- Деплоить в production (Coolify Deploy кнопка — только Алексей)
+- Изменять `.env` или Coolify env vars (всегда обсуждается с Архитектором)
+- Удалять данные в production БД (даже через миграции)
+
+---
+
+## 7. Сервисы — что используем
+
+- Hetzner CX23 — VPS (Helsinki) — единственный production-сервер
+- Coolify — Deploys, cron jobs, DB Terminal, GUI на coolify.tradepredictions.online
+- GitHub — Repo + source of truth
+- PostgreSQL 17 — БД (отдельный контейнер на dev и prod)
+- Resend — Транзакционная почта
+- Alchemy — Base RPC + USDC watcher
+- Upstash Redis — Rate limiting через proxy.ts
+- Backblaze B2 — Backups (статус: финальный выбор отложен)
+- Sumsub — KYC, Web SDK (планируется в P1)
+- MaxMind GeoLite2-City — Geo-block (статус отложен)
+
+### Сервисы которые НЕ используем
+
+- Supabase — старый `.env` может смотреть на Supabase, игнорируем
+- Vercel — забыли, не используем
+- Stripe — нет, только on-chain USDC
+- NowPayments — удалён 2026-05-06
+
+### Запрещённые сервисы
+
+Российские товары, услуги, компании — никогда (хостинг, CDN, библиотеки, шрифты, аналитика).
+
+---
+
+## 8. Что Claude Code может делать сам (auto-actions OK)
+
+- Читать любой файл в `~/funded-app/`
+- Создавать, редактировать, удалять файлы в `src/`, `prisma/`, `scripts/`, `docs/`
+- `git add` + `git commit` + `git push origin develop` после завершения задачи
+- `npm install` новых пакетов (если задача требует)
+- Запускать `npm run build`, `npm run lint`, `npx tsc --noEmit` для проверки
+- Запускать `npx prisma generate` (только client, не schema!)
+- SSH в `ff-dev`, работа в dev-контейнерах
+- Чтение логов prod-контейнеров (диагностика)
+
+---
+
+## 9. Что Claude Code НЕ делает без явного OK
 
 ### Database changes
 
-- **ALTER TABLE / UPDATE через psql** — только Алексей сам в Coolify DB Terminal.
-  Claude Code может **готовить SQL** и показывать его, но не выполнять.
-- **`npx prisma db push`** локально — БЕСПОЛЕЗНО (`.env` смотрит на Supabase,
-  не на sandbox). Schema sync с sandbox БД происходит при deploy на Coolify.
-- **`npx prisma migrate dev`** — НИКОГДА. Жёсткий запрет. Только `db push`,
-  и только через Coolify-контейнер при необходимости.
+- ALTER TABLE / UPDATE через psql на ПРОДЕ — только Алексей вручную в Coolify DB Terminal
+- ALTER TABLE / UPDATE на DEV — Claude Code может выполнять напрямую через `dev-psql`, но сначала показывает SQL Алексею
+- `npx prisma migrate dev` — НИКОГДА. Жёсткий запрет. Только `db push` на dev, и ручной SQL на prod.
 
 ### Infrastructure / deploys
 
 - Изменения в `.env` или Coolify env vars — только Алексей через Coolify GUI
 - Touch к cron расписаниям — обсуждать
 - Изменения в `Dockerfile`, `package.json` engines/scripts — обсуждать
+- Создание PR в `main` — только Алексей
+- Deploy кнопка в Coolify для prod — только Алексей
 
 ### File system
 
@@ -127,128 +241,74 @@ refactor [area] description
 
 ### Code
 
-- **Не менять названия шорткодов** при обновлении кода (legacy WordPress habit
-  у Алексея, но правило универсальное — не переименовывать публичные API без
-  явной задачи на это).
-- Если задача предполагает менять backend API endpoint — проверить кто его
-  вызывает на фронте, обсудить миграцию.
+- Не переименовывать публичные API без явной задачи
+- Если задача меняет backend API endpoint — проверить кто его вызывает на фронте
 
 ---
 
-## 6. Git workflow
-
-### Стандартный цикл задачи
-
-```
-1. Внести изменения
-2. git diff (показать Алексею перед коммитом)
-3. Дождаться подтверждения
-4. git add . && git commit -m "..." && git push
-5. Coolify подхватывает push в main → auto-deploy
-```
-
-### Правила
-
-- Один логический change = один коммит (не накапливать)
-- Перед коммитом ВСЕГДА `git diff` или `git diff --cached` показать Алексею
-- `.env` никогда не коммитить — проверять перед `git add .` (gitignore это
-  уже покрывает, но контролировать)
-- При failed build на Coolify — показать ошибку, исправить до следующего шага
-
-### Branches
-
-- Работа в `main`. Feature branches — только если задача длинная (>1 день) и
-  Архитектор явно их запросил.
-
----
-
-## 7. Prisma rules
+## 10. Prisma rules
 
 ### Команды
 
-| Можно | Нельзя |
-|---|---|
-| `npx prisma generate` (client) | `npx prisma migrate dev` (ломает sync) |
-| Редактировать `prisma/schema.prisma` | `npx prisma db push` локально (не та БД) |
-| Запускать SQL через Coolify DB Terminal (Алексей) | `npx prisma migrate deploy` без явной задачи |
+Можно:
+- `npx prisma generate` (client)
+- Редактировать `prisma/schema.prisma`
+- `npx prisma db push` на dev (через dev-exec)
+- Ручной SQL через `dev-psql` на dev
 
-### Schema sync
+Нельзя:
+- `npx prisma migrate dev` (ломает sync)
+- `npx prisma migrate deploy` без явной задачи
+- `db push` напрямую на prod — только через Алексея
+- Ручной SQL на prod — только Алексей
+
+### Schema sync workflow
 
 После изменения `schema.prisma`:
-1. Закоммитить + запушить
-2. Coolify передеплоит (build генерирует client)
-3. Если изменения в БД нужны (ALTER) — Алексей выполняет SQL вручную в
-   Coolify DB Terminal (Архитектор готовит SQL)
+1. Коммит в `develop`
+2. Push → Coolify передеплоит `app-dev` (build генерирует client)
+3. Если нужны изменения в dev БД — выполнить ALTER через `dev-psql`
+4. Тест на dev.tradepredictions.online
+5. Когда стабильно → PR develop → main → merge → Алексей вручную выполняет ALTER на prod БД → Алексей вручную нажимает Deploy
 
 ---
 
-## 8. Документация (`docs/` в проекте)
+## 11. Документация (`docs/` в проекте)
 
 Файлы — источник правды. Читать в начале каждой сессии:
 
-| Файл | Содержание |
-|---|---|
-| `docs/BACKLOG.md` | Все задачи P0/P1/P2/P3 со статусом, оценками, файлами |
-| `docs/MIGRATION_PLAN_P0.md` | 6 Wave порядка работ + rollback strategy |
-| `docs/WALLET_MODEL.md` | APPROVED архитектура wallet isolation (P1.0) |
-| `docs/SESSION_LOG.md` | Журнал предыдущих сессий, что и когда сделано |
-| `docs/OPEN_QUESTIONS_P0.md` | Вопросы заказчику (текущий статус — DEFERRED) |
-| `CLAUDE.md` | (этот файл) — правила работы |
+- `docs/BACKLOG.md` — Все задачи P0/P1/P2/P3 со статусом, оценками, файлами
+- `docs/MIGRATION_PLAN_P0.md` — 6 Wave порядка работ + rollback strategy
+- `docs/WALLET_MODEL.md` — APPROVED архитектура wallet isolation (P1.0)
+- `docs/SESSION_LOG.md` — Журнал предыдущих сессий, что и когда сделано
+- `docs/OPEN_QUESTIONS_P0.md` — Вопросы заказчику (текущий статус — DEFERRED)
+- `docs/PROD_RELEASE_CHECKLIST.md` — Чеклист перед деплоем develop → main
+- `CLAUDE.md` — (этот файл) — правила работы
 
 ### При завершении задачи
 
 - Обновить `docs/SESSION_LOG.md` записью о сделанном
 - Если задача из BACKLOG — пометить статус (✓ DONE / partial)
-- Если найдена новая задача — НЕ добавлять в BACKLOG самостоятельно,
-  предложить Архитектору сначала
+- Если найдена новая задача — НЕ добавлять в BACKLOG самостоятельно, предложить Архитектору сначала
 
 ---
 
-## 9. Среды и окружения
+## 12. Когда не уверен — последовательность действий
 
-### Sandbox (текущая)
-
-- URL: `https://tradepredictions.online`
-- Chain: Base Sepolia (`CHAIN_ID=84532`)
-- БД: PostgreSQL 17 в Coolify
-- Тестовые цены планов: $1.00 / $1.95 / $3.00
-
-### Production (планируется)
-
-- Тот же URL
-- Chain: Base Mainnet (`CHAIN_ID=8453`)
-- Боевые цены: $39.99 / $99.99 / $199.99 (решение в Wave 6, P0.9)
-- Переключение — отдельная sign-off задача
+1. Прочитать релевантный файл в `docs/`
+2. Прочитать SESSION_LOG — возможно эта задача уже решалась раньше
+3. Если ответа нет — спросить Архитектора (через Алексея)
+4. НЕ делать догадок в логике / архитектуре / БД схеме
+5. НЕ переписывать чужой код "красивее" если задача этого не требует
 
 ---
 
-## 10. Когда не уверен — последовательность действий
+## 13. Session continuity
 
-1. **Прочитать релевантный файл в `docs/`** (BACKLOG, MIGRATION_PLAN, WALLET_MODEL)
-2. **Прочитать SESSION_LOG** — возможно эта задача уже решалась раньше
-3. **Если ответа нет — спросить Архитектора** (через Алексея, который перенесёт
-   вопрос в свой чат с Архитектором)
-4. **НЕ делать догадок** в логике / архитектуре / БД схеме
-5. **НЕ переписывать чужой код "красивее"** если задача этого не требует
-
-### Что разрешено делать самостоятельно при неполной задаче
-
-- Уточняющие вопросы по форматированию вывода
-- Уточнения по именам файлов / директорий
-- Выбор между двумя equivalent способами реализации (например, `sed` vs python
-  heredoc для текстовой замены) — выбрать тот что надёжнее
+- Claude Code иногда делает compact (сжатие истории). После compact теряется контекст BACKLOG и текущей задачи.
+- После compact: заново прочесть `CLAUDE.md` + `docs/SESSION_LOG.md` (последние 3-5 записей).
+- Не импровизировать списки задач, имена полей, типы, тексты.
 
 ---
 
-## 11. Important: Session continuity
-
-- Claude Code иногда делает **compact** (сжатие истории). После compact теряется
-  контекст BACKLOG и текущей задачи.
-- **После compact:** заново прочесть `CLAUDE.md` + `docs/SESSION_LOG.md` (последние
-  3-5 записей) + текущий контекст от Архитектора через Алексея.
-- **Не импровизировать** списки задач, имена полей, типы, тексты. Если что-то
-  выглядит знакомо — проверить в `docs/`, не доверять памяти.
-
----
-
-Last updated: 2026-05-11 (Session 9, после P0.6 / P0.10 DRAFTS / P0.12 в backlog)
+Last updated: 2026-05-13 (Session 12 — dev environment setup)

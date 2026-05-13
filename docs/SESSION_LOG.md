@@ -9,6 +9,74 @@
 
 ---
 
+## Session 2026-05-13 — Session 12 — Dev Environment Setup
+
+### Закрыто
+- **Setup dev environment** — полноценное изолированное окружение для безопасной автономной работы Claude Code
+
+### Что сделано (Алексеем + DevOps-чатом)
+
+#### GitHub branching
+- Создана ветка `develop` (синхронна с main на момент создания)
+- Прод-релизы теперь идут через PR `develop → main` (ручная сверка, ручной merge)
+- Все feature-ветки и Claude Code commits идут в `develop`
+
+#### Coolify infrastructure
+- Новое приложение `app-dev` (ветка develop, auto-deploy включён)
+- Новая БД `postgres-dev` (PostgreSQL 17-alpine, отдельный контейнер)
+- Hostname контейнеров:
+  - app-dev: `wlugzzo3b2482ji68l6r3zcv-045726055218`
+  - postgres-dev: `ku2yqi907qdi78bk3xb5zy3p`
+- Прод-БД переименована: `nameless` → `ff-sandbox-db` (hostname без изменений: `n6a214z1jmhhlogwdf4pllxj`)
+- Прод-app: `ff-prod-app` (без изменений)
+
+#### Domains
+- Production: `tradepredictions.online` (без изменений)
+- Development: `dev.tradepredictions.online` (новый, HTTPS via Let's Encrypt)
+
+#### Data
+- БД `postgres-dev` содержит копию прод-данных (dump через pg_dump 2026-05-13)
+- Имя БД внутри Postgres: `fundedforecast` (как на проде)
+- DATABASE_URL в app-dev указывает на postgres-dev (не на ff-sandbox-db) — подтверждено логом `prisma db push`
+
+#### SSH access
+- Создан пользователь `claude` (UID 1000, группа docker)
+- На ноутбуке Алексея настроен alias `ssh ff-dev`
+- Auth: ed25519 key-based only
+- Claude Code может: читать логи, exec в контейнеры, запускать docker команды
+
+#### GitHub App @claude
+- Установлен на репо funded-forecast
+- Permissions: read+write для issues, PRs, code, workflows
+- Работает по @claude-mentions в issues и PRs
+
+### Решения Архитектора (по 6 вопросам Q1-Q6)
+
+- **Q1 DATABASE_URL:** разделены (dev → postgres-dev, prod → ff-sandbox-db) ✓ подтверждено
+- **Q2 RESEND_API_KEY:** оставить идентично проду на время sandbox-стадии; разделить перед боевым запуском (новая задача P1 в BACKLOG)
+- **Q3 Auto-deploy main:** ВЫКЛЮЧИТЬ webhook для prod-app, deploy только manual через Coolify GUI
+- **Q4 Защита от ошибок Claude Code:** bash-функции (`dev-logs`, `dev-exec`, `dev-psql`) + sudoers restrictions для блокировки docker write-операций на `ff-prod-*`
+- **Q5 Прод-релиз процесс:** PR develop → main с branch protection в GitHub, ручной merge + ручной Deploy в Coolify
+- **Q6 (от Алексея) Container access policy:** READ-ONLY операции (logs, ps, inspect) разрешены на всех контейнерах включая prod; WRITE — только dev
+
+### Обновления документации
+- CLAUDE.md — полностью переписан (новые разделы Environments, SSH access, GitHub App, container whitelist, prod-release workflow)
+- SESSION_LOG.md — эта запись
+- BACKLOG.md — добавлены задачи: branch protection на main, выключить auto-deploy main, bash helpers + sudoers, разделение secrets перед боевым запуском (P1)
+
+### Технический долг к следующей сессии
+1. **Branch protection** на main в GitHub (Settings → Branches → Add rule)
+2. **Выключить webhook auto-deploy** для ff-prod-app в Coolify
+3. **Создать bash helpers и sudoers** для пользователя claude на VPS
+4. **Создать PROD_RELEASE_CHECKLIST.md**
+5. **Тест @claude** на безопасной мелкой задаче в dev
+6. Только после этого — продолжить P0.3.c Unique Events 30
+
+### Важно
+P0.3.c НЕ начинаем пока не закрыты пункты 1-5 техдолга — иначе теряется смысл нового dev-окружения.
+
+---
+
 ## Session 2026-05-12 (continued) — Session 12 — P0.3.c CLOSED
 
 ### Закрыто

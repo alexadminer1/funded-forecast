@@ -412,6 +412,78 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 
 ## P1.early — Critical post-launch
 
+### P1.infra.1 Branch protection на main
+- Source: Session 12 (2026-05-13)
+- Scope: GitHub Settings → Branches → Add rule для `main`
+- Rules:
+  - Require pull request before merging
+  - Require approvals: 1
+  - Dismiss stale approvals on new commits
+  - Disable direct push
+- Файлы: настройки GitHub (не код)
+- Тесты: попытка `git push origin main` → должна быть отвергнута
+- Оценка: 0.5ч
+
+### P1.infra.2 Выключить auto-deploy main в Coolify
+- Source: Session 12 (2026-05-13)
+- Scope: для ff-prod-app в Coolify GUI отключить GitHub webhook (auto-deploy)
+- Логика: после этого push в main НЕ деплоится автоматически; Алексей нажимает Deploy вручную
+- Файлы: настройки Coolify (не код)
+- Тесты: dummy commit в main → Coolify НЕ запускает deploy
+- Оценка: 0.5ч
+
+### P1.infra.3 Bash helpers + sudoers для user claude
+- Source: Session 12 (2026-05-13), Q4 решение Архитектора
+- Scope: на VPS создать helpers и ограничения для пользователя `claude`
+- Создать:
+  - `/home/claude/.bashrc` с функциями `dev-logs`, `dev-exec`, `dev-psql`
+  - `/etc/sudoers.d/claude-restrictions` — блокировка docker write на `ff-prod-*`
+- Файлы: bash + sudoers (на VPS, не в репо)
+- Тесты:
+  - `dev-logs app-dev` → работает
+  - `dev-exec ls /app` → работает
+  - `docker exec ff-prod-app ls /app` от user claude → отказ (sudoers)
+- Оценка: 2ч
+
+### P1.infra.4 Создать docs/PROD_RELEASE_CHECKLIST.md
+- Source: Session 12 (2026-05-13)
+- Scope: чеклист перед deploy develop → main
+- Включает:
+  - Env vars sync проверка (есть ли новые env vars в develop которых нет на prod?)
+  - DB migrations — какие ALTER нужно применить на prod БД?
+  - Backup БД прод
+  - Smoke test на dev.tradepredictions.online завершён?
+  - Rollback план (как откатиться если deploy сломал прод)
+- Файлы: `docs/PROD_RELEASE_CHECKLIST.md`
+- Оценка: 1ч
+
+### P1.infra.5 Smoke test @claude GitHub App
+- Source: Session 12 (2026-05-13)
+- Scope: первая безопасная задача через @claude-mention в issue
+- Идея: создать GitHub Issue с мелкой косметической задачей (typo fix, добавить console.log, etc.) и @claude mention
+- Цель: убедиться что:
+  - @claude видит issue
+  - Создаёт PR в develop (не main)
+  - PR содержит ожидаемые изменения
+  - Алексей может смерджить PR
+- Оценка: 1ч
+
+### P1.infra.6 Разделить prod/dev secrets перед боевым запуском
+- Source: Session 12 (2026-05-13), Q2 решение Архитектора
+- Scope: разделить идентичные на сегодня secrets между prod и dev
+- Список secrets для разделения:
+  - `RESEND_API_KEY` (или ввести `DISABLE_EMAILS=true` на dev)
+  - `ALCHEMY_API_KEY` (separate keys для quotas)
+  - `JWT_SECRET` (разные на dev/prod чтобы токены не работали между средами)
+  - `CRON_SECRET` (разные)
+  - `ADMIN_API_KEY` (разные)
+  - `UPSTASH_REDIS_*` (отдельная Redis instance для dev)
+  - USDC payment receiver address (test wallet для dev)
+- BLOCKER: эта задача обязательна перед Wave 6 (P0.9) — выход прода в боевой режим
+- Файлы: Coolify env vars (на двух apps)
+- Оценка: 4ч
+
+
 ### P1.0 [A1] Wallet isolation
 - Из WALLET_MODEL.md (APPROVED)
 - БАЗА для P1.1 Funded phase
