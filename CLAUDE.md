@@ -45,7 +45,7 @@ funded status → request payouts через on-chain USDC transfer.
 
 ### Production (НЕ ТРОГАТЬ без явного approval)
 
-- App container: `ff-prod-app`
+- App container: `ff-sandbox-app`
 - Postgres container: `ff-sandbox-db` (hostname: `n6a214z1jmhhlogwdf4pllxj`)
 - Domain: https://tradepredictions.online
 - Branch: `main`
@@ -95,7 +95,7 @@ funded status → request payouts через on-chain USDC transfer.
 3. PR review (Алексей approve себя)
 4. Merge (strategy: Merge commit, не squash — сохраняем историю)
 5. Push в main НЕ триггерит auto-deploy (webhook выключен)
-6. Алексей вручную нажимает Deploy в Coolify для ff-prod-app
+6. Алексей вручную нажимает Deploy в Coolify для ff-sandbox-app
 7. Перед deploy — пройти PROD_RELEASE_CHECKLIST.md
 
 ### Стиль коммитов
@@ -133,27 +133,36 @@ funded status → request payouts через on-chain USDC transfer.
 
 ### Whitelist для WRITE
 
-Разрешены ТОЛЬКО:
-- `wlugzzo3b2482ji68l6r3zcv-*` (app-dev и его варианты)
-- `ku2yqi907qdi78bk3xb5zy3p` (postgres-dev)
+Контейнеры идентифицируются через Coolify label `coolify.resourceName`
+(имена с хешами меняются при каждом передеплое, поэтому ориентация на label).
 
-ЗАПРЕЩЕНО WRITE:
-- `ff-prod-app` (production app)
-- `n6a214z1jmhhlogwdf4pllxj` (production database)
+Разрешены ТОЛЬКО dev-контейнеры:
+- `coolify.resourceName=app-dev`
+- `coolify.resourceName=postgres-dev`
+
+ЗАПРЕЩЕНО WRITE — prod-контейнеры:
+- `coolify.resourceName=ff-sandbox-app` (production app)
+- `coolify.resourceName=ff-sandbox-db` (production database)
 - Любые системные контейнеры Coolify
 
-### Bash helpers (настроены на VPS для пользователя claude)
+### Bash helpers (установлены в `/usr/local/bin/` на VPS для пользователя claude)
 
-- `dev-logs <service>` — логи только dev-контейнеров
-- `dev-exec <cmd>` — exec только в dev-app
-- `dev-psql` — psql на postgres-dev
-- `prod-*` — намеренно отсутствуют
+- `dev-exec <cmd>` — `docker exec` в контейнер `app-dev`, под root внутри
+  контейнера. Используется для `npm`, `npx prisma`, edit файлов и т.п.
+- `dev-logs [app-dev|postgres-dev] [args]` — логи dev-контейнера.
+  По умолчанию `--tail 200` без follow. Флаг `-f` включает follow.
+  Без аргумента — логи app-dev.
+- `dev-psql [args]` — psql на `postgres-dev`, база `fundedforecast`,
+  пользователь `postgres`. Доп. аргументы пробрасываются в psql.
+- `prod-*` — намеренно отсутствуют. Read-only операции на prod выполняются
+  прямыми `docker logs / ps / inspect` по имени контейнера или label.
 
-### Sudo restrictions
+### Sudo / OS-level restrictions
 
-`/etc/sudoers.d/claude-restrictions` блокирует для пользователя claude:
-- `docker stop/rm/exec` на `ff-prod-*`
-- Изменение `/etc/coolify` и `/var/lib/docker/volumes/ff-prod-*`
+User `claude` не имеет sudo-прав. Защита от ошибочных write-операций на
+prod-контейнерах — на дисциплине Claude Code (см. whitelist выше) и в этом
+файле, не на уровне ОС. При выходе production в боевой режим — задача
+защиты на уровне ОС вернётся (см. P1 в BACKLOG).
 
 ---
 
@@ -311,4 +320,4 @@ read+write для issues, PRs, code, workflows.
 
 ---
 
-Last updated: 2026-05-13 (Session 12 — dev environment setup)
+Last updated: 2026-05-13 (Session 13 — bash helpers + branch protection + auto-deploy off)
