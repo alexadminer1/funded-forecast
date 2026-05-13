@@ -1,4 +1,3 @@
-// Engine constants — see docs/BACKLOG.md (P0 series)
 /**
  * Engine constants — challenge passing requirements.
  *
