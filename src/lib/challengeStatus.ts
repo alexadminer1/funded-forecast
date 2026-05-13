@@ -1,20 +1,23 @@
 import type { Prisma } from "@prisma/client";
 import { MIN_RESOLVED_POSITIONS, MIN_UNIQUE_EVENTS } from "@/lib/engine/constants";
+import { computeConsistencyLive, CONSISTENCY_THRESHOLD_CHALLENGE } from "@/lib/consistency";
 
 /**
- * P0.3.b — Check passing conditions and mark challenge as passed if all met.
+ * Check passing conditions and mark challenge as passed if all met.
  *
  * Passing conditions (ALL must be true):
- *   1. challenge.status === "active"  (not failed/passed/expired/frozen)
+ *   1. challenge.status === "active"                                  (not failed/passed/expired/frozen)
  *   2. challenge.profitTargetMet === true
  *   3. tradingDaysCount >= challenge.minTradingDays
- *   4. resolvedPositionsCount >= MIN_RESOLVED_POSITIONS
+ *   4. resolvedPositionsCount >= MIN_RESOLVED_POSITIONS                (P0.3.b)
+ *   5. uniqueEventsCount >= MIN_UNIQUE_EVENTS                          (P0.3.c)
+ *   6. consistency.isPassChallenge — biggestDayPct ≤ 25 %              (P0.3.a, live from Trade)
  *
  * Called from:
- *   - src/app/api/trade/sell/route.ts (after profitable sale)
  *   - src/lib/marketResolve.ts (after market resolve increments counter)
  *
- * Uses Prisma transaction client so caller controls atomicity.
+ * Uses Prisma transaction client so caller controls atomicity. The live
+ * consistency check sees the 'resolve' Trade row just written in the same tx.
  *
  * @param tx - Prisma transaction client
  * @param challengeId - Challenge ID to check
@@ -43,6 +46,19 @@ export async function checkAndMarkPassed(
   if (c.tradingDaysCount < c.minTradingDays) return false;
   if (c.resolvedPositionsCount < MIN_RESOLVED_POSITIONS) return false;
   if (c.uniqueEventsCount < MIN_UNIQUE_EVENTS) return false;
+
+  // P0.3.a — live consistency aggregation includes any Trade row just inserted in this tx
+  // (e.g. the 'resolve' Trade row written by marketResolve.ts immediately before this call).
+  const consistency = await computeConsistencyLive(challengeId, tx);
+  if (!consistency.isPassChallenge) {
+    console.warn(
+      `[AUTO_PASS_BLOCKED] challenge ${challengeId} consistency rule failed: ` +
+      `biggestDayPct=${(consistency.biggestDayPct * 100).toFixed(2)}% ` +
+      `exceeds ${(CONSISTENCY_THRESHOLD_CHALLENGE * 100).toFixed(0)}% threshold ` +
+      `(totalProfit=$${consistency.totalProfit.toFixed(2)})`,
+    );
+    return false;
+  }
 
   await tx.challenge.update({
     where: { id: challengeId },
