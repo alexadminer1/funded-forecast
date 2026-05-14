@@ -6,6 +6,7 @@ import { verifyToken } from "@/lib/auth";
 import { sendEmail, buildBrandTemplate, buildKeyValueTable, escapeHtml } from "@/lib/email";
 import { computeEquity } from "@/lib/equity";
 import { MIN_RESOLVED_POSITIONS, MIN_UNIQUE_EVENTS } from "@/lib/engine/constants";
+import { computeConsistencyLive, CONSISTENCY_THRESHOLD_CHALLENGE } from "@/lib/consistency";
 
 const MAX_SLIPPAGE = 0.02;
 
@@ -152,6 +153,7 @@ export async function POST(req: NextRequest) {
           amount, price: executionPrice, cost: proceeds,
           marketYesPriceAtExecution: market.yesPrice,
           marketNoPriceAtExecution: market.noPrice,
+          realizedPnl,
         },
       });
 
@@ -261,39 +263,51 @@ export async function POST(req: NextRequest) {
           },
         });
 
-        if (
-            profitTargetMet
-            && effectiveTradingDays >= activeChallenge.minTradingDays
-            && activeChallenge.resolvedPositionsCount >= MIN_RESOLVED_POSITIONS
-            && activeChallenge.uniqueEventsCount >= MIN_UNIQUE_EVENTS
-          ) {
-          autoPass = true;
-          passMeta = {
-            profitPct,
-            profitTargetPct: activeChallenge.profitTargetPct,
-            tradingDays: effectiveTradingDays,
-            minTradingDays: activeChallenge.minTradingDays,
-          };
-          await tx.challenge.update({
-            where: { id: challengeId },
-            data: { status: "passed", endedAt: new Date() },
-          });
-          await tx.auditLog.create({
-            data: {
-              actorId: userId,
-              targetType: "challenge",
-              targetId: String(challengeId),
-              category: "challenge",
-              action: "challenge_auto_passed",
-              metadata: {
-                profitPct,
-                profitTargetPct: activeChallenge.profitTargetPct,
-                tradingDays: effectiveTradingDays,
-                minTradingDays: activeChallenge.minTradingDays,
-                realizedBalance: newRealizedBalance,
+        const otherConditionsMet =
+          profitTargetMet
+          && effectiveTradingDays >= activeChallenge.minTradingDays
+          && activeChallenge.resolvedPositionsCount >= MIN_RESOLVED_POSITIONS
+          && activeChallenge.uniqueEventsCount >= MIN_UNIQUE_EVENTS;
+
+        if (otherConditionsMet) {
+          // P0.3.a — live consistency aggregation includes the Trade row just inserted in this tx.
+          const consistency = await computeConsistencyLive(challengeId, tx);
+          if (consistency.isPassChallenge) {
+            autoPass = true;
+            passMeta = {
+              profitPct,
+              profitTargetPct: activeChallenge.profitTargetPct,
+              tradingDays: effectiveTradingDays,
+              minTradingDays: activeChallenge.minTradingDays,
+            };
+            await tx.challenge.update({
+              where: { id: challengeId },
+              data: { status: "passed", endedAt: new Date() },
+            });
+            await tx.auditLog.create({
+              data: {
+                actorId: userId,
+                targetType: "challenge",
+                targetId: String(challengeId),
+                category: "challenge",
+                action: "challenge_auto_passed",
+                metadata: {
+                  profitPct,
+                  profitTargetPct: activeChallenge.profitTargetPct,
+                  tradingDays: effectiveTradingDays,
+                  minTradingDays: activeChallenge.minTradingDays,
+                  realizedBalance: newRealizedBalance,
+                },
               },
-            },
-          });
+            });
+          } else {
+            console.warn(
+              `[AUTO_PASS_BLOCKED] challenge ${challengeId} consistency rule failed: ` +
+              `biggestDayPct=${(consistency.biggestDayPct * 100).toFixed(2)}% ` +
+              `exceeds ${(CONSISTENCY_THRESHOLD_CHALLENGE * 100).toFixed(0)}% threshold ` +
+              `(totalProfit=$${consistency.totalProfit.toFixed(2)})`,
+            );
+          }
         }
       }
 

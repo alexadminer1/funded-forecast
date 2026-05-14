@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
         status: "live",
         lastSyncedAt: { lt: new Date(Date.now() - STALE_HOURS * 60 * 60 * 1000) },
       },
-      select: { id: true, title: true },
+      select: { id: true, title: true, yesPrice: true, noPrice: true },
     });
 
     let resolved = 0;
@@ -72,7 +72,9 @@ export async function POST(req: NextRequest) {
             },
           });
 
-          const result = await resolveMarketPositions(m.id, winner);
+          // m.yesPrice / m.noPrice — last-synced live values from staleMarkets findMany
+          // (the update above writes status only, doesn't touch the price snapshot).
+          const result = await resolveMarketPositions(m.id, winner, m.yesPrice, m.noPrice);
           totalPositionsProcessed += result.positionsProcessed;
           resolved++;
           resolvedIds.push(m.id);

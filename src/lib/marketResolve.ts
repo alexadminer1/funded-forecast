@@ -11,20 +11,27 @@ export interface ResolveMarketResult {
  * Resolve all open positions for a market that has been declared resolved.
  * Idempotent: positions already resolved (resolvedAt != null) are skipped.
  *
- * Caller must have already updated Market.status = "resolved" and set winningOutcome.
+ * Caller must have already updated Market.status = "resolved" and set winningOutcome,
+ * and pass the last-known live yesPrice/noPrice as snapshot — they become the
+ * marketYes/NoPriceAtExecution on the Trade row created for the resolve event.
  *
  * For each open position:
+ * - Trade row with action='resolve' is created (realizedPnl = payout - costBasis;
+ *   P0.3.a aggregation source for ChallengeDailyPnL)
+ * - BalanceLog entry of type "market_resolve" is created and linked to the Trade
+ *   via tradeId (admin audit invariant: every Trade must have a matching BalanceLog)
  * - Winners get $1 per share as payout (added to balance + challenge realizedBalance)
  * - Losers get $0 payout (their costBasis was already deducted at buy time)
  * - Position is marked resolved (status, resolvedAt, closedAt, shares=0)
  * - Challenge is updated (peakBalance, profitTargetMet, drawdown check)
- * - BalanceLog entry of type "market_resolve" is created
  *
  * Each position is processed in its own transaction for isolation.
  */
 export async function resolveMarketPositions(
   marketId: string,
-  winningOutcome: "yes" | "no"
+  winningOutcome: "yes" | "no",
+  yesPriceSnapshot: number,
+  noPriceSnapshot: number,
 ): Promise<ResolveMarketResult> {
   const openPositions = await prisma.position.findMany({
     where: {
@@ -64,10 +71,30 @@ export async function resolveMarketPositions(
         const currentBalance = lastLog?.runningBalance ?? 0;
         const newBalance = parseFloat((currentBalance + payout).toFixed(2));
 
-        // Insert balance log
+        // P0.3.a — record the resolve as a Trade row with action='resolve'.
+        // Must be created BEFORE the BalanceLog so we can link tradeId
+        // (admin audit checks every Trade has a matching BalanceLog).
+        const trade = await tx.trade.create({
+          data: {
+            userId: fresh.userId,
+            marketId,
+            challengeId: fresh.challengeId,
+            side: fresh.side,
+            action: "resolve",
+            amount: fresh.shares,
+            price: isWinner ? 1.0 : 0.0,
+            cost: payout,
+            marketYesPriceAtExecution: yesPriceSnapshot,
+            marketNoPriceAtExecution: noPriceSnapshot,
+            realizedPnl: profit,
+          },
+        });
+
+        // Insert balance log (linked to the resolve Trade row)
         await tx.balanceLog.create({
           data: {
             userId: fresh.userId,
+            tradeId: trade.id,
             challengeId: fresh.challengeId,
             type: "market_resolve",
             amount: payout,

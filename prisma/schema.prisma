@@ -93,12 +93,18 @@ model Trade {
   marketId                  String
   challengeId               Int?
   side                      String
+  // Allowed action values: 'buy', 'sell', 'resolve'
   action                    String
   amount                    Int
   price                     Float
   cost                      Float
   marketYesPriceAtExecution Float
   marketNoPriceAtExecution  Float
+  // Net realized PnL for the event. NULL for 'buy' (open event has no realized PnL).
+  // For 'sell':    amount * (executionPrice - position.avgPrice)
+  // For 'resolve': payout - costBasis_portion
+  // Source of truth for ChallengeDailyPnL aggregation (P0.3.a).
+  realizedPnl               Decimal? @db.Decimal(20, 8)
   createdAt                 DateTime @default(now())
 
   user        User         @relation(fields: [userId], references: [id])
@@ -220,13 +226,14 @@ model Challenge {
   resolvedPositionsCount Int     @default(0)
   uniqueEventsCount      Int     @default(0)
 
-  user           User            @relation(fields: [userId], references: [id])
-  plan           ChallengePlan?  @relation(fields: [planId], references: [id])
-  trades         Trade[]
-  positions      Position[]
-  balanceLogs    BalanceLog[]
-  payoutRequests PayoutRequest[]
-  payments       Payment[]
+  user            User                @relation(fields: [userId], references: [id])
+  plan            ChallengePlan?      @relation(fields: [planId], references: [id])
+  trades          Trade[]
+  positions       Position[]
+  balanceLogs     BalanceLog[]
+  payoutRequests  PayoutRequest[]
+  payments        Payment[]
+  dailyPnlRecords ChallengeDailyPnL[]
 
   @@index([userId, status])
   @@index([status])
@@ -282,6 +289,36 @@ model PayoutRequest {
 
   @@index([userId, status])
   @@index([challengeId, status])
+}
+
+// ─────────────────────────────────────────────────────────────
+// P0.3.a Consistency Rule — daily PnL aggregation per challenge.
+// Populated by:
+//   - Cron /api/cron/daily-pnl-aggregate (yesterday UTC, active challenges)
+//   - Backfill SQL (scripts/backfill-daily-pnl.sql, one-shot)
+// Source: SUM(Trade.realizedPnl) WHERE realizedPnl IS NOT NULL
+//         GROUP BY challengeId, DATE("createdAt")
+// NB: Trade.createdAt is `timestamp without time zone`. Prisma writes UTC
+// wall-clock; DATE() extracts directly with no TZ conversion — TZ-independent.
+// Do NOT use `AT TIME ZONE 'UTC'` — that converts via session TZ and breaks
+// if the postgres session TZ is not UTC.
+// Days with zero closed trades are NOT inserted (sparse table).
+// isWinningDay is strictly dailyPnl > 0.
+// ─────────────────────────────────────────────────────────────
+model ChallengeDailyPnL {
+  id           Int      @id @default(autoincrement())
+  challengeId  Int
+  date         DateTime @db.Date
+  dailyPnl     Decimal  @db.Decimal(20, 8)
+  dailyTrades  Int
+  isWinningDay Boolean
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  challenge Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+
+  @@unique([challengeId, date])
+  @@index([challengeId])
 }
 
 model AuditLog {

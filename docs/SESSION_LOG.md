@@ -9,6 +9,7 @@
 
 ---
 
+claude/issue-6-20260514-0902
 ## Session 2026-05-14 — P0.5 On-chain txHash Verification (SEC-5)
 
 ### Закрыто
@@ -48,6 +49,102 @@ CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "PayoutRequest_txHash_key"
 ### Build
 - `npm run build` ✓ clean
 - `npx tsc --noEmit` ✓ clean
+=======
+## Session 2026-05-14 — Session 14 — P0.3.a Consistency Rule
+
+### Закрыто
+- **P0.3.a** Consistency Rule ✅ (commit ba46520, 11 файлов, ~+517/-54)
+
+### Архитектурные решения
+- Источник `dailyPnl`: новая колонка `Trade.realizedPnl` (`Decimal? @db.Decimal(20,8)`)
+- Новый `action='resolve'` для `Trade` — `marketResolve.ts` создаёт Trade row при резолве маркета
+- `ChallengeDailyPnL` — pre-aggregated table для payout checks; auto-pass читает live из Trade (без зависимости от cron)
+- Day-grouping: `DATE("createdAt")` без `AT TIME ZONE 'UTC'` (Postgres колонка `timestamp without time zone`, серверный TZ=UTC)
+- Backfill для исторических данных НЕ делается (Q6.a) — grace period для существующих challenges
+- Cron `0 1 * * *` UTC агрегирует вчерашний день за активные challenges, идемпотентен через `ON CONFLICT DO UPDATE`
+
+### Инфра
+- Coolify scheduled task `daily-pnl-aggregate` создан на `app-dev` (frequency `0 1 * * *`, container `app-dev`)
+- 8 prod cron tasks перенесены с `ff-sandbox-app` на `app-dev` (был dev/prod drift — на dev был только новый daily-pnl-aggregate)
+- Backup `/home/claude/ff-sandbox-db-pre-p03a-backfill-20260514-0729.sql` (2.3MB) перед backfill
+- Backfill no-op подтверждён: все исторические `Trade.realizedPnl=NULL` → SQL вставил 0 строк
+- Health check после деплоя: Next.js Ready ✓, `/api/health` → 200, `/api/cron/daily-pnl-aggregate` без auth → 401 ✓
+
+### Smoke test
+- `alexadminer` (challenge 10) через UI: buy 10 @ 0.0715 + sell 10 @ 0.0715 на marketId 2155000
+- Trade row #63 (action='sell') — `realizedPnl=0.00000000` записан корректно (Шаг 7 интеграция + Шаг 10 post-fix работают)
+- BalanceLog связан через `tradeId`: rows 126 (`trade_open`, -0.71) и 127 (`trade_close`, +0.71)
+- Manual trigger `/api/cron/daily-pnl-aggregate` (от лица CRON_SECRET, внутри app-dev): `processed=0, skipped=6` (нет sell за yesterday) — endpoint работает идемпотентно
+- Live-агрегация формулой даёт 1 row для challenge 10 today (dailyPnl=0, dailyTrades=1) — корректно
+
+### Открытые задачи (новая в BACKLOG)
+- **P1.infra.9** — унифицировать flag style (`-fsS`) и `container` field в 3 scheduled tasks на app-dev. Функциональность подтверждена execution logs, но в БД остались cosmetic differences: `activate-payments` container=watch-payments, `daily-pnl-aggregate` использует `-sf`, `Expire Challenges` без `-fsS`
+
+---
+
+## Session 2026-05-13 — Session 13 — Branch protection, bash helpers, @claude smoke test
+
+### Закрыто
+- **P1.infra.1** Branch protection main ✅
+- **P1.infra.2** Auto-deploy main off ✅
+- **P1.infra.3** Bash helpers ✅ (sudoers пропущен — см. ниже)
+- **P1.infra.4** PROD_RELEASE_CHECKLIST.md ✅
+- **P1.infra.5** Smoke test @claude ✅
+- **P1.infra.8** Remove Vercel GitHub App ✅
+
+### Что сделано
+
+#### P1.infra.1 Branch protection main
+- GitHub Ruleset `protect-main` создан, статус Active
+- Target: `main`
+- Bypass list: Repository admin (Always allow) — добавлен чтобы single-developer мог обходить required reviews
+- Включено: Require PR before merging (1 approval, dismiss stale), Restrict deletions, Block force pushes
+- Проверено: прямой push в main отвергается с `GH013`
+
+#### P1.infra.2 Auto-deploy main off
+- В Coolify для приложения `ff-sandbox-app` снята галочка "Auto Deploy"
+- Webhook остаётся подключён, но автодеплой не срабатывает
+- Прод теперь деплоится только вручную через Coolify Deploy button
+
+#### P1.infra.3 Bash helpers (sudoers пропущен)
+- На VPS созданы три helper-скрипта в `/usr/local/bin/` (owner root, executable):
+  - `dev-exec <cmd>` — `docker exec` в `app-dev` (resolve через label `coolify.resourceName=app-dev`)
+  - `dev-logs [app-dev|postgres-dev] [args]` — `docker logs`, по умолчанию `--tail 200` без `-f`
+  - `dev-psql [args]` — `psql` на `postgres-dev`, БД `fundedforecast`, user `postgres`
+- Решено **НЕ** создавать `/etc/sudoers.d/claude-restrictions`: user `claude` не имеет sudo вообще, защита от ошибочных write-операций на prod-контейнеры — на дисциплине (CLAUDE.md) и helper-скриптах
+- При выходе production в боевой режим — задача OS-level защиты вернётся как P1 блокер (см. новая задача **P1.infra.7** в BACKLOG)
+- Контейнеры идентифицируются через Coolify label `coolify.resourceName` (хешевые имена меняются при передеплое)
+
+#### P1.infra.4 PROD_RELEASE_CHECKLIST
+- Создан `docs/PROD_RELEASE_CHECKLIST.md`
+- 8 секций: pre-merge verification, DB migrations, backup, merge to main, deploy, post-deploy verification, rollback plan, communication
+
+#### P1.infra.5 Smoke test @claude
+- GitHub App Claude подтверждён установленным на репо (Repository access: funded-forecast)
+- Создан workflow `.github/workflows/claude.yml` через `/install-github-app` в Claude Code
+- Auth: OAuth token от Max-подписки (secret `CLAUDE_CODE_OAUTH_TOKEN`)
+- Включены Workflow permissions: Read and write + Allow GitHub Actions to create and approve pull requests
+- **Важно:** workflow видны GitHub Actions только если они на default branch — поэтому потребовался первый prod-релиз `develop → main` (PR #3) с одним yaml-файлом и docs-каталогом
+- Smoke test issue #1: @claude прочитал `CLAUDE.md`, прочитал `src/lib/engine/constants.ts`, добавил комментарий, запушил ветку `claude/issue-1-20260513-1111`
+- Косяк: тестовый PR #4 был смерджен в `main` вместо `develop` (неточная инструкция в чате) — откатан через PR #5 revert на main
+
+#### P1.infra.8 Vercel GitHub App suspended
+- GitHub App Vercel suspended через GitHub Settings → Applications → Vercel → Danger zone → Suspend
+- Vercel больше не деплоит превью на PR в funded-forecast
+- Конфигурация в Vercel-аккаунте сохранена; при необходимости — один клик Unsuspend
+
+### Бонусом
+- Первый реальный prod-релиз через `develop → main`: PR #3 (5 commits, 503 additions, 147 deletions; только docs + workflow, без кода/БД)
+- Подтверждено: branch protection реально блокирует прямой push в main (`GH013`)
+- Подтверждено: bypass для Repository admin работает (merge без review через диалог "Bypass rules and merge")
+
+### Открытые наблюдения (не блокеры Session 13)
+- Default branch остаётся `main`, не меняли
+- Workflow `pull_request_review` в `claude.yml` триггерится на @claude в `review.body` — для текущей one-developer репы не критично, но при будущих collaborators проверить
+
+### Что НЕ сделано (отложено)
+- Sudoers / OS-level write protection на prod-контейнеры — вынесено в новую задачу **P1.infra.7** (вернётся когда prod выйдет из sandbox)
+develop
 
 ---
 

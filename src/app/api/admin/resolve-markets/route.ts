@@ -82,8 +82,9 @@ export async function POST(req: NextRequest) {
       const yesPrice = parseFloat(prices[0]);
       const winningOutcome: "yes" | "no" = yesPrice > 0.99 ? "yes" : "no";
 
-      // Update market status
-      await prisma.market.update({
+      // Update market status — returned row carries the untouched live yesPrice/noPrice
+      // (the update writes status/winner only), which we snapshot into the resolve Trade row.
+      const updatedMarket = await prisma.market.update({
         where: { id: polyMarket.id },
         data: {
           status: "resolved",
@@ -96,7 +97,9 @@ export async function POST(req: NextRequest) {
       // Resolve open positions via shared lib
       const { positionsProcessed } = await resolveMarketPositions(
         polyMarket.id,
-        winningOutcome
+        winningOutcome,
+        updatedMarket.yesPrice,
+        updatedMarket.noPrice,
       );
 
       totalPositionsProcessed += positionsProcessed;

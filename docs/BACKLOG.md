@@ -159,7 +159,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 
 ### P0.3 Недостающие challenge rules
 
-#### P0.3.a Consistency Rule
+#### P0.3.a Consistency Rule ✓ CLOSED (Session 14, 2026-05-14, commit ba46520)
 - Scope: запретить passing если biggest day > 25% от total profit
 - БД: новая таблица ChallengeDailyPnL (id, challengeId, date, dailyPnl, dailyTrades, isWinningDay)
 - Формула:
@@ -409,7 +409,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 
 ## P1.early — Critical post-launch
 
-### P1.infra.1 Branch protection на main
+### P1.infra.1 Branch protection на main — ✅ DONE (Session 13)
 - Source: Session 12 (2026-05-13)
 - Scope: GitHub Settings → Branches → Add rule для `main`
 - Rules:
@@ -420,16 +420,18 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Файлы: настройки GitHub (не код)
 - Тесты: попытка `git push origin main` → должна быть отвергнута
 - Оценка: 0.5ч
+- Результат: Ruleset `protect-main` Active. Bypass list: Repository admin. Direct push отвергается с GH013.
 
-### P1.infra.2 Выключить auto-deploy main в Coolify
+### P1.infra.2 Выключить auto-deploy main в Coolify — ✅ DONE (Session 13)
 - Source: Session 12 (2026-05-13)
 - Scope: для ff-prod-app в Coolify GUI отключить GitHub webhook (auto-deploy)
 - Логика: после этого push в main НЕ деплоится автоматически; Алексей нажимает Deploy вручную
 - Файлы: настройки Coolify (не код)
 - Тесты: dummy commit в main → Coolify НЕ запускает deploy
 - Оценка: 0.5ч
+- Результат: галочка "Auto Deploy" снята у ff-sandbox-app. Webhook остаётся подключён.
 
-### P1.infra.3 Bash helpers + sudoers для user claude
+### P1.infra.3 Bash helpers + sudoers для user claude — ✅ DONE (Session 13)
 - Source: Session 12 (2026-05-13), Q4 решение Архитектора
 - Scope: на VPS создать helpers и ограничения для пользователя `claude`
 - Создать:
@@ -441,8 +443,10 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
   - `dev-exec ls /app` → работает
   - `docker exec ff-prod-app ls /app` от user claude → отказ (sudoers)
 - Оценка: 2ч
+- Результат: helpers `dev-exec`, `dev-logs`, `dev-psql` созданы в `/usr/local/bin/` (owner root, executable). Контейнеры резолвятся через label `coolify.resourceName`.
+- Заметка: sudoers пропущен, см. SESSION_LOG Session 13. OS-level защита перенесена в новую задачу **P1.infra.7** (см. ниже).
 
-### P1.infra.4 Создать docs/PROD_RELEASE_CHECKLIST.md
+### P1.infra.4 Создать docs/PROD_RELEASE_CHECKLIST.md — ✅ DONE (Session 13)
 - Source: Session 12 (2026-05-13)
 - Scope: чеклист перед deploy develop → main
 - Включает:
@@ -453,8 +457,9 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
   - Rollback план (как откатиться если deploy сломал прод)
 - Файлы: `docs/PROD_RELEASE_CHECKLIST.md`
 - Оценка: 1ч
+- Результат: создан с 8 секциями (pre-merge verification, DB migrations, backup, merge to main, deploy, post-deploy verification, rollback plan, communication).
 
-### P1.infra.5 Smoke test @claude GitHub App
+### P1.infra.5 Smoke test @claude GitHub App — ✅ DONE (Session 13)
 - Source: Session 12 (2026-05-13)
 - Scope: первая безопасная задача через @claude-mention в issue
 - Идея: создать GitHub Issue с мелкой косметической задачей (typo fix, добавить console.log, etc.) и @claude mention
@@ -464,6 +469,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
   - PR содержит ожидаемые изменения
   - Алексей может смерджить PR
 - Оценка: 1ч
+- Результат: workflow `.github/workflows/claude.yml` создан через `/install-github-app`, auth через OAuth token Max-подписки. Issue #1 — @claude прочитал CLAUDE.md, добавил комментарий, запушил ветку `claude/issue-1-20260513-1111`. Косяк с PR в main, откатан через PR #5 revert.
 
 ### P1.infra.6 Разделить prod/dev secrets перед боевым запуском
 - Source: Session 12 (2026-05-13), Q2 решение Архитектора
@@ -479,6 +485,42 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - BLOCKER: эта задача обязательна перед Wave 6 (P0.9) — выход прода в боевой режим
 - Файлы: Coolify env vars (на двух apps)
 - Оценка: 4ч
+
+### P1.infra.7 OS-level write protection on prod containers
+- Source: Session 13 (2026-05-13) — sudoers пропущен из P1.infra.3
+- Priority: P1
+- Trigger: **when prod exits sandbox mode** (см. P0.9 / Wave 6)
+- Scope: реальная защита user `claude` от случайных `docker exec/stop/rm` на `ff-sandbox-app` и `ff-sandbox-db`
+- Варианты реализации (обсудить с Архитектором):
+  - `sudoers` + ограничение docker socket access
+  - docker authz plugin (более гибко, но сложнее в настройке)
+  - отдельный user без доступа в группу docker для prod-операций
+- Сейчас отсутствует: защита только на дисциплине (CLAUDE.md whitelist) и helper-скриптах
+- BLOCKER: обязательно до выхода прода в боевой режим
+- Файлы: на VPS, не в репо
+- Оценка: 2-4ч (зависит от выбранного варианта)
+
+### P1.infra.8 Remove Vercel GitHub App — ✅ DONE (Session 13)
+- Source: Session 13 (2026-05-13) — наблюдение
+- Priority: P2
+- Scope: отключить Vercel GitHub App от репо `funded-forecast` (и от `funded-forecast-wrt4`, если применимо)
+- Причина: Vercel деплоит превью на каждый PR. CLAUDE.md явно говорит "Vercel — забыли, не используем". Лишний шум в PR checks.
+- Как: GitHub Settings → Integrations → Vercel → Configure → удалить доступ к репо (или Suspend)
+- Файлы: настройки GitHub (не код)
+- Оценка: 0.2ч
+- Результат: Vercel GitHub App suspended через GitHub Settings → Applications → Vercel → Suspend. Конфигурация Vercel-аккаунта сохранена, при необходимости — Unsuspend в один клик.
+
+### P1.infra.9 Unify dev cron tasks style + sync drift
+- Source: Session 14 (2026-05-14)
+- Priority: P2
+- Scope:
+  - 3 tasks на `app-dev` имеют cosmetic differences vs prod style (выявлено при разведке после переноса 8 prod cron'ов на dev):
+    - `activate-payments`: `container=watch-payments` → нужно `app-dev` (на dev нет контейнера `watch-payments`; в БД значение осталось от копирования с prod, но execution прошла успешно — почему точно не разбирались)
+    - `daily-pnl-aggregate`: `curl -sf ...` → нужно `curl -fsS ...` (флаг `S` нужен для show-errors при failures в execution logs)
+    - `Expire Challenges`: `curl -H "Auth..."` (без флагов) → нужно `curl -fsS -H "Auth..."`
+  - Функционально работает (подтверждено execution logs Session 14: все 3 cron'а вернули 200), но differences усложняют debug при будущих failures
+- Файлы: Coolify GUI (не код)
+- Оценка: 0.5ч
 
 
 ### P1.0 [A1] Wallet isolation
