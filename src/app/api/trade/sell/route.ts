@@ -19,13 +19,25 @@ class PriceMovedError extends Error {
   }
 }
 
+type PreTradeFailCategory = "mll_breach" | "daily_drawdown_exceeded";
+
 class DrawdownViolatedError extends Error {
   challengeId: number;
   reason: string;
-  constructor(challengeId: number, reason: string) {
+  category: PreTradeFailCategory;
+  constructor(challengeId: number, reason: string, category: PreTradeFailCategory) {
     super("CHALLENGE_DRAWDOWN_VIOLATED");
     this.challengeId = challengeId;
     this.reason = reason;
+    this.category = category;
+  }
+}
+
+class ChallengeExpiredError extends Error {
+  challengeId: number;
+  constructor(challengeId: number) {
+    super("CHALLENGE_EXPIRED");
+    this.challengeId = challengeId;
   }
 }
 
@@ -115,7 +127,7 @@ export async function POST(req: NextRequest) {
       const challengeId = activeChallenge ? activeChallenge.id : null;
 
       if (activeChallenge && activeChallenge.expiresAt && new Date() > activeChallenge.expiresAt) {
-        throw new Error("CHALLENGE_EXPIRED");
+        throw new ChallengeExpiredError(activeChallenge.id);
       }
 
       const market = await tx.market.findUnique({ where: { id: marketId } });
@@ -227,7 +239,7 @@ export async function POST(req: NextRequest) {
           const reason = isFailedByEquity && !isFailedByCash
             ? `Max Loss hit (equity): equity $${equity.toFixed(2)} below limit $${equityMLL.toFixed(2)} (peak equity $${newPeakEquity.toFixed(2)})`
             : `Max Loss hit: balance $${newRealizedBalance.toFixed(2)} below limit $${mll.toFixed(2)} (peak $${newPeakBalance.toFixed(2)})`;
-          throw new DrawdownViolatedError(challengeId, reason);
+          throw new DrawdownViolatedError(challengeId, reason, "mll_breach");
         }
 
         // Daily drawdown check
@@ -239,7 +251,8 @@ export async function POST(req: NextRequest) {
           if (dailyDrawdownPct >= activeChallenge.maxDailyDdPct) {
             throw new DrawdownViolatedError(
               challengeId,
-              `Daily drawdown ${dailyDrawdownPct}% exceeded limit ${activeChallenge.maxDailyDdPct}%`
+              `Daily drawdown ${dailyDrawdownPct}% exceeded limit ${activeChallenge.maxDailyDdPct}%`,
+              "daily_drawdown_exceeded"
             );
           }
         }
@@ -438,8 +451,39 @@ Our team will reach out shortly with next steps for funding your account.`;
         console.error("[SELL] Failed to persist challenge fail:", e);
       }
       return NextResponse.json(
-        { error: `Challenge failed: ${error.reason}` },
-        { status: 400 }
+        {
+          error_code: "CHALLENGE_FAILED_PRE_TRADE",
+          reason: error.category,
+          details: error.reason,
+          challengeStatusAfter: "failed",
+          violationCause: "price_movement_on_existing_positions",
+        },
+        { status: 409 }
+      );
+    }
+
+    if (error instanceof ChallengeExpiredError) {
+      try {
+        await prisma.challenge.update({
+          where: { id: error.challengeId },
+          data: {
+            status: "failed",
+            violationReason: "Challenge period expired",
+            endedAt: new Date(),
+          },
+        });
+      } catch (e) {
+        console.error("[SELL] Failed to persist challenge expiry:", e);
+      }
+      return NextResponse.json(
+        {
+          error_code: "CHALLENGE_FAILED_PRE_TRADE",
+          reason: "time_limit",
+          details: "Challenge period has ended",
+          challengeStatusAfter: "failed",
+          violationCause: "challenge_period_ended",
+        },
+        { status: 409 }
       );
     }
 
@@ -449,7 +493,6 @@ Our team will reach out shortly with next steps for funding your account.`;
       MARKET_NOT_LIVE:        { status: 400, error: "Market is not live" },
       POSITION_NOT_FOUND:     { status: 404, error: "No open position found for this market and side" },
       INSUFFICIENT_SHARES:    { status: 400, error: "Not enough shares to sell" },
-      CHALLENGE_EXPIRED:      { status: 400, error: "Challenge period has ended" },
     };
     if (message in clientErrors) {
       const { status, error } = clientErrors[message];

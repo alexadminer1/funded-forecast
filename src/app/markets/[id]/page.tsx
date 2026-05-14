@@ -10,6 +10,11 @@ import {
   applySellSpread,
   getMinPositionUsd,
 } from "@/lib/engine/spreads";
+import {
+  ChallengeFailedModal,
+  ChallengeFailedInfo,
+  ChallengeFailedReason,
+} from "@/components/ChallengeFailedModal";
 
 type UserPositionsResp = {
   success: boolean;
@@ -30,6 +35,7 @@ export default function MarketDetailPage() {
   const [market, setMarket] = useState<MarketDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [tradeModal, setTradeModal] = useState(false);
+  const [challengeFailed, setChallengeFailed] = useState<ChallengeFailedInfo | null>(null);
 
   useEffect(() => {
     apiFetch<{ success: boolean; market: MarketDetail }>(`/api/markets/${id}`)
@@ -154,12 +160,38 @@ export default function MarketDetailPage() {
         )}
       </main>
 
-      {tradeModal && <TradeModal market={market} onClose={() => setTradeModal(false)} />}
+      {tradeModal && (
+        <TradeModal
+          market={market}
+          onClose={() => setTradeModal(false)}
+          onChallengeFailed={(info) => {
+            setTradeModal(false);
+            setChallengeFailed(info);
+          }}
+        />
+      )}
+      {challengeFailed && (
+        <ChallengeFailedModal
+          info={challengeFailed}
+          onClose={() => {
+            setChallengeFailed(null);
+            router.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function TradeModal({ market, onClose }: { market: MarketDetail; onClose: () => void }) {
+function TradeModal({
+  market,
+  onClose,
+  onChallengeFailed,
+}: {
+  market: MarketDetail;
+  onClose: () => void;
+  onChallengeFailed: (info: ChallengeFailedInfo) => void;
+}) {
   const [side, setSide] = useState<"yes" | "no">("yes");
   const [action, setAction] = useState<"buy" | "sell">("buy");
   const [amount, setAmount] = useState(10);
@@ -231,18 +263,53 @@ function TradeModal({ market, onClose }: { market: MarketDetail; onClose: () => 
     setResult(null);
     try {
       const endpoint = action === "buy" ? "/api/trade/buy" : "/api/trade/sell";
+      const token = getToken();
       // clientPrice stays RAW — slippage is checked against market.yesPrice/noPrice.
-      const data = await apiFetch<{ success: boolean; balanceAfter?: number; error?: string }>(endpoint, {
+      const res = await fetch(endpoint, {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ marketId: market.id, side, amount, clientPrice: rawPrice }),
       });
-      if (data.success) {
-        setResult({ success: true, message: `${action === "buy" ? "Bought" : "Sold"} ${amount} ${side.toUpperCase()} shares · Balance: $${data.balanceAfter?.toFixed(2)}` });
+
+      let data: {
+        success?: boolean;
+        balanceAfter?: number;
+        error?: string;
+        error_code?: string;
+        reason?: ChallengeFailedReason;
+        details?: string;
+      };
+      try {
+        data = await res.json();
+      } catch {
+        data = {};
+      }
+
+      // P0.4.bis — pre-trade challenge failure → structured modal, no inline toast.
+      if (res.status === 409 && data.error_code === "CHALLENGE_FAILED_PRE_TRADE" && data.reason) {
+        onChallengeFailed({
+          reason: data.reason,
+          details: data.details ?? "Your challenge has ended.",
+        });
+        return;
+      }
+
+      if (res.ok && data.success) {
+        setResult({
+          success: true,
+          message: `${action === "buy" ? "Bought" : "Sold"} ${amount} ${side.toUpperCase()} shares · Balance: $${data.balanceAfter?.toFixed(2)}`,
+        });
       } else {
         setResult({ success: false, message: data.error ?? "Trade failed" });
       }
-    } catch { setResult({ success: false, message: "Request failed" }); }
-    finally { setLoading(false); }
+    } catch {
+      setResult({ success: false, message: "Request failed" });
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
