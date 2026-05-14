@@ -9,6 +9,40 @@
 
 ---
 
+## Session 2026-05-14 — Session 18 — P0.4.next min-position → daily-volume rule
+
+### Реализовано (код в develop, commit baf7c27)
+- **Backend per-trade rule убран**: `buy/route` больше не бросает `MinPositionError`. Остался только defensive `cost > 0` guard.
+- **Schema**: добавлена колонка `Challenge.qualifyingTradingDaysCount Int @default(0)`. SQL миграция НЕ применена автоматически — Architect применяет вручную.
+- **Cron `daily-pnl-aggregate`**: после обычного агрегата дневной P&L пересчитывает `qualifyingTradingDaysCount` каждого active challenge как `COUNT(d)` по дням `DATE(Trade.createdAt) < today` где `SUM(Trade.cost WHERE action='buy') >= 2% * startBalance`. Полный пересчёт = идемпотентно, без отдельной таблицы дней.
+- **Pass-condition**: переключена с `tradingDaysCount` на `qualifyingTradingDaysCount` в трёх местах: `lib/challengeStatus.ts::checkAndMarkPassed`, `api/trade/sell/route.ts::otherConditionsMet`, `api/admin/expire-challenges/route.ts::tradingDaysOk`. Legacy `tradingDaysCount` инкрементируется по-прежнему на каждый новый UTC день — для UI.
+- **API**: `/api/user/me` и `/api/user/mode` теперь возвращают `activeChallenge.todayBuyVolume` (live `SUM(Trade.cost where action='buy' and DATE=today)`) и `activeChallenge.minDailyVolumeUsd` (= `startBalance * 2%`).
+- **Dashboard widget**: новые ячейки "Qualifying Days" и "Daily Volume" рядом с легаси "Trading Days" в active-challenge card.
+- **FAQ**: добавлен пункт "How does a trading day count?" в `Challenge Rules`.
+- **Constants**: добавлен `MIN_DAILY_VOLUME_PCT = 2`; `MIN_POSITION_PCT` оставлен как legacy alias.
+
+### SQL для Architect (применить вручную на dev → потом на prod)
+```sql
+ALTER TABLE "Challenge"
+  ADD COLUMN IF NOT EXISTS "qualifyingTradingDaysCount"
+  INTEGER NOT NULL DEFAULT 0;
+```
+После применения — однократно дёрнуть `/api/cron/daily-pnl-aggregate` (с `Authorization: Bearer $CRON_SECRET`) чтобы пересчитать счётчик для уже-активных challenge'ей.
+
+### Что НЕ сделано / open вопросы
+- Per-challenge `qualifyingTradingDaysCount` для PASSED/FAILED/EXPIRED challenges остаётся 0 после миграции — cron обрабатывает только `status='active'`. Если для отчётности нужно back-fill историю, сделать отдельной мини-задачей (одноразовый SQL: `UPDATE Challenge SET qualifyingTradingDaysCount = (SELECT COUNT(*) FROM (SELECT DATE("createdAt") d FROM Trade WHERE "challengeId" = "Challenge".id AND action='buy' GROUP BY DATE("createdAt") HAVING SUM("cost") >= "startBalance" * 0.02) q)`).
+- В `/api/user/challenges` (history view) пока не добавлен `qualifyingTradingDaysCount` — past challenge cards показывают только legacy `tradingDaysCount`. Можно добавить позже, без срочности.
+- Сегодняшний день в pass-condition не учитывается до следующего тика cron (01:00 UTC) — это ожидаемо по спецификации, но проявляется как до-суточная задержка auto-pass для активно торгующих пользователей.
+
+### Smoke (manual после применения SQL)
+1. test8: `dev-psql -c "UPDATE \"Challenge\" SET status='active', startBalance=1000, realizedBalance=1000, qualifyingTradingDaysCount=0 WHERE id=17;"`.
+2. Поставить 3-4 буя на сегодня суммарно $25+. Открыть `dashboard` → "Daily Volume: $25.xx / $20.00", "Qualifying Days: 0 / X" (cron ещё не запускался).
+3. Дёрнуть cron: `curl -H "Authorization: Bearer $CRON_SECRET" https://dev.tradepredictions.online/api/cron/daily-pnl-aggregate` (но ожидать что сегодняшний день не зачтётся — cron смотрит только на дни строго до today).
+4. Имитировать «вчерашний день»: вставить Trade с `createdAt` за вчера; дёрнуть cron → `qualifyingTradingDaysCount` должен стать 1.
+5. Per-trade check: попробовать buy 1 share @ $0.10 (cost $0.10). Ожидаем 200 OK (раньше было 400 Min position).
+
+---
+
 ## Session 2026-05-14 — Session 17 — P0.4.bis Pre-trade failure UX CLOSED
 
 ### Закрыто
