@@ -9,6 +9,43 @@
 
 ---
 
+## Session 2026-05-14 — Session 18 — P0.4.next CLOSED
+
+### Закрыто
+- P0.4.next Refactor min position → daily volume rule (commit baf7c27)
+
+### Реализация
+- Убран per-trade min position rule
+- Добавлено новое поле Challenge.qualifyingTradingDaysCount (SQL applied to postgres-dev)
+- Cron daily-pnl-aggregate пересчитывает qualifyingTradingDaysCount per active challenge
+- Pass condition (auto-pass) теперь использует qualifyingTradingDaysCount вместо tradingDaysCount
+- Dashboard: 2 новых widgets "Qualifying Days" и "Daily Volume"
+- API /api/user/me, /api/user/mode возвращают todayBuyVolume + minDailyVolumeUsd
+- FAQ: добавлен item "How does a trading day count?"
+
+### SQL применён к postgres-dev
+```sql
+ALTER TABLE "Challenge" ADD COLUMN IF NOT EXISTS "qualifyingTradingDaysCount" INTEGER NOT NULL DEFAULT 0;
+```
+
+### Cron pre-run
+`curl /api/cron/daily-pnl-aggregate` → processed=0, skipped=5, qualifyingUpdated=[5 challenges count=0]
+
+### Production release (отложено для develop→main)
+- ALTER TABLE на ff-sandbox-db (через PROD_RELEASE_CHECKLIST)
+- Cron pre-run на prod после деплоя
+
+### Что НЕ сделано (отложено)
+- Backfill для PASSED/FAILED/EXPIRED challenges (cron обрабатывает только active)
+- /api/user/challenges и Past Challenge cards не получили qualifyingTradingDaysCount
+- Sub-day pass-condition: сегодняшний день не зачитывается до cron-тика 01:00 UTC (by design)
+
+### Следующая сессия
+- Полный аудит бизнес-модели P0.3 — будет проводиться в отдельном чате
+- Список задач P0.3.X будет сформирован после аудита
+
+---
+
 ## Session 2026-05-14 — Session 18 — P0.4.next min-position → daily-volume rule
 
 ### Реализовано (код в develop, commit baf7c27)

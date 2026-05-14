@@ -306,6 +306,16 @@ Acceptance:
 - Frontend показывает модалку, не toast
 - Smoke test: создать ситуацию когда DD достигнут на существующих позициях, попробовать buy → видим модалку
 
+### P0.4.next Replace min position with min daily volume rule ✓ CLOSED (Session 18, 2026-05-14, commit baf7c27)
+- Parent: P0.4 (mechanics revision)
+- Scope: убран per-trade min position rule, добавлен daily volume requirement через `qualifyingTradingDaysCount`
+- Schema: `Challenge.qualifyingTradingDaysCount Int @default(0)` (SQL применён к postgres-dev)
+- Cron `daily-pnl-aggregate`: пересчёт qualifying days per active challenge
+- Pass-condition: переключена с `tradingDaysCount` на `qualifyingTradingDaysCount`
+- API/UI: `todayBuyVolume`, `minDailyVolumeUsd` в /api/user/me + mode; новые widgets на dashboard; FAQ entry
+- Status: CLOSED on develop, ожидает prod release (ALTER TABLE на ff-sandbox-db + cron pre-run)
+- Deferred: backfill для PASSED/FAILED/EXPIRED, qualifyingTradingDaysCount в /api/user/challenges history view
+
 ### P0.5 On-chain txHash verification (SEC-5) ✓ CLOSED (Session 15, 2026-05-14, commit 9ff36d8, PR #8)
 - Scope: verify USDC transfer перед approving payout
 - Логика (через viem + Alchemy RPC):
