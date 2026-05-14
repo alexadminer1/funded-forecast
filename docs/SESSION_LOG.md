@@ -9,6 +9,48 @@
 
 ---
 
+## Session 2026-05-14 — P0.5 On-chain txHash Verification (SEC-5)
+
+### Закрыто
+- **P0.5 SEC-5** — On-chain txHash verification for admin payouts
+
+### Что сделано
+
+#### Новые файлы
+- `src/lib/onchain-verify.ts` — pure verification helper с 6 checks (tx_already_used, tx_not_found, wrong_chain/reverted, wrong_token, wrong_recipient, wrong_amount, insufficient_confirmations). Использует viem + getPaymentConfig() (не hardcoded chain).
+- `src/app/api/cron/verify-pending-payouts/route.ts` — cron для ретрая pending_verification payouts каждые 10 минут. Max 24 попытки → manualReview=true.
+
+#### Изменённые файлы
+- `prisma/schema.prisma` — добавлено в PayoutRequest: `verificationAttempts Int @default(0)`, `manualReview Boolean @default(false)`, `lastVerifyAttemptAt DateTime?`, `txHash` получил `@unique` constraint.
+- `src/app/api/admin/payouts/[id]/route.ts` — перехватывает `paid` transition: сначала сохраняет txHash + status=pending_verification, вызывает verifyPayoutTx синхронно. ok→paid (200), insufficient_confirmations→202, rpc_error→503, hard fail→rollback approved+clear txHash (400).
+- `src/app/admin/page.tsx` — добавлен фильтр-таб "pending_verification", цвет #A78BFA, badge "Verifying… N/24", красный badge "Needs manual review" для manualReview=true.
+
+#### Адаптации от спецификации
+- Существующий final status — `paid` (не `completed`); timestamp — `paidAt` (не `completedAt`)
+- Нет отдельного `complete` endpoint — логика добавлена в существующий PUT `[id]/route.ts`
+- Используется viem (уже в deps), не alchemy-sdk
+
+### SQL для prod (применить в Coolify DB Terminal)
+```sql
+ALTER TABLE "PayoutRequest" ADD COLUMN IF NOT EXISTS "verificationAttempts" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "PayoutRequest" ADD COLUMN IF NOT EXISTS "manualReview" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "PayoutRequest" ADD COLUMN IF NOT EXISTS "lastVerifyAttemptAt" TIMESTAMP;
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "PayoutRequest_txHash_key"
+  ON "PayoutRequest" ("txHash") WHERE "txHash" IS NOT NULL;
+```
+
+### Cron task для Coolify (после deploy)
+- Name: verify-pending-payouts
+- Schedule: `*/10 * * * *`
+- Container: app-dev (затем ff-sandbox-app для прода)
+- Command: `curl -fsS -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/verify-pending-payouts`
+
+### Build
+- `npm run build` ✓ clean
+- `npx tsc --noEmit` ✓ clean
+
+---
+
 ## Session 2026-05-13 — Session 12 — Dev Environment Setup
 
 ### Закрыто

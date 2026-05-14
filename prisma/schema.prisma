@@ -268,11 +268,14 @@ model PayoutRequest {
   paidAt                  DateTime?
   walletAddress           String?
   walletNetwork           String?
-  txHash                  String?
+  txHash                  String?   @unique
   currency                String    @default("USDC")
   baseAmountCents         Int?
   refundableFeeBonusCents Int?
   finalAmountCents        Int?
+  verificationAttempts    Int       @default(0)
+  manualReview            Boolean   @default(false)
+  lastVerifyAttemptAt     DateTime?
 
   user      User      @relation(fields: [userId], references: [id])
   challenge Challenge @relation(fields: [challengeId], references: [id])

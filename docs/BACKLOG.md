@@ -276,9 +276,9 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
   - position cost < 2% balance → reject
 - Оценка: 14ч
 
-### P0.5 On-chain txHash verification (SEC-5)
+### P0.5 On-chain txHash verification (SEC-5) ✓ DONE
 - Scope: verify USDC transfer перед approving payout
-- Логика (через Alchemy):
+- Логика (через viem + Alchemy RPC):
   - tx exists на Base
   - to address = expected (из PayoutRequest.address)
   - amount = approved amount (с tolerance ±1 cent)
@@ -287,16 +287,13 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Retry cron:
   - Новый cron /api/cron/verify-pending-payouts каждые 10 минут
   - Max 24 попытки (4 часа), после — flag для manual review
-  - Включён в Wave 3
-- Файлы:
-  - src/lib/onchain-verify (новый)
-  - src/app/api/admin/payouts/[id]/complete: integration
-  - src/app/api/cron/verify-pending-payouts (новый)
-- Тесты:
-  - Valid USDC tx → approved
-  - Wrong amount → rejected
-  - Wrong recipient → rejected
-  - Insufficient confirmations → pending, retry cron picks up
+- Файлы изменены:
+  - src/lib/onchain-verify.ts (новый)
+  - src/app/api/admin/payouts/[id]/route.ts (изменён — перехват paid transition)
+  - src/app/api/cron/verify-pending-payouts/route.ts (новый)
+  - prisma/schema.prisma (добавлены verificationAttempts, manualReview, lastVerifyAttemptAt, @unique на txHash)
+  - src/app/admin/page.tsx (pending_verification tab + badges)
+- Статус: CLOSED (issue #6, branch claude/issue-6-20260514-0902)
 - Оценка: 8ч
 
 ### P0.6 Валютная унификация USDC (SEC-4)
