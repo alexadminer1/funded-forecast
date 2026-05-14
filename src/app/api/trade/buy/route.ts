@@ -4,6 +4,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyToken } from "@/lib/auth";
 import { computeEquity } from "@/lib/equity";
+import { BUY_PRICE_CAP, MIN_POSITION_PCT } from "@/lib/engine/constants";
+import {
+  applyBuySpread,
+  checkBuyCap,
+  checkMinPosition,
+  getMinPositionUsd,
+} from "@/lib/engine/spreads";
 
 const MAX_SLIPPAGE = 0.02;
 const SANDBOX_MAX_POSITION_PCT = 2;
@@ -23,6 +30,26 @@ class DrawdownViolatedError extends Error {
     super("CHALLENGE_DRAWDOWN_VIOLATED");
     this.challengeId = challengeId;
     this.reason = reason;
+  }
+}
+
+class BuyCapExceededError extends Error {
+  rawPrice: number;
+  constructor(rawPrice: number) {
+    super("BUY_CAP_EXCEEDED");
+    this.rawPrice = rawPrice;
+  }
+}
+
+class MinPositionError extends Error {
+  cost: number;
+  minRequired: number;
+  startBalance: number;
+  constructor(cost: number, minRequired: number, startBalance: number) {
+    super("MIN_POSITION_NOT_MET");
+    this.cost = cost;
+    this.minRequired = minRequired;
+    this.startBalance = startBalance;
   }
 }
 
@@ -111,13 +138,32 @@ export async function POST(req: NextRequest) {
       if (!market) throw new Error("MARKET_NOT_FOUND");
       if (market.status !== "live") throw new Error("MARKET_NOT_LIVE");
 
-      const currentPrice = side === "yes" ? market.yesPrice : market.noPrice;
-      if (Math.abs(clientPrice - currentPrice) > MAX_SLIPPAGE) {
-        throw new PriceMovedError(currentPrice);
+      const rawPrice = side === "yes" ? market.yesPrice : market.noPrice;
+      if (Math.abs(clientPrice - rawPrice) > MAX_SLIPPAGE) {
+        throw new PriceMovedError(rawPrice);
       }
 
-      const executionPrice = currentPrice;
+      // P0.4: buy cap on RAW price (before spread).
+      if (!checkBuyCap(rawPrice)) {
+        throw new BuyCapExceededError(rawPrice);
+      }
+
+      // P0.4: buy spread against user. Position.avgPrice / Trade.price store effective.
+      // Raw remains in Trade.marketYesPriceAtExecution / marketNoPriceAtExecution.
+      const { effectivePrice, spreadPct } = applyBuySpread(rawPrice);
+      const executionPrice = effectivePrice;
       const cost = parseFloat((amount * executionPrice).toFixed(2));
+
+      // P0.4: min position size (challenge only; sandbox skips).
+      if (activeChallenge) {
+        if (!checkMinPosition(cost, activeChallenge.startBalance)) {
+          throw new MinPositionError(
+            cost,
+            getMinPositionUsd(activeChallenge.startBalance),
+            activeChallenge.startBalance,
+          );
+        }
+      }
 
       const lastLog = await tx.balanceLog.findFirst({
         where: challengeId !== null
@@ -282,7 +328,7 @@ export async function POST(req: NextRequest) {
 
       await tx.user.update({ where: { id: userId }, data: { lastTradeAt: new Date() } });
 
-      return { trade, position, balanceAfter: newBalance };
+      return { trade, position, balanceAfter: newBalance, rawPrice, effectivePrice, spreadPct, cost };
     }, { timeout: 15000 });
 
     return NextResponse.json({
@@ -290,6 +336,10 @@ export async function POST(req: NextRequest) {
       tradeId: result.trade.id,
       positionId: result.position.id,
       balanceAfter: result.balanceAfter,
+      rawPrice: result.rawPrice,
+      effectivePrice: result.effectivePrice,
+      spreadPct: result.spreadPct,
+      cost: result.cost,
     });
 
   } catch (error: unknown) {
@@ -304,6 +354,28 @@ export async function POST(req: NextRequest) {
           currentPrice: error.currentPrice,
         },
         { status: 409 }
+      );
+    }
+
+    if (error instanceof BuyCapExceededError) {
+      return NextResponse.json(
+        {
+          error: `Buy cap exceeded: price $${error.rawPrice.toFixed(4)} is at or above $${BUY_PRICE_CAP.toFixed(2)}`,
+          rawPrice: error.rawPrice,
+          cap: BUY_PRICE_CAP,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (error instanceof MinPositionError) {
+      return NextResponse.json(
+        {
+          error: `Min position $${error.minRequired.toFixed(2)} (${MIN_POSITION_PCT}% of $${error.startBalance.toFixed(2)} start balance). Got $${error.cost.toFixed(2)}.`,
+          minRequired: error.minRequired,
+          cost: error.cost,
+        },
+        { status: 400 }
       );
     }
 

@@ -6,6 +6,7 @@ import { verifyToken } from "@/lib/auth";
 import { sendEmail, buildBrandTemplate, buildKeyValueTable, escapeHtml } from "@/lib/email";
 import { computeEquity } from "@/lib/equity";
 import { MIN_RESOLVED_POSITIONS, MIN_UNIQUE_EVENTS } from "@/lib/engine/constants";
+import { applySellSpread } from "@/lib/engine/spreads";
 import { computeConsistencyLive, CONSISTENCY_THRESHOLD_CHALLENGE } from "@/lib/consistency";
 
 const MAX_SLIPPAGE = 0.02;
@@ -25,6 +26,16 @@ class DrawdownViolatedError extends Error {
     super("CHALLENGE_DRAWDOWN_VIOLATED");
     this.challengeId = challengeId;
     this.reason = reason;
+  }
+}
+
+class PartialSellError extends Error {
+  positionShares: number;
+  requestedAmount: number;
+  constructor(positionShares: number, requestedAmount: number) {
+    super("PARTIAL_SELL_NOT_ALLOWED");
+    this.positionShares = positionShares;
+    this.requestedAmount = requestedAmount;
   }
 }
 
@@ -111,19 +122,27 @@ export async function POST(req: NextRequest) {
       if (!market) throw new Error("MARKET_NOT_FOUND");
       if (market.status !== "live") throw new Error("MARKET_NOT_LIVE");
 
-      const currentPrice = side === "yes" ? market.yesPrice : market.noPrice;
-      if (Math.abs(clientPrice - currentPrice) > MAX_SLIPPAGE) {
-        throw new PriceMovedError(currentPrice);
+      const rawPrice = side === "yes" ? market.yesPrice : market.noPrice;
+      if (Math.abs(clientPrice - rawPrice) > MAX_SLIPPAGE) {
+        throw new PriceMovedError(rawPrice);
       }
-
-      const executionPrice = currentPrice;
 
       const position = await tx.position.findFirst({
         where: { userId, marketId, side, challengeId, status: "open" },
       });
 
       if (!position) throw new Error("POSITION_NOT_FOUND");
-      if (position.shares < amount) throw new Error("INSUFFICIENT_SHARES");
+
+      // P0.4: full sell only. Applies to all positions, including legacy partial-sold.
+      if (amount !== position.shares) {
+        throw new PartialSellError(position.shares, amount);
+      }
+
+      // P0.4: sell spread against user. Position.avgPrice is already effective
+      // (set on buy via applyBuySpread), so realizedPnl computed below is the
+      // true net user PnL: effectiveSell - effectiveBuy.
+      const { effectivePrice, spreadPct } = applySellSpread(rawPrice);
+      const executionPrice = effectivePrice;
 
       const proceeds = parseFloat((amount * executionPrice).toFixed(2));
       const realizedPnl = parseFloat((amount * (executionPrice - position.avgPrice)).toFixed(2));
@@ -313,7 +332,7 @@ export async function POST(req: NextRequest) {
 
       await tx.user.update({ where: { id: userId }, data: { lastTradeAt: new Date() } });
 
-      return { trade, position: updatedPosition, proceeds, realizedPnl, balanceAfter: newBalance, positionClosed: isFullClose, autoPass, passMeta };
+      return { trade, position: updatedPosition, proceeds, realizedPnl, balanceAfter: newBalance, positionClosed: isFullClose, autoPass, passMeta, rawPrice, effectivePrice, spreadPct };
     });
 
     if (result.autoPass && result.passMeta) {
@@ -377,6 +396,9 @@ Our team will reach out shortly with next steps for funding your account.`;
       realizedPnl: result.realizedPnl,
       balanceAfter: result.balanceAfter,
       positionClosed: result.positionClosed,
+      rawPrice: result.rawPrice,
+      effectivePrice: result.effectivePrice,
+      spreadPct: result.spreadPct,
     });
 
   } catch (error: unknown) {
@@ -387,6 +409,17 @@ Our team will reach out shortly with next steps for funding your account.`;
           currentPrice: error.currentPrice,
         },
         { status: 409 }
+      );
+    }
+
+    if (error instanceof PartialSellError) {
+      return NextResponse.json(
+        {
+          error: `Full sell only. Position has ${error.positionShares} shares; requested ${error.requestedAmount}. Sell all ${error.positionShares}.`,
+          positionShares: error.positionShares,
+          requestedAmount: error.requestedAmount,
+        },
+        { status: 400 }
       );
     }
 

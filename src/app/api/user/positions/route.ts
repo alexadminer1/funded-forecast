@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     // TODO [A1]: replace with native walletId filter after wallet model implementation
     const activeChallenge = await prisma.challenge.findFirst({
       where: { userId, status: "active" },
-      select: { id: true },
+      select: { id: true, startBalance: true },
     });
 
     const positions = await prisma.position.findMany({
@@ -81,6 +81,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      activeChallenge: activeChallenge
+        ? { id: activeChallenge.id, startBalance: activeChallenge.startBalance }
+        : null,
       positions: result,
       summary: {
         count: result.length,
