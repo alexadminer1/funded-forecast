@@ -9,47 +9,50 @@
 
 ---
 
-claude/issue-6-20260514-0902
-## Session 2026-05-14 — P0.5 On-chain txHash Verification (SEC-5)
+## Session 2026-05-14 — Session 15 — P0.5 On-chain txHash Verification
 
 ### Закрыто
-- **P0.5 SEC-5** — On-chain txHash verification for admin payouts
+- **P0.5** On-chain txHash verification for admin payouts (SEC-5) ✅ (PR #8 merged, commit 9ff36d8)
 
-### Что сделано
+### Архитектурные решения
+- Verification синхронно при admin вводе txHash через PUT /api/admin/payouts/[id] (transition в `paid`)
+- Status `pending_verification` для ситуации `confirmations < 5` — cron retry каждые 10 минут, max 24 попытки (~4 часа)
+- После 24 fails → `manualReview = true` + AuditLog `payout_verification_failed`
+- 6 проверок: tx_already_used (DB), tx_not_found, wrong_token (USDC Transfer event), wrong_recipient, wrong_amount (±0.01 USDC), insufficient_confirmations
+- Tolerance ±0.01 USDC (10000 в 6-decimal units)
+- Только USDC, USDT не поддерживается
+- Chain и USDC contract address резолвятся через `getPaymentConfig()` — никакого hardcode
 
-#### Новые файлы
-- `src/lib/onchain-verify.ts` — pure verification helper с 6 checks (tx_already_used, tx_not_found, wrong_chain/reverted, wrong_token, wrong_recipient, wrong_amount, insufficient_confirmations). Использует viem + getPaymentConfig() (не hardcoded chain).
-- `src/app/api/cron/verify-pending-payouts/route.ts` — cron для ретрая pending_verification payouts каждые 10 минут. Max 24 попытки → manualReview=true.
+### Реализация
+- `src/lib/onchain-verify.ts` (NEW, +169) — verification helper на viem
+- `src/app/api/cron/verify-pending-payouts/route.ts` (NEW, +196) — retry cron с Bearer CRON_SECRET auth
+- `src/app/api/admin/payouts/[id]/route.ts` (+164/-34) — paid transition теперь вызывает verify
+- `prisma/schema.prisma` (+4/-1) — txHash @unique, verificationAttempts, manualReview, lastVerifyAttemptAt
+- `src/app/admin/page.tsx` (+33/-11) — `pending_verification` tab + badges "Verifying N/24" + "Needs manual review"
 
-#### Изменённые файлы
-- `prisma/schema.prisma` — добавлено в PayoutRequest: `verificationAttempts Int @default(0)`, `manualReview Boolean @default(false)`, `lastVerifyAttemptAt DateTime?`, `txHash` получил `@unique` constraint.
-- `src/app/api/admin/payouts/[id]/route.ts` — перехватывает `paid` transition: сначала сохраняет txHash + status=pending_verification, вызывает verifyPayoutTx синхронно. ok→paid (200), insufficient_confirmations→202, rpc_error→503, hard fail→rollback approved+clear txHash (400).
-- `src/app/admin/page.tsx` — добавлен фильтр-таб "pending_verification", цвет #A78BFA, badge "Verifying… N/24", красный badge "Needs manual review" для manualReview=true.
+### Инфра
+- SQL migration применена на postgres-dev через Coolify DB Terminal:
+  ALTER TABLE "PayoutRequest" ADD COLUMN IF NOT EXISTS "verificationAttempts" INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE "PayoutRequest" ADD COLUMN IF NOT EXISTS "manualReview" BOOLEAN NOT NULL DEFAULT false;
+  ALTER TABLE "PayoutRequest" ADD COLUMN IF NOT EXISTS "lastVerifyAttemptAt" TIMESTAMP;
+  CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "PayoutRequest_txHash_key" ON "PayoutRequest" ("txHash") WHERE "txHash" IS NOT NULL;
+- Coolify Scheduled Task `verify-pending-payouts` создан на app-dev (frequency `*/10 * * * *`, container `app-dev`)
+- Manual trigger вернул `{"success":true,"processed":0,...}` — endpoint работает
 
-#### Адаптации от спецификации
-- Существующий final status — `paid` (не `completed`); timestamp — `paidAt` (не `completedAt`)
-- Нет отдельного `complete` endpoint — логика добавлена в существующий PUT `[id]/route.ts`
-- Используется viem (уже в deps), не alchemy-sdk
+### Косяки сессии (для понимания контекста)
+1. Coolify build падал на `exporting layers` с ошибкой DeploymentException — ушло 1+ час разбирательств. Причина: VPS Hetzner CX23 имеет 3.7GB RAM без swap, OOM kill во время Docker image export. Решение: создан /swapfile 4GB, добавлен в /etc/fstab. После этого билд проходит за ~3 минуты.
+2. Claude Code запушил код в `claude/issue-6-20260514-0902`, но PR не открыл сам — Архитектор открыл вручную (PR #8). Сначала пришлось синхронизировать main → develop (PR #7) потому что Claude Code создал ветку от main, develop отставала.
+3. Конфликт merge в `docs/SESSION_LOG.md` — резолвлен через GitHub web editor (обе записи Session 14 + Session 15 оставлены).
 
-### SQL для prod (применить в Coolify DB Terminal)
-```sql
-ALTER TABLE "PayoutRequest" ADD COLUMN IF NOT EXISTS "verificationAttempts" INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE "PayoutRequest" ADD COLUMN IF NOT EXISTS "manualReview" BOOLEAN NOT NULL DEFAULT false;
-ALTER TABLE "PayoutRequest" ADD COLUMN IF NOT EXISTS "lastVerifyAttemptAt" TIMESTAMP;
-CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "PayoutRequest_txHash_key"
-  ON "PayoutRequest" ("txHash") WHERE "txHash" IS NOT NULL;
-```
+### Открытые задачи (новые)
+- Нет новых
 
-### Cron task для Coolify (после deploy)
-- Name: verify-pending-payouts
-- Schedule: `*/10 * * * *`
-- Container: app-dev (затем ff-sandbox-app для прода)
-- Command: `curl -fsS -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/verify-pending-payouts`
+### Production release (отложено)
+- SQL migration на ff-sandbox-db (применяется при develop → main релизе по PROD_RELEASE_CHECKLIST)
+- Coolify cron task `verify-pending-payouts` на ff-sandbox-app (создаётся после релиза в main)
 
-### Build
-- `npm run build` ✓ clean
-- `npx tsc --noEmit` ✓ clean
-=======
+---
+
 ## Session 2026-05-14 — Session 14 — P0.3.a Consistency Rule
 
 ### Закрыто

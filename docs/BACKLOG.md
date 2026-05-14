@@ -8,7 +8,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Decisions: ✓ получены от заказчика (см. ниже)
 - Open questions: 4 блокера → docs/OPEN_QUESTIONS_P0.md
 - Production readiness: requires P0 work (~17 дней)
-- 9 задач закрыто (P0.3.e, P0.6, P0.10 drafts, P0.1, P0.2 Wave A, P0.2.b, P0.2.c, P0.2.d, P0.2.e)
+- 10 задач закрыто (P0.3.e, P0.6, P0.10 drafts, P0.1, P0.2 Wave A, P0.2.b, P0.2.c, P0.2.d, P0.2.e, P0.5)
 - P0 production blockers: +2 новых (P0.2.d, P0.2.e)
 
 ---
@@ -276,7 +276,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
   - position cost < 2% balance → reject
 - Оценка: 14ч
 
-### P0.5 On-chain txHash verification (SEC-5) ✓ DONE
+### P0.5 On-chain txHash verification (SEC-5) ✓ CLOSED (Session 15, 2026-05-14, commit 9ff36d8, PR #8)
 - Scope: verify USDC transfer перед approving payout
 - Логика (через viem + Alchemy RPC):
   - tx exists на Base
