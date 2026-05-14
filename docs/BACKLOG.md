@@ -276,6 +276,36 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
   - position cost < 2% balance → reject
 - Оценка: 14ч
 
+### P0.4.bis Pre-trade challenge failure UX
+- Severity: HIGH (blocker запуска — юзеры запутаются)
+- Parent: P0.4 (mechanics done, UX осталось)
+- Effort: 4-6h
+- Status: OPEN
+
+Проблема:
+При попытке buy если challenge уже выполнил fail-condition (например Daily DD превышен из-за движения цен на существующих позициях), API возвращает 400 "Challenge failed: ...". Юзер видит ошибку вместо понятного сообщения "ваш challenge закончился".
+
+Решение:
+
+Backend:
+- Сменить 400 → 409 Conflict для случая "challenge failed during pre-trade check"
+- Структурированный response body: { error_code: "CHALLENGE_FAILED_PRE_TRADE", reason: "daily_drawdown_exceeded" | "mll_breach" | "inactivity" | "time_limit", details: "...", challengeStatusAfter: "failed", violationCause: "price_movement_on_existing_positions" | ... }
+- Применить во всех endpoints где идёт pre-trade check: trade/buy, trade/sell
+
+Frontend:
+- Перехват 409 + error_code=CHALLENGE_FAILED_PRE_TRADE
+- Модальное окно с текстом причины и тремя CTA: Buy Instant Reset (30% off) / Buy new challenge / Continue in sandbox
+- После закрытия модалки — refresh dashboard
+- Убрать toast "Challenge failed" возле кнопки Buy
+
+FAQ (Wave 4):
+- Описать сценарий "позиции просели до DD лимита пока готовил сделку — challenge зафейлен"
+
+Acceptance:
+- API возвращает 409 со структурированным body когда pre-trade check ловит already-failed challenge
+- Frontend показывает модалку, не toast
+- Smoke test: создать ситуацию когда DD достигнут на существующих позициях, попробовать buy → видим модалку
+
 ### P0.5 On-chain txHash verification (SEC-5) ✓ CLOSED (Session 15, 2026-05-14, commit 9ff36d8, PR #8)
 - Scope: verify USDC transfer перед approving payout
 - Логика (через viem + Alchemy RPC):

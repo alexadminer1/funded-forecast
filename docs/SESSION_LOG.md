@@ -9,6 +9,41 @@
 
 ---
 
+## Session 2026-05-14 — P0.4 Position mechanics CLOSED + P0.4.bis OPENED
+
+### Закрыто
+- P0.4 Position mechanics: buy/sell spreads, cap, min position, full sell only (commit 22bd917)
+
+### Реализация (Variant A)
+- effective price хранится в Position.avgPrice
+- raw price хранится в Trade.raw_yes (snapshot для аудита)
+- spread tiers: 0% / 2% / 7% на buy в зависимости от rawPrice
+- sell spread 4% единый
+- buy cap: rawPrice >= 0.85 → 400 BuyCapExceededError
+- min position: cost < 2% startBalance в challenge mode → 400 MinPositionError
+- partial sell: amount != position.shares → 400 PartialSellError
+
+### Smoke tests (7/7 PASS)
+1. Buy rawPrice 0.55, 50 shares → spread 0%, effective=0.55, cost=$27.50 ✓
+2. Buy rawPrice 0.65, 50 shares → spread 2%, effective=0.663, cost=$33.15 ✓
+3. Buy rawPrice 0.835, 50 shares → spread 7%, effective=0.89345, cost=$44.67 ✓
+4. Buy rawPrice 0.9995 → 400 BuyCapExceeded ✓
+5. Buy 1 share × 0.83 (cost $0.89) → 400 MinPosition ✓
+6. Sell partial 30 of 50 → 400 PartialSell ✓
+7. Sell full 50 @ 0.65 → spread 4%, proceeds=$31.20, realizedPnl=-$1.95 (точный комбинированный spread overhead) ✓
+
+### Архитектурное решение
+- Pre-trade challenge status check: если challenge fail-condition выполнено к моменту buy (например DD превышен из-за движения цен на существующих позициях), API возвращает ошибку и сделка не исполняется. Это правильное поведение (kill switch). НО UX требует доработки → создана P0.4.bis.
+
+### БД cleanup
+- Reset test8 (Challenge#17): status=active, balance=1000
+- Force-closed orphan positions: #44 (test8, market 2080209), #47 (test1, market 2245165)
+
+### Открыто (новое)
+- P0.4.bis Pre-trade challenge failure UX — структурированный 409 response + frontend модалка
+
+---
+
 ## Session 2026-05-14 — Session 15 — P0.5 On-chain txHash Verification
 
 ### Закрыто
