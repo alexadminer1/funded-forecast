@@ -9,6 +9,69 @@
 
 ---
 
+## Session 2026-05-14 — Session 17 — P0.4.bis Pre-trade failure UX CLOSED
+
+### Закрыто
+- **P0.4.bis** Pre-trade challenge failure UX (commit a6c1789)
+
+### Реализация
+- **Backend (trade/buy + trade/sell)**:
+  - `DrawdownViolatedError` carries `category: "mll_breach" | "daily_drawdown_exceeded"`.
+  - New `ChallengeExpiredError` (replaces generic `throw new Error("CHALLENGE_EXPIRED")`).
+  - Pre-trade fail paths now return **HTTP 409** with structured body:
+    ```
+    {
+      error_code: "CHALLENGE_FAILED_PRE_TRADE",
+      reason: "daily_drawdown_exceeded" | "mll_breach" | "time_limit",
+      details: "<human readable>",
+      challengeStatusAfter: "failed",
+      violationCause: "price_movement_on_existing_positions" | "challenge_period_ended"
+    }
+    ```
+  - Expired challenge is now persisted as `status=failed, violationReason="Challenge period expired"`
+    in the trade route (mirrors expire-challenges cron behaviour).
+  - Trade-caused rejections (BuyCap, MinPosition, PartialSell, position size, slippage,
+    insufficient balance) stay on **HTTP 400** with their original payloads.
+- **Frontend**:
+  - New `src/components/ChallengeFailedModal.tsx` with two CTAs:
+    “Buy new challenge” → `/account/plans`, “Continue in sandbox” → `/dashboard`.
+    Closes on X / Esc / click-outside. `router.refresh()` on close.
+  - `TradeModal` in `src/app/markets/[id]/page.tsx` switched to raw `fetch` so `res.status`
+    is observable. On 409 + `CHALLENGE_FAILED_PRE_TRADE` the inline banner is suppressed
+    and the modal opens via `onChallengeFailed`.
+
+### Smoke tests (dev.tradepredictions.online, commit a6c1789)
+| # | Scenario | Setup | Expected | Result |
+|---|----------|-------|----------|--------|
+| 1 | Daily DD pre-trade fail | test8 ch#17: dayStart=1000, realized=950, buy 50@0.525 → newRealized 923.75 → DD 7.63% | 409 + `daily_drawdown_exceeded` | ✅ 409 returned, challenge persisted as failed |
+| 2 | Trade-caused MinPosition | test8 ch#17 clean, buy 1@0.525 → $0.53 < $20 min | 400, no modal | ✅ 400 with original payload |
+
+curl evidence:
+```
+HTTP/2 409
+{"error_code":"CHALLENGE_FAILED_PRE_TRADE","reason":"daily_drawdown_exceeded",
+ "details":"Daily drawdown 7.63% exceeded limit 5%","challengeStatusAfter":"failed",
+ "violationCause":"price_movement_on_existing_positions"}
+```
+
+### Архитектурное (для Архитектора, требует ревью)
+- **Inactivity reason** не триггерится из buy/sell (только cron). Если cron уже сделал
+  `status=failed`, следующий buy/sell не находит активного challenge и тихо уходит в
+  sandbox mode — модалка не показывается. Возможно стоит добавить отдельный pre-trade
+  lookup "recently failed challenge без active replacement" → 409 inactivity/time_limit.
+  Сейчас вне scope P0.4.bis.
+- **Sell DD smoke** не выполнен (sell увеличивает realizedBalance → daily DD после sell
+  обычно лучше; equity-aware MLL требует одновременно открытых позиций с большим MTM
+  loss). Catch handler идентичен buy — confidence high, но manual sell smoke на UI
+  желателен от QA.
+- **Frontend модалка**: smoke выполнен только на API. UI behavior (modal open/close,
+  router.push, refresh) проверяется вручную в браузере.
+
+### БД cleanup
+- test8 (Challenge#17) после smoke возвращён в clean state: `status=active, balance=1000`.
+
+---
+
 ## Session 2026-05-14 — P0.4 Position mechanics CLOSED + P0.4.bis OPENED
 
 ### Закрыто

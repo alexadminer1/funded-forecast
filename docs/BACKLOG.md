@@ -276,11 +276,11 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
   - position cost < 2% balance → reject
 - Оценка: 14ч
 
-### P0.4.bis Pre-trade challenge failure UX
+### P0.4.bis Pre-trade challenge failure UX ✓ CLOSED (Session 17, 2026-05-14, commit a6c1789)
 - Severity: HIGH (blocker запуска — юзеры запутаются)
 - Parent: P0.4 (mechanics done, UX осталось)
 - Effort: 4-6h
-- Status: OPEN
+- Status: CLOSED (без Instant Reset CTA — P1.5 не реализован)
 
 Проблема:
 При попытке buy если challenge уже выполнил fail-condition (например Daily DD превышен из-за движения цен на существующих позициях), API возвращает 400 "Challenge failed: ...". Юзер видит ошибку вместо понятного сообщения "ваш challenge закончился".
