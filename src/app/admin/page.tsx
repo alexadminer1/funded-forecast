@@ -1386,7 +1386,10 @@ function PayoutsSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestIn
     approved: "#3B82F6",
     paid: "#22C55E",
     rejected: "#EF4444",
+    pending_verification: "#A78BFA",
   };
+
+  const FILTER_TABS = ["pending", "approved", "pending_verification", "paid", "rejected"];
 
   return (
     <div>
@@ -1394,31 +1397,50 @@ function PayoutsSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestIn
       <div style={{ fontSize: 13, color: "#475569", marginBottom: 24 }}>Manage payout requests from funded traders</div>
 
       {/* Filter */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
-        {["pending", "approved", "paid", "rejected"].map(s => (
+      <div style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
+        {FILTER_TABS.map(s => (
           <button key={s} onClick={() => setFilter(s)} style={{
             padding: "6px 16px", borderRadius: 8, border: "1px solid",
-            borderColor: filter === s ? STATUS_COLOR[s] : "#334155",
-            background: filter === s ? `${STATUS_COLOR[s]}18` : "transparent",
-            color: filter === s ? STATUS_COLOR[s] : "#475569",
-            fontSize: 12, fontWeight: 600, cursor: "pointer", textTransform: "capitalize",
-          }}>{s}</button>
+            borderColor: filter === s ? (STATUS_COLOR[s] ?? "#94A3B8") : "#334155",
+            background: filter === s ? `${STATUS_COLOR[s] ?? "#94A3B8"}18` : "transparent",
+            color: filter === s ? (STATUS_COLOR[s] ?? "#94A3B8") : "#475569",
+            fontSize: 12, fontWeight: 600, cursor: "pointer",
+          }}>{s.replace("_", " ")}</button>
         ))}
       </div>
 
       {/* List */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {items.length === 0 && (
-          <div style={{ textAlign: "center", padding: "40px 0", color: "#475569", fontSize: 13 }}>No {filter} payouts</div>
+          <div style={{ textAlign: "center", padding: "40px 0", color: "#475569", fontSize: 13 }}>No {filter.replace("_", " ")} payouts</div>
         )}
         {items.map(item => (
-          <div key={item.id} style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 10, padding: "16px 20px" }}>
+          <div key={item.id} style={{
+            background: "#1E293B",
+            border: `1px solid ${item.manualReview ? "#EF4444" : "#334155"}`,
+            borderRadius: 10,
+            padding: "16px 20px",
+          }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: editing === item.id ? 16 : 0 }}>
               <div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
                   <span style={{ fontSize: 14, fontWeight: 700, color: "#F1F5F9" }}>@{item.user?.username}</span>
                   <span style={{ fontSize: 11, color: "#475569" }}>{item.user?.email}</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: `${STATUS_COLOR[item.status]}18`, color: STATUS_COLOR[item.status] }}>{item.status.toUpperCase()}</span>
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4,
+                    background: `${STATUS_COLOR[item.status] ?? "#94A3B8"}18`,
+                    color: STATUS_COLOR[item.status] ?? "#94A3B8",
+                  }}>{item.status.replace("_", " ").toUpperCase()}</span>
+                  {item.status === "pending_verification" && (
+                    <span style={{ fontSize: 11, color: "#A78BFA", background: "#A78BFA18", padding: "2px 8px", borderRadius: 4 }}>
+                      Verifying… {item.verificationAttempts}/24
+                    </span>
+                  )}
+                  {item.manualReview && (
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "#EF4444", background: "#EF444418", padding: "2px 8px", borderRadius: 4 }}>
+                      ⚠ Needs manual review
+                    </span>
+                  )}
                 </div>
                 <div style={{ fontSize: 12, color: "#475569", display: "flex", gap: 16, flexWrap: "wrap" }}>
                   <span>Base: <span style={{ color: "#22C55E", fontWeight: 700 }}>${item.baseAmountCents != null ? (item.baseAmountCents / 100).toFixed(2) : item.amount}</span></span>
