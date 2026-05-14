@@ -1,8 +1,10 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { verifyToken } from "@/lib/auth";
+import { MIN_DAILY_VOLUME_PCT } from "@/lib/engine/constants";
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
@@ -62,11 +64,31 @@ export async function GET(req: NextRequest) {
       sandboxPositionsCount = sandboxCount;
     }
 
+    // P0.4.next — augment active challenge with today's buy volume + min required.
+    // Mirrors logic in /api/user/me (kept in two places to avoid coupling those endpoints).
+    let challengeWithVolume: typeof activeChallenge & { todayBuyVolume?: number; minDailyVolumeUsd?: number } | null = null;
+    if (activeChallenge) {
+      const todayUtcDateStr = new Date().toISOString().slice(0, 10);
+      const rows = await prisma.$queryRaw<{ volume: Prisma.Decimal | number | null }[]>(Prisma.sql`
+        SELECT COALESCE(SUM("cost"), 0) AS volume
+        FROM "Trade"
+        WHERE "challengeId" = ${activeChallenge.id}
+          AND "action" = 'buy'
+          AND DATE("createdAt") = ${todayUtcDateStr}::date
+      `);
+      const raw = rows[0]?.volume;
+      const todayBuyVolume = raw == null ? 0 : parseFloat(Number(raw).toFixed(2));
+      const minDailyVolumeUsd = parseFloat(
+        (activeChallenge.startBalance * (MIN_DAILY_VOLUME_PCT / 100)).toFixed(2),
+      );
+      challengeWithVolume = { ...activeChallenge, todayBuyVolume, minDailyVolumeUsd };
+    }
+
     return NextResponse.json({
       success: true,
       mode,
       currentBalance,
-      challenge:            activeChallenge ?? null,
+      challenge:            challengeWithVolume,
       lastChallenge,
       sandboxBalance,
       sandboxPositionsCount,

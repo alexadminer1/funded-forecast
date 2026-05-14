@@ -113,12 +113,13 @@ export async function POST(req: NextRequest) {
       // Re-fetch updated challenge balance after position closes
       const updated = await prisma.challenge.findUnique({
         where: { id: challenge.id },
-        select: { realizedBalance: true, startBalance: true, profitTargetPct: true, tradingDaysCount: true, minTradingDays: true },
+        select: { realizedBalance: true, startBalance: true, profitTargetPct: true, qualifyingTradingDaysCount: true, minTradingDays: true },
       });
       if (!updated) continue;
 
       const profitTargetReached = updated.realizedBalance >= updated.startBalance * (1 + updated.profitTargetPct / 100);
-      const tradingDaysOk = updated.tradingDaysCount >= updated.minTradingDays;
+      // P0.4.next: pass requires qualifyingTradingDaysCount, not raw tradingDaysCount.
+      const tradingDaysOk = updated.qualifyingTradingDaysCount >= updated.minTradingDays;
       const newStatus = (profitTargetReached && tradingDaysOk) ? "passed" : "expired";
 
       await prisma.challenge.update({

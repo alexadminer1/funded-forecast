@@ -40,8 +40,17 @@ export const BUY_PRICE_CAP = 0.85;
 export const SELL_SPREAD_PCT = 4;
 
 /**
- * Minimum position size as percent of Challenge.startBalance.
- * Enforced only in challenge mode (sandbox skips).
- * minPositionUsd = startBalance * MIN_POSITION_PCT / 100.
+ * Legacy constant — was per-trade min position size (P0.4).
+ * P0.4.next: per-trade min position rule was removed. The same threshold is
+ * now used as the daily qualifying-volume threshold (see MIN_DAILY_VOLUME_PCT).
+ * Constant kept for backwards compatibility with any remaining callers.
  */
 export const MIN_POSITION_PCT = 2;
+
+/**
+ * P0.4.next — minimum daily buy volume (as percent of Challenge.startBalance)
+ * required for a UTC day to qualify toward Challenge.qualifyingTradingDaysCount.
+ * Counted by the daily-pnl-aggregate cron, not at trade submission time.
+ * minDailyVolumeUsd = startBalance * MIN_DAILY_VOLUME_PCT / 100.
+ */
+export const MIN_DAILY_VOLUME_PCT = 2;

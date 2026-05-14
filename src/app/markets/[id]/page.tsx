@@ -4,11 +4,10 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { apiFetch, getToken } from "@/lib/api";
 import { MarketDetail } from "@/lib/types";
-import { BUY_PRICE_CAP, MIN_POSITION_PCT } from "@/lib/engine/constants";
+import { BUY_PRICE_CAP } from "@/lib/engine/constants";
 import {
   applyBuySpread,
   applySellSpread,
-  getMinPositionUsd,
 } from "@/lib/engine/spreads";
 import {
   ChallengeFailedModal,
@@ -198,7 +197,7 @@ function TradeModal({
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
 
-  // P0.4: fetch user positions for full-sell-only enforcement + activeChallenge for min position.
+  // P0.4: fetch user positions for full-sell-only enforcement.
   const [userPositions, setUserPositions] = useState<UserPositionsResp | null>(null);
   const [positionsState, setPositionsState] = useState<"loading" | "loaded" | "error">("loading");
 
@@ -244,16 +243,11 @@ function TradeModal({
   const payoutIfWin = parseFloat((amount * 1).toFixed(2));
   const profitIfWin = parseFloat((payoutIfWin - cost).toFixed(2));
 
-  // P0.4: min position check (challenge only).
-  const activeChallenge = userPositions?.activeChallenge ?? null;
-  const minPositionUsd = activeChallenge ? getMinPositionUsd(activeChallenge.startBalance) : 0;
-  const minPositionViolated =
-    action === "buy" && activeChallenge !== null && amount > 0 && cost < minPositionUsd;
-
+  // P0.4.next: per-trade min position removed. Daily volume qualifying rule
+  // is now enforced by cron daily-pnl-aggregate, not at trade submission.
   const submitDisabled =
     loading
     || capExceeded
-    || minPositionViolated
     || sellLoading
     || sellNoPosition
     || amount <= 0;
@@ -405,15 +399,6 @@ function TradeModal({
             color: "#EF4444", fontSize: 13,
           }}>
             Buy cap: price ${rawPrice.toFixed(4)} is at or above ${BUY_PRICE_CAP.toFixed(2)}. Trade not allowed.
-          </div>
-        )}
-        {minPositionViolated && (
-          <div style={{
-            padding: "11px 14px", borderRadius: 8, marginBottom: 14,
-            background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
-            color: "#EF4444", fontSize: 13,
-          }}>
-            Min position ${minPositionUsd.toFixed(2)} ({MIN_POSITION_PCT}% of ${activeChallenge!.startBalance.toFixed(2)}). Increase shares.
           </div>
         )}
         {sellNoPosition && (

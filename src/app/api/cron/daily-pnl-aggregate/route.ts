@@ -4,15 +4,20 @@ export const maxDuration = 60;
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { MIN_DAILY_VOLUME_PCT } from "@/lib/engine/constants";
 
 // P0.3.a Consistency Rule — daily aggregation cron.
 // Schedule (set by Alexey in Coolify): 0 1 * * *  (01:00 UTC each day)
 // Runs against yesterday's UTC date — by 01:00 UTC any in-flight trades
 // from the previous day are settled.
 //
-// For each active challenge: upsert one ChallengeDailyPnL row covering
-// yesterday's Trade events (realizedPnl IS NOT NULL). Idempotent: re-runs
-// produce the same end state via ON CONFLICT (challengeId, date) DO UPDATE.
+// For each active challenge:
+//   (1) upsert one ChallengeDailyPnL row for yesterday's settled Trade events
+//       (realizedPnl IS NOT NULL). Idempotent via ON CONFLICT DO UPDATE.
+//   (2) P0.4.next — recompute Challenge.qualifyingTradingDaysCount: count of
+//       past UTC days where SUM(buy Trade.cost) >= MIN_DAILY_VOLUME_PCT * startBalance.
+//       The recompute is a full scan over the challenge's buy-Trade history so
+//       the cron is naturally idempotent and self-healing across reruns.
 //
 // Mirror of: scripts/backfill-daily-pnl.sql (one-shot historical backfill)
 //            src/lib/consistency.ts → computeConsistencyLive() (live read)
@@ -43,11 +48,12 @@ export async function GET(req: NextRequest) {
   const processed: number[] = [];
   const skipped:   number[] = [];
   const errors:    { challengeId: number; message: string }[] = [];
+  const qualifyingUpdated: { challengeId: number; count: number }[] = [];
 
   try {
     const activeChallenges = await prisma.challenge.findMany({
       where: { status: "active" },
-      select: { id: true },
+      select: { id: true, startBalance: true },
       take: 5000,
     });
 
@@ -99,6 +105,29 @@ export async function GET(req: NextRequest) {
         } else {
           skipped.push(c.id);
         }
+
+        // P0.4.next — qualifying day recompute. Count UTC days (strictly before
+        // today's UTC midnight) where SUM(buy Trade.cost) >= 2% startBalance.
+        // Idempotent: full scan, write the absolute count, no increment.
+        const minDailyVolume = c.startBalance * (MIN_DAILY_VOLUME_PCT / 100);
+        const qualifyingRows = await prisma.$queryRaw<{ count: bigint }[]>(Prisma.sql`
+          SELECT COUNT(*)::bigint AS count
+          FROM (
+            SELECT DATE("createdAt") AS d, SUM("cost") AS total
+            FROM "Trade"
+            WHERE "challengeId" = ${c.id}
+              AND "action" = 'buy'
+              AND "createdAt" < ${todayStart}
+            GROUP BY DATE("createdAt")
+            HAVING SUM("cost") >= ${minDailyVolume}
+          ) q
+        `);
+        const qualifyingCount = Number(qualifyingRows[0]?.count ?? 0n);
+        await prisma.challenge.update({
+          where: { id: c.id },
+          data: { qualifyingTradingDaysCount: qualifyingCount },
+        });
+        qualifyingUpdated.push({ challengeId: c.id, count: qualifyingCount });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`[DAILY_PNL_AGGREGATE] challenge ${c.id} failed:`, err);
@@ -113,6 +142,7 @@ export async function GET(req: NextRequest) {
       errors,
       processedChallengeIds: processed,
       skippedChallengeIds:   skipped,
+      qualifyingUpdated,
     });
   } catch (err) {
     console.error("[DAILY_PNL_AGGREGATE] fatal error:", err);

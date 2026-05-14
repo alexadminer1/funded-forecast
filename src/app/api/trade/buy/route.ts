@@ -4,12 +4,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyToken } from "@/lib/auth";
 import { computeEquity } from "@/lib/equity";
-import { BUY_PRICE_CAP, MIN_POSITION_PCT } from "@/lib/engine/constants";
+import { BUY_PRICE_CAP } from "@/lib/engine/constants";
 import {
   applyBuySpread,
   checkBuyCap,
-  checkMinPosition,
-  getMinPositionUsd,
 } from "@/lib/engine/spreads";
 
 const MAX_SLIPPAGE = 0.02;
@@ -50,18 +48,6 @@ class BuyCapExceededError extends Error {
   constructor(rawPrice: number) {
     super("BUY_CAP_EXCEEDED");
     this.rawPrice = rawPrice;
-  }
-}
-
-class MinPositionError extends Error {
-  cost: number;
-  minRequired: number;
-  startBalance: number;
-  constructor(cost: number, minRequired: number, startBalance: number) {
-    super("MIN_POSITION_NOT_MET");
-    this.cost = cost;
-    this.minRequired = minRequired;
-    this.startBalance = startBalance;
   }
 }
 
@@ -166,16 +152,10 @@ export async function POST(req: NextRequest) {
       const executionPrice = effectivePrice;
       const cost = parseFloat((amount * executionPrice).toFixed(2));
 
-      // P0.4: min position size (challenge only; sandbox skips).
-      if (activeChallenge) {
-        if (!checkMinPosition(cost, activeChallenge.startBalance)) {
-          throw new MinPositionError(
-            cost,
-            getMinPositionUsd(activeChallenge.startBalance),
-            activeChallenge.startBalance,
-          );
-        }
-      }
+      // P0.4.next: per-trade min position removed — replaced by daily volume
+      // qualifying-day rule (cron daily-pnl-aggregate). Per-trade only guards
+      // against zero/negative cost (bug protection).
+      if (!(cost > 0)) throw new Error("INVALID_TRADE_COST");
 
       const lastLog = await tx.balanceLog.findFirst({
         where: challengeId !== null
@@ -381,17 +361,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (error instanceof MinPositionError) {
-      return NextResponse.json(
-        {
-          error: `Min position $${error.minRequired.toFixed(2)} (${MIN_POSITION_PCT}% of $${error.startBalance.toFixed(2)} start balance). Got $${error.cost.toFixed(2)}.`,
-          minRequired: error.minRequired,
-          cost: error.cost,
-        },
-        { status: 400 }
-      );
-    }
-
     if (error instanceof DrawdownViolatedError) {
       // Persist fail outside the rolled-back transaction
       try {
@@ -451,6 +420,7 @@ export async function POST(req: NextRequest) {
       INSUFFICIENT_BALANCE:         { status: 400, error: "Insufficient balance" },
       POSITION_SIZE_EXCEEDED:       { status: 400, error: "Position size exceeds limit" },
       POSITION_NOT_OPEN:            { status: 400, error: "Position is not open" },
+      INVALID_TRADE_COST:           { status: 400, error: "Invalid trade cost" },
     };
     if (message in clientErrors) {
       const { status, error } = clientErrors[message];

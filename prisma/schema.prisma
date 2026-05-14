@@ -205,7 +205,8 @@ model Challenge {
   maxTotalDdPct        Float
   maxPositionSizePct   Float     @default(5)
   minTradingDays       Int
-  tradingDaysCount     Int       @default(0)
+  tradingDaysCount          Int  @default(0)
+  qualifyingTradingDaysCount Int @default(0)
   profitTargetMet      Boolean   @default(false)
   drawdownViolated     Boolean   @default(false)
   dayStartBalance      Float?

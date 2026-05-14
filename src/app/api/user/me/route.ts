@@ -1,8 +1,10 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { verifyToken } from "@/lib/auth";
+import { MIN_DAILY_VOLUME_PCT } from "@/lib/engine/constants";
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
@@ -56,6 +58,7 @@ export async function GET(req: NextRequest) {
         maxDailyDdPct: true,
         profitTargetMet: true,
         tradingDaysCount: true,
+        qualifyingTradingDaysCount: true,
         minTradingDays: true,
         startedAt: true,
         planId: true,
@@ -83,13 +86,38 @@ export async function GET(req: NextRequest) {
     // use the challenge's realizedBalance so the header doesn't show $0.
     const balance = lastLog?.runningBalance ?? activeChallenge?.realizedBalance ?? 0;
 
+    // P0.4.next — today's buy volume (UTC day) toward the qualifying threshold.
+    // Computed live; persisted counter lives on Challenge.qualifyingTradingDaysCount
+    // but today's bucket is only finalised by daily-pnl-aggregate cron at next 01:00 UTC.
+    // Day-grouping mirrors the cron's `DATE("createdAt")` (UTC wall-clock; see
+    // ChallengeDailyPnL comment in schema for rationale).
+    let todayBuyVolume = 0;
+    let minDailyVolumeUsd = 0;
+    if (activeChallenge) {
+      minDailyVolumeUsd = parseFloat(
+        (activeChallenge.startBalance * (MIN_DAILY_VOLUME_PCT / 100)).toFixed(2),
+      );
+      const todayUtcDateStr = new Date().toISOString().slice(0, 10);
+      const rows = await prisma.$queryRaw<{ volume: Prisma.Decimal | number | null }[]>(Prisma.sql`
+        SELECT COALESCE(SUM("cost"), 0) AS volume
+        FROM "Trade"
+        WHERE "challengeId" = ${activeChallenge.id}
+          AND "action" = 'buy'
+          AND DATE("createdAt") = ${todayUtcDateStr}::date
+      `);
+      const raw = rows[0]?.volume;
+      todayBuyVolume = raw == null ? 0 : parseFloat(Number(raw).toFixed(2));
+    }
+
     return NextResponse.json({
       success: true,
       user: {
         ...user,
         balance,
         openPositionsCount,
-        activeChallenge,
+        activeChallenge: activeChallenge
+          ? { ...activeChallenge, todayBuyVolume, minDailyVolumeUsd }
+          : null,
       },
     });
 

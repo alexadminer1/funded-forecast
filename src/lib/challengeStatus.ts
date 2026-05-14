@@ -8,7 +8,7 @@ import { computeConsistencyLive, CONSISTENCY_THRESHOLD_CHALLENGE } from "@/lib/c
  * Passing conditions (ALL must be true):
  *   1. challenge.status === "active"                                  (not failed/passed/expired/frozen)
  *   2. challenge.profitTargetMet === true
- *   3. tradingDaysCount >= challenge.minTradingDays
+ *   3. qualifyingTradingDaysCount >= challenge.minTradingDays          (P0.4.next — recounted by daily-pnl-aggregate cron)
  *   4. resolvedPositionsCount >= MIN_RESOLVED_POSITIONS                (P0.3.b)
  *   5. uniqueEventsCount >= MIN_UNIQUE_EVENTS                          (P0.3.c)
  *   6. consistency.isPassChallenge — biggestDayPct ≤ 25 %              (P0.3.a, live from Trade)
@@ -33,7 +33,7 @@ export async function checkAndMarkPassed(
       id: true,
       status: true,
       profitTargetMet: true,
-      tradingDaysCount: true,
+      qualifyingTradingDaysCount: true,
       minTradingDays: true,
       resolvedPositionsCount: true,
       uniqueEventsCount: true,
@@ -43,7 +43,7 @@ export async function checkAndMarkPassed(
   if (!c) return false;
   if (c.status !== "active") return false;
   if (!c.profitTargetMet) return false;
-  if (c.tradingDaysCount < c.minTradingDays) return false;
+  if (c.qualifyingTradingDaysCount < c.minTradingDays) return false;
   if (c.resolvedPositionsCount < MIN_RESOLVED_POSITIONS) return false;
   if (c.uniqueEventsCount < MIN_UNIQUE_EVENTS) return false;
 

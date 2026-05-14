@@ -295,9 +295,13 @@ export async function POST(req: NextRequest) {
           },
         });
 
+        // P0.4.next — pass-condition uses qualifyingTradingDaysCount (updated
+        // by daily-pnl-aggregate cron). Today's buys do not contribute to the
+        // pass check until the next cron tick recounts the day. `effectiveTradingDays`
+        // is kept for the auto-pass email payload (legacy semantics).
         const otherConditionsMet =
           profitTargetMet
-          && effectiveTradingDays >= activeChallenge.minTradingDays
+          && activeChallenge.qualifyingTradingDaysCount >= activeChallenge.minTradingDays
           && activeChallenge.resolvedPositionsCount >= MIN_RESOLVED_POSITIONS
           && activeChallenge.uniqueEventsCount >= MIN_UNIQUE_EVENTS;
 
