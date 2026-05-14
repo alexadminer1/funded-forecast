@@ -9,6 +9,38 @@
 
 ---
 
+## Session 2026-05-14 — Session 14 — P0.3.a Consistency Rule
+
+### Закрыто
+- **P0.3.a** Consistency Rule ✅ (commit ba46520, 11 файлов, ~+517/-54)
+
+### Архитектурные решения
+- Источник `dailyPnl`: новая колонка `Trade.realizedPnl` (`Decimal? @db.Decimal(20,8)`)
+- Новый `action='resolve'` для `Trade` — `marketResolve.ts` создаёт Trade row при резолве маркета
+- `ChallengeDailyPnL` — pre-aggregated table для payout checks; auto-pass читает live из Trade (без зависимости от cron)
+- Day-grouping: `DATE("createdAt")` без `AT TIME ZONE 'UTC'` (Postgres колонка `timestamp without time zone`, серверный TZ=UTC)
+- Backfill для исторических данных НЕ делается (Q6.a) — grace period для существующих challenges
+- Cron `0 1 * * *` UTC агрегирует вчерашний день за активные challenges, идемпотентен через `ON CONFLICT DO UPDATE`
+
+### Инфра
+- Coolify scheduled task `daily-pnl-aggregate` создан на `app-dev` (frequency `0 1 * * *`, container `app-dev`)
+- 8 prod cron tasks перенесены с `ff-sandbox-app` на `app-dev` (был dev/prod drift — на dev был только новый daily-pnl-aggregate)
+- Backup `/home/claude/ff-sandbox-db-pre-p03a-backfill-20260514-0729.sql` (2.3MB) перед backfill
+- Backfill no-op подтверждён: все исторические `Trade.realizedPnl=NULL` → SQL вставил 0 строк
+- Health check после деплоя: Next.js Ready ✓, `/api/health` → 200, `/api/cron/daily-pnl-aggregate` без auth → 401 ✓
+
+### Smoke test
+- `alexadminer` (challenge 10) через UI: buy 10 @ 0.0715 + sell 10 @ 0.0715 на marketId 2155000
+- Trade row #63 (action='sell') — `realizedPnl=0.00000000` записан корректно (Шаг 7 интеграция + Шаг 10 post-fix работают)
+- BalanceLog связан через `tradeId`: rows 126 (`trade_open`, -0.71) и 127 (`trade_close`, +0.71)
+- Manual trigger `/api/cron/daily-pnl-aggregate` (от лица CRON_SECRET, внутри app-dev): `processed=0, skipped=6` (нет sell за yesterday) — endpoint работает идемпотентно
+- Live-агрегация формулой даёт 1 row для challenge 10 today (dailyPnl=0, dailyTrades=1) — корректно
+
+### Открытые задачи (новая в BACKLOG)
+- **P1.infra.9** — унифицировать flag style (`-fsS`) и `container` field в 3 scheduled tasks на app-dev. Функциональность подтверждена execution logs, но в БД остались cosmetic differences: `activate-payments` container=watch-payments, `daily-pnl-aggregate` использует `-sf`, `Expire Challenges` без `-fsS`
+
+---
+
 ## Session 2026-05-13 — Session 13 — Branch protection, bash helpers, @claude smoke test
 
 ### Закрыто

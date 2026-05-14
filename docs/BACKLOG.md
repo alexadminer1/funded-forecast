@@ -159,7 +159,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 
 ### P0.3 Недостающие challenge rules
 
-#### P0.3.a Consistency Rule
+#### P0.3.a Consistency Rule ✓ CLOSED (Session 14, 2026-05-14, commit ba46520)
 - Scope: запретить passing если biggest day > 25% от total profit
 - БД: новая таблица ChallengeDailyPnL (id, challengeId, date, dailyPnl, dailyTrades, isWinningDay)
 - Формула:
@@ -512,6 +512,18 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Файлы: настройки GitHub (не код)
 - Оценка: 0.2ч
 - Результат: Vercel GitHub App suspended через GitHub Settings → Applications → Vercel → Suspend. Конфигурация Vercel-аккаунта сохранена, при необходимости — Unsuspend в один клик.
+
+### P1.infra.9 Unify dev cron tasks style + sync drift
+- Source: Session 14 (2026-05-14)
+- Priority: P2
+- Scope:
+  - 3 tasks на `app-dev` имеют cosmetic differences vs prod style (выявлено при разведке после переноса 8 prod cron'ов на dev):
+    - `activate-payments`: `container=watch-payments` → нужно `app-dev` (на dev нет контейнера `watch-payments`; в БД значение осталось от копирования с prod, но execution прошла успешно — почему точно не разбирались)
+    - `daily-pnl-aggregate`: `curl -sf ...` → нужно `curl -fsS ...` (флаг `S` нужен для show-errors при failures в execution logs)
+    - `Expire Challenges`: `curl -H "Auth..."` (без флагов) → нужно `curl -fsS -H "Auth..."`
+  - Функционально работает (подтверждено execution logs Session 14: все 3 cron'а вернули 200), но differences усложняют debug при будущих failures
+- Файлы: Coolify GUI (не код)
+- Оценка: 0.5ч
 
 
 ### P1.0 [A1] Wallet isolation
