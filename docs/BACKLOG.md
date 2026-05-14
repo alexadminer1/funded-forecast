@@ -610,6 +610,43 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Email support@, шаблоны на типовые вопросы, SLA definition
 - Оценка: 4ч
 
+### P1.UX.1 Challenge naming & identifiers
+- Severity: MEDIUM (UX clarity + support workflow)
+- Status: OPEN
+
+Проблема:
+Сейчас юзер видит на dashboard "Evaluation Challenge ACTIVE" без идентификатора, в Past Challenges — только "Starter · May 14, 2026". У одного юзера может быть несколько challenges одновременно (passed + failed + active — пример: id=10, 11, 12 у alexadminer). Юзер не может различить свои challenges между собой. Support не может быстро найти конкретный challenge в БД когда юзер пишет жалобу.
+
+Решение:
+
+A. User-facing identifier (видит юзер на dashboard и в Past Challenges):
+   - Формат: #N TierName · Date старта
+   - Пример: #1 Starter · May 14, 2026
+   - N — порядковый номер challenge ЭТОГО юзера (1, 2, 3...). Считается на лету через ROW_NUMBER() OVER (PARTITION BY userId ORDER BY startedAt).
+   - Не хранится в БД отдельной колонкой.
+   - Применяется и к Evaluation Challenge (активный), и к Past Challenges (история).
+
+B. Internal global ID (видим только admin/support):
+   - Формат: CH-NNNNNN (zero-padded до 6 знаков). Пример: CH-000042.
+   - Базируется на существующем Challenge.id из БД, просто форматируется при выводе через helper. Никаких новых колонок.
+   - Виден в admin panel рядом с user-facing именем.
+   - Используется в логах AuditLog, email уведомлениях для support, error reports.
+   - Юзер этот ID НЕ видит на dashboard. Видит только когда обращается в support — support по нему ищет.
+
+Файлы (предположительно — Claude Code адаптирует к реальной структуре):
+- src/lib/challenge-display.ts (NEW) — два helper'а: formatUserFacingName(challenge, userChallenges[]), formatGlobalId(challenge.id)
+- src/app/dashboard/page.tsx (или компонент Evaluation Challenge card) — использует formatUserFacingName
+- Компонент Past Challenges — использует formatUserFacingName
+- src/app/admin/page.tsx — использует formatGlobalId + formatUserFacingName рядом
+- src/app/api/user/challenges/route.ts — возможно нужно вернуть userIndex (порядковый номер) в API response
+
+Acceptance:
+- Юзер с 3 challenges видит на dashboard и в Past Challenges три РАЗНЫХ имени: #1 Starter · ..., #2 Starter · ..., #3 Starter · ...
+- В admin panel рядом с каждым challenge виден CH-000010, CH-000011, CH-000012
+- Не сломаны существующие фичи (история, фильтры по статусу, нав)
+
+Это P1 — НЕ блокер запуска, но важно для UX и support workflow в первые недели после запуска.
+
 **Subtotal P1.late: 48ч ≈ 6 дней**
 
 ---
