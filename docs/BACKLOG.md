@@ -262,6 +262,19 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
   - Periodic schema drift check (P2)
 - Связь: после merge — все будущие schema changes через `prisma migrate dev`
 
+### P0.3.A ChallengePlan business model update ✓ CLOSED (Phase 1, 2026-05-15)
+- Parent: P0.3 challenge rules — фундамент бизнес-модели в БД
+- Scope:
+  - A1: Hybrid storage модель подтверждена — никаких новых колонок,
+    tier-params в ChallengePlan, engine rules в `src/lib/engine/constants.ts`
+  - A2: UPDATE 3 строк ChallengePlan (challengePeriodDays 30→10, minTradingDays 15→10;
+    DLL/MLL re-asserted явно для идемпотентности — фактически без изменений)
+  - A3: minTradingDays оставлен в схеме (значение = challengePeriodDays). Удаление поля → TECH-DEBT-4
+- Migration: `prisma/migrations/20260515165522_phase_1_challenge_plan_values/migration.sql`
+- Status: applied on dev (postgres-dev). Prod release deferred to PROD_RELEASE_CHECKLIST.
+- Файлы: только migration.sql (нет изменений в schema.prisma и коде)
+- Оценка: 2ч (factual: ~1.5ч)
+
 ### P0.4 Position mechanics
 - Scope: progressive buy spread, buy cap $0.85, sell spread 4%, min position 2%, full sell only
 - БД: новая таблица EngineSettings (key, value, updatedAt) для spread конфига
@@ -758,6 +771,7 @@ Acceptance:
 - Verify: dev app перезапускается, login + smoke test работают
 - Estimated: 15 минут
 - Когда делать: ДО любого нового удалённого подключения к postgres-dev по этому паролю
+- Priority raised 2026-05-15 (Phase 1): пароль повторно засветился в transcript основной сессии. Обязательная ротация ДО prod release.
 
 ### TECH-DEBT-2 Cleanup ~/prisma.config.ts ⚪ P2 (created Phase 0.5)
 - Reason: устаревший файл в home directory ломает `npx prisma ...` если запускать вне `~/funded-app`
@@ -773,3 +787,11 @@ Acceptance:
 - Scope: one line of code + one UPDATE
 - Estimated: 30 минут
 - Не блокер. Делаем после Phase 1.
+
+### TECH-DEBT-4 Remove redundant minTradingDays field from ChallengePlan ⚪ P2 (created Phase 1)
+- Reason: после Phase 1 minTradingDays = challengePeriodDays всегда.
+  Поле дублирует значение, является tech debt.
+- Action: миграция ALTER TABLE DROP COLUMN, удаление всех references в коде
+- Scope: schema.prisma + ~5-10 файлов в src/ + миграция
+- Estimated: 1-2 часа
+- Не блокер. Делаем после Phase 4 (когда все cron'ы по новой модели готовы).

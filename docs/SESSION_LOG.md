@@ -9,6 +9,75 @@
 
 ---
 
+## Session 2026-05-15 — Phase 1 — ChallengePlan business model update CLOSED
+
+### Закрыто
+- P0.3.A1 Hybrid storage model подтверждена (никаких новых колонок в ChallengePlan)
+- P0.3.A2 UPDATE значений ChallengePlan через Prisma migration
+- P0.3.A3 minTradingDays оставлен в схеме, значение = challengePeriodDays = 10
+
+### Контекст
+Первая фаза с реальным изменением данных через `prisma migrate deploy`
+после Phase 0.5 schema reconciliation. Миграция создана вручную
+(mkdir + migration.sql), т.к. это pure DML — не schema diff.
+
+### Реализация
+- Создана миграция `20260515165522_phase_1_challenge_plan_values`
+- Pure DML в транзакции BEGIN/COMMIT, 3 UPDATE по accountSize
+- Идемпотентна: DLL/MLL re-asserted явно, фактически совпадают со старыми значениями
+- Реальные изменения: только `challengePeriodDays` 30→10 и `minTradingDays` 15→10
+
+### Snapshot ChallengePlan
+
+До (из Task A):
+```
+ id |  name   | accountSize | priceCents | profitTargetPct | dailyLossPct | maxLossPct | challengePeriodDays | minTradingDays
+----+---------+-------------+------------+-----------------+--------------+------------+---------------------+----------------
+  1 | Starter |        1000 |        100 |              15 |            5 |         10 |                  30 |             15
+  2 | Pro     |        5000 |        195 |              15 |            4 |          8 |                  30 |             15
+  3 | Elite   |       15000 |        300 |              15 |            3 |          6 |                  30 |             15
+```
+
+После (из Task C4):
+```
+ id |  name   | accountSize | priceCents | profitTargetPct | dailyLossPct | maxLossPct | challengePeriodDays | minTradingDays
+----+---------+-------------+------------+-----------------+--------------+------------+---------------------+----------------
+  1 | Starter |        1000 |        100 |              15 |            5 |         10 |                  10 |             10
+  2 | Pro     |        5000 |        195 |              15 |            4 |          8 |                  10 |             10
+  3 | Elite   |       15000 |        300 |              15 |            3 |          6 |                  10 |             10
+```
+
+### Backup pre-migration
+`/tmp/dev-db-pre-phase-1-20260515-1959.sql` (3 MB, на Mac)
+
+### Smoke test (alexadminer на https://dev.tradepredictions.online)
+✅ login, ✅ /account/plans (3 тарифа, цены $1/$1.95/$3), ✅ карточки планов,
+✅ /dashboard, ✅ "Get Plan" → checkout
+
+### Discovered (added to BACKLOG)
+- TECH-DEBT-4: remove redundant minTradingDays field (deferred to after Phase 4)
+- TECH-DEBT-1 priority RAISED: POSTGRES_PASSWORD засветился в чате основной сессии повторно, ротация до prod release обязательна
+
+### Production release (отложено для develop→main)
+- Та же миграция применится на ff-sandbox-db через `prisma migrate deploy`
+  во время prod release (через PROD_RELEASE_CHECKLIST)
+- ChallengePlan на prod сейчас содержит старые значения 30/15
+
+### Что НЕ сделано (вне scope)
+- Никаких изменений в schema.prisma
+- Никаких изменений в коде приложения
+- Никаких изменений в engine constants (Phase 2)
+- Никаких изменений UI/FAQ (Phase 6 / E2)
+- Цены priceCents не меняли (по решению — через админку)
+
+### Следующая фаза
+Phase 2 — Trade endpoint guards.
+Phase 2.A: B1 (max aggregate position 5%) + B2 (min position 2% hard reject)
+Phase 2.B: B3 (max daily volume 5%) + B4 (User.isBlocked check) + B5 (Market.endDate check)
+PHASE_2_A_BRIEF.md будет выдан после merge Phase 1 в develop.
+
+---
+
 ## Session 2026-05-14 — Session 18 — P0.4.next CLOSED
 
 ### Закрыто
