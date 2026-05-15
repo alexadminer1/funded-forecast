@@ -53,7 +53,7 @@ model UserConsent {
   acceptedAt          DateTime
   ipAddress           String?
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 }
 
 model Market {
@@ -107,9 +107,9 @@ model Trade {
   realizedPnl               Decimal? @db.Decimal(20, 8)
   createdAt                 DateTime @default(now())
 
-  user        User         @relation(fields: [userId], references: [id])
-  market      Market       @relation(fields: [marketId], references: [id])
-  challenge   Challenge?   @relation(fields: [challengeId], references: [id])
+  user        User         @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  market      Market       @relation(fields: [marketId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  challenge   Challenge?   @relation(fields: [challengeId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   balanceLogs BalanceLog[]
 
   @@index([userId, createdAt(sort: Desc)])
@@ -134,9 +134,9 @@ model Position {
   closedAt    DateTime?
   resolvedAt  DateTime?
 
-  user      User       @relation(fields: [userId], references: [id])
-  market    Market     @relation(fields: [marketId], references: [id])
-  challenge Challenge? @relation(fields: [challengeId], references: [id])
+  user      User       @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  market    Market     @relation(fields: [marketId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  challenge Challenge? @relation(fields: [challengeId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   @@index([userId, status])
   @@index([marketId, status])
@@ -155,9 +155,9 @@ model BalanceLog {
   runningBalance Float
   createdAt      DateTime @default(now())
 
-  user      User       @relation(fields: [userId], references: [id])
-  trade     Trade?     @relation(fields: [tradeId], references: [id])
-  challenge Challenge? @relation(fields: [challengeId], references: [id])
+  user      User       @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  trade     Trade?     @relation(fields: [tradeId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  challenge Challenge? @relation(fields: [challengeId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([tradeId])
@@ -191,44 +191,44 @@ model ChallengePlan {
 }
 
 model Challenge {
-  id                   Int       @id @default(autoincrement())
-  userId               Int
-  planId               Int?
-  stage                String
-  status               String    @default("active")
-  startBalance         Float     @default(10000)
-  realizedBalance      Float
-  peakBalance          Float
-  peakEquity           Float?
-  profitTargetPct      Float
-  maxDailyDdPct        Float
-  maxTotalDdPct        Float
-  maxPositionSizePct   Float     @default(5)
-  minTradingDays       Int
-  tradingDaysCount          Int  @default(0)
-  qualifyingTradingDaysCount Int @default(0)
-  profitTargetMet      Boolean   @default(false)
-  drawdownViolated     Boolean   @default(false)
-  dayStartBalance      Float?
-  dayStartDate         DateTime?
-  lastTradingDay       DateTime?
-  violationReason      String?
-  expiresAt            DateTime?
-  payoutCapCents       Int?
-  minPayoutCents       Int?
-  profitSharePct       Float?
-  refundableFeeCents   Int?
-  payoutCooldownDays   Int?
-  refundableFeePaidAt  DateTime?
-  lastApprovedPayoutAt DateTime?
-  startedAt            DateTime  @default(now())
-  endedAt              DateTime?
-  lastNewPositionAt      DateTime?
-  resolvedPositionsCount Int     @default(0)
-  uniqueEventsCount      Int     @default(0)
+  id                         Int       @id @default(autoincrement())
+  userId                     Int
+  planId                     Int?
+  stage                      String
+  status                     String    @default("active")
+  startBalance               Float     @default(10000)
+  realizedBalance            Float
+  peakBalance                Float
+  peakEquity                 Float?
+  profitTargetPct            Float
+  maxDailyDdPct              Float
+  maxTotalDdPct              Float
+  maxPositionSizePct         Float     @default(5)
+  minTradingDays             Int
+  tradingDaysCount           Int       @default(0)
+  qualifyingTradingDaysCount Int       @default(0)
+  profitTargetMet            Boolean   @default(false)
+  drawdownViolated           Boolean   @default(false)
+  dayStartBalance            Float?
+  dayStartDate               DateTime?
+  lastTradingDay             DateTime?
+  violationReason            String?
+  expiresAt                  DateTime?
+  payoutCapCents             Int?
+  minPayoutCents             Int?
+  profitSharePct             Float?
+  refundableFeeCents         Int?
+  payoutCooldownDays         Int?
+  refundableFeePaidAt        DateTime?
+  lastApprovedPayoutAt       DateTime?
+  startedAt                  DateTime  @default(now())
+  endedAt                    DateTime?
+  lastNewPositionAt          DateTime?
+  resolvedPositionsCount     Int       @default(0)
+  uniqueEventsCount          Int       @default(0)
 
-  user            User                @relation(fields: [userId], references: [id])
-  plan            ChallengePlan?      @relation(fields: [planId], references: [id])
+  user            User                @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  plan            ChallengePlan?      @relation(fields: [planId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   trades          Trade[]
   positions       Position[]
   balanceLogs     BalanceLog[]
@@ -253,13 +253,16 @@ model Subscription {
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([userId, status])
   @@index([stripeCustomerId])
 }
 
-
+/// EXTERNAL: partial unique index on `txHash` —
+/// UNIQUE (txHash) WHERE txHash IS NOT NULL.
+/// Behaviorally equivalent to standard `@unique` in PostgreSQL (NULLs do
+/// not collide), but DDL diverges. See docs/UNMANAGED_DDL.md.
 model PayoutRequest {
   id                      Int       @id @default(autoincrement())
   userId                  Int
@@ -283,10 +286,10 @@ model PayoutRequest {
   finalAmountCents        Int?
   verificationAttempts    Int       @default(0)
   manualReview            Boolean   @default(false)
-  lastVerifyAttemptAt     DateTime?
+  lastVerifyAttemptAt     DateTime? @db.Timestamp
 
-  user      User      @relation(fields: [userId], references: [id])
-  challenge Challenge @relation(fields: [challengeId], references: [id])
+  user      User      @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  challenge Challenge @relation(fields: [challengeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([userId, status])
   @@index([challengeId, status])
@@ -333,7 +336,7 @@ model AuditLog {
   ipAddress  String?
   createdAt  DateTime @default(now())
 
-  actor User? @relation("AuditActor", fields: [actorId], references: [id])
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   @@index([targetType, targetId])
   @@index([actorId])
@@ -371,7 +374,6 @@ model Review {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
-
 
 model LeaderboardEntry {
   id        Int      @id @default(autoincrement())
@@ -623,6 +625,11 @@ model AffiliateLedger {
   @@index([payoutId])
 }
 
+/// EXTERNAL: partial unique index `affiliate_active_payout_idx` —
+/// UNIQUE (affiliateId) WHERE status IN ('requested','approved','processing').
+/// Prevents one affiliate from holding two in-flight payouts.
+/// Prisma cannot express partial indexes in DSL. See docs/UNMANAGED_DDL.md.
+/// Managed manually via SQL; do NOT drop on db push.
 model AffiliatePayout {
   id                    Int                    @id @default(autoincrement())
   affiliateId           Int
@@ -685,48 +692,53 @@ enum PaymentTransactionStatus {
   MANUAL_REVIEW
 }
 
+/// EXTERNAL: partial unique index `Payment_active_amount_unique` —
+/// UNIQUE (chainId, tokenAddress, receiverAddress, expectedAmountUnits)
+/// WHERE status IN ('AWAITING_PAYMENT','SEEN_ON_CHAIN','CONFIRMING','UNDERPAID').
+/// Prisma cannot express partial indexes in DSL. See docs/UNMANAGED_DDL.md.
+/// Managed manually via SQL; do NOT drop on db push.
 model Payment {
-  id                    String        @id @default(cuid())
-  userId                Int
-  challengeId           Int?
-  planId                Int?
+  id          String @id @default(cuid())
+  userId      Int
+  challengeId Int?
+  planId      Int?
 
-  status                PaymentStatus @default(AWAITING_PAYMENT)
+  status PaymentStatus @default(AWAITING_PAYMENT)
 
-  chainId               Int
-  tokenSymbol           String
-  tokenAddress          String
-  tokenDecimals         Int
-  receiverAddress       String
+  chainId         Int
+  tokenSymbol     String
+  tokenAddress    String
+  tokenDecimals   Int
+  receiverAddress String
 
-  planAmountUsd         Decimal       @db.Decimal(18, 2)
-  expectedAmountUnits   BigInt
-  actualAmountUnits     BigInt?
+  planAmountUsd       Decimal @db.Decimal(18, 2)
+  expectedAmountUnits BigInt
+  actualAmountUnits   BigInt?
 
-  confirmationsRequired Int           @default(6)
-  confirmationsSeen     Int           @default(0)
+  confirmationsRequired Int @default(6)
+  confirmationsSeen     Int @default(0)
 
-  expiresAt             DateTime
-  seenAt                DateTime?
-  confirmedAt           DateTime?
-  expiredAt             DateTime?
+  expiresAt   DateTime
+  seenAt      DateTime?
+  confirmedAt DateTime?
+  expiredAt   DateTime?
 
-  primaryTxHash         String?
-  primaryLogIndex       Int?
-  primaryBlockNumber    BigInt?
+  primaryTxHash      String?
+  primaryLogIndex    Int?
+  primaryBlockNumber BigInt?
 
-  flagReason            String?
-  createdByIp           String?
-  createdUserAgent      String?
+  flagReason       String?
+  createdByIp      String?
+  createdUserAgent String?
 
-  metadata              Json?
+  metadata Json?
 
-  createdAt             DateTime      @default(now())
-  updatedAt             DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  user         User                 @relation(fields: [userId], references: [id])
-  challenge    Challenge?           @relation(fields: [challengeId], references: [id])
-  plan         ChallengePlan?       @relation(fields: [planId], references: [id])
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  challenge    Challenge?           @relation(fields: [challengeId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  plan         ChallengePlan?       @relation(fields: [planId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   transactions PaymentTransaction[]
 
   @@index([userId])
@@ -737,29 +749,29 @@ model Payment {
 }
 
 model PaymentTransaction {
-  id              String                   @id @default(cuid())
-  paymentId       String?
+  id        String  @id @default(cuid())
+  paymentId String?
 
-  chainId         Int
-  txHash          String
-  logIndex        Int
+  chainId  Int
+  txHash   String
+  logIndex Int
 
-  blockNumber     BigInt
-  blockTimestamp  DateTime
+  blockNumber    BigInt
+  blockTimestamp DateTime
 
   tokenAddress    String
   receiverAddress String
   fromAddress     String
   amountUnits     BigInt
 
-  status          PaymentTransactionStatus @default(DETECTED)
-  matchReason     String?
-  confirmations   Int                      @default(0)
+  status        PaymentTransactionStatus @default(DETECTED)
+  matchReason   String?
+  confirmations Int                      @default(0)
 
-  createdAt       DateTime                 @default(now())
-  updatedAt       DateTime                 @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  payment Payment? @relation(fields: [paymentId], references: [id])
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   @@unique([chainId, txHash, logIndex])
   @@index([paymentId])
@@ -768,21 +780,21 @@ model PaymentTransaction {
 }
 
 model PaymentWatcherState {
-  id                 String    @id @default(cuid())
+  id String @id @default(cuid())
 
-  chainId            Int
-  tokenAddress       String
-  receiverAddress    String
+  chainId         Int
+  tokenAddress    String
+  receiverAddress String
 
   lastProcessedBlock BigInt
   latestSeenBlock    BigInt?
 
-  lastHealthyAt      DateTime?
-  errorCount         Int       @default(0)
-  lastError          String?
+  lastHealthyAt DateTime?
+  errorCount    Int       @default(0)
+  lastError     String?
 
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([chainId, tokenAddress, receiverAddress])
 }
