@@ -25,7 +25,7 @@ PG_CONTAINER="ku2yqi907qdi78bk3xb5zy3p"  # postgres-dev (Coolify UUID)
 
 case "$MODE" in
   primary)
-    REMOTE_DIR="/root/backups"
+    REMOTE_DIR="/home/claude/backups"
     REMOTE_FILE="${REMOTE_DIR}/dev-db-pre-wipe-${TIMESTAMP}.sql"
     echo "Mode: PRIMARY (server-side via ssh ff-dev + docker exec)"
     echo "Target file on server: ${REMOTE_FILE}"
