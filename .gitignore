@@ -60,3 +60,6 @@ prisma/schema.prisma.backup*
 *.local.md
 .env.save
 *.bak
+
+# Local scratch dir (schema dumps, ad-hoc artifacts)
+tmp/
