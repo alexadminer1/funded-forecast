@@ -46,6 +46,82 @@ ALTER TABLE "Challenge" ADD COLUMN IF NOT EXISTS "qualifyingTradingDaysCount" IN
 
 ---
 
+
+## Session 2026-05-15 — Phase 0.5 — Schema reconciliation CLOSED
+
+### Контекст
+Phase 0 был запущен (wipe + docs + backup), но остановлен после обнаружения
+schema drift между `prisma/schema.prisma` и реальной dev-БД (G1 долг из
+PHASE_KIT.md). Введена новая Phase 0.5 для reconciliation перед любыми
+schema-меняющими работами.
+
+### Закрыто
+- Phase 0.5 Schema reconciliation (branch `feature/p0-5-schema-reconciliation`)
+
+### Реализация
+
+**Schema diff scope:**
+- 24 таблицы — совпадают
+- 24 primary keys — совпадают (включая User.id integer)
+- 10 enums — совпадают
+- 330 колонок — 1 type-precision diff (PayoutRequest.lastVerifyAttemptAt)
+- 30 FK — 0 missing/extra, но 21 onDelete-policy mismatches
+- 2 partial unique indexes в БД отсутствуют в schema.prisma (Prisma DSL не
+  поддерживает partial indexes)
+
+**Изменения в `prisma/schema.prisma`:**
+- Добавлены explicit `onDelete` + `onUpdate` к 21 relation
+- Добавлен `@db.Timestamp` к `PayoutRequest.lastVerifyAttemptAt`
+- Triple-slash комментарии над Payment, AffiliatePayout, PayoutRequest
+  про partial indexes
+
+**Migration tracking перестроен (Strategy 3):**
+- Старые миграции (20260426111052_init, 20260506000000_onchain_payment_subsystem)
+  перемещены в `prisma/_archived_migrations/` (вне prisma/migrations/ —
+  Prisma 5.x сканирует всю папку, не игнорирует `_`-prefix)
+- Создан `0_baseline_reconciled` (890 строк: 24 CREATE TABLE, 10 CREATE TYPE,
+  74 indexes, 30 ALTER TABLE constraints)
+- `_prisma_migrations` в БД очищена от старых записей и помечена baseline
+  applied через `prisma migrate resolve --applied`
+
+**Новые документы:**
+- `docs/UNMANAGED_DDL.md` — реестр того, что Prisma не контролирует
+  (3 partial indexes + 4 soft FKs)
+- `docs/BUSINESS_RULES.md` — финальная бизнес-модель (12 правил, параметры тиров)
+- `docs/PHASE_KIT.md` — общие правила работы Архитектора-исполнителя
+- `docs/PHASE_0_BRIEF.md`, `docs/PHASE_0_5_BRIEF.md` — фазовые ТЗ
+
+**Обновлены:**
+- `CLAUDE.md` §10 — переход на Prisma migrations after Phase 0.5
+- `BUSINESS_RULES.md` — Q3 resolved (hybrid storage)
+
+### Verification
+`npx prisma migrate status` → "Database schema is up to date!"
+`npx prisma migrate diff` → 1 расхождение (DROP INDEX PayoutRequest_txHash_key —
+known partial-index drift, задокументировано в UNMANAGED_DDL.md)
+
+### Что НЕ сделано (вынесено в отдельные задачи)
+- POSTGRES_PASSWORD ротация — пароль трижды попал в transcript Phase 0.5,
+  требует ротации через Coolify UI (новая задача TECH-DEBT-1)
+- Локальный `~/prisma.config.ts` устаревший, мешает работе `npx prisma`
+  из home directory (новая задача TECH-DEBT-2, не блокер)
+- Wipe dev test data — перенесено в Phase 0.9 (адаптировано под SET NULL
+  семантику, обнаруженную в Phase 0.5)
+- Coolify cron расписания → `docs/CRON_SCHEDULE.md` — перенесено в Phase 0.9
+
+### Backups
+- Full dev-DB pre-Phase-0: `/root/backups/postgres-dev-pre-p0-3-20260515-0610.sql` (2.9 MB)
+- `_prisma_migrations` pre-cleanup: `/root/backups/prisma_migrations_backup_20260515-1252.sql` (1.2 KB)
+
+### Commits (10 в feature-ветке)
+a6c5ba1, b44688c, abddd05, f76e809, 65a1464, 31bc537, 9ba5197, 1e035fa, 6e5976e, 8186dde
+
+### Следующая фаза
+Phase 0.9 — wipe dev test data + Coolify cron documentation.
+PHASE_0_9_BRIEF.md будет выдан после merge Phase 0.5 в develop.
+
+---
+
 ## Session 2026-05-14 — Session 18 — P0.4.next min-position → daily-volume rule
 
 ### Реализовано (код в develop, commit baf7c27)
