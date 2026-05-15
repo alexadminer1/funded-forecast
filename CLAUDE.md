@@ -280,6 +280,19 @@ read+write для issues, PRs, code, workflows.
 4. Тест на dev.tradepredictions.online
 5. Когда стабильно → PR develop → main → merge → Алексей вручную выполняет ALTER на prod БД → Алексей вручную нажимает Deploy
 
+### 2026-05-15 update — переход на Prisma migrations
+
+После Phase 0.5 (schema reconciliation, baseline migration `0_baseline_reconciled`)
+все будущие schema changes идут через `prisma migrate dev --create-only`,
+ревью миграции, и `prisma migrate deploy` (применение).
+
+`prisma db push` БОЛЬШЕ НЕ ИСПОЛЬЗУЕТСЯ для изменений схемы. Может использоваться
+только для experimental prototyping в isolated branch, но финальные изменения
+требуют migration file.
+
+Unmanaged DDL (partial indexes, soft FKs) задокументирован в `docs/UNMANAGED_DDL.md`.
+Перед любой schema-меняющей задачей — прочитать этот файл.
+
 ---
 
 ## 11. Документация (`docs/` в проекте)

@@ -246,6 +246,22 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Status: ✓ DONE 2026-05-11 (SQL UPDATE через Coolify DB Terminal, sandbox)
 - Оценка: 0.5ч
 
+### P0.3.G1 Schema reconciliation + migrations baseline ⚠ PARTIALLY CLOSED (Phase 0.5, 2026-05-15)
+- Parent: G1 tech debt — schema drift через `prisma db push` history
+- Scope Phase 0.5: schema.prisma приведена в соответствие с dev DB, baseline migration создана, migrations tracking перестроен
+- Status: develop НЕ обновлён (Phase 0.5 closed, ветка готова к merge)
+- Closed работы:
+  - Explicit onDelete/onUpdate на всех 30 FK
+  - @db.Timestamp на PayoutRequest.lastVerifyAttemptAt
+  - Partial indexes документированы (UNMANAGED_DDL.md)
+  - Старые миграции архивированы (prisma/_archived_migrations/)
+  - 0_baseline_reconciled создан и помечен applied
+- Открытые работы (deferred):
+  - Prod БД до сих пор не сверена — будет нужно при первом prod release
+  - Migration freeze policy в CI (P1 задача, не блокер)
+  - Periodic schema drift check (P2)
+- Связь: после merge — все будущие schema changes через `prisma migrate dev`
+
 ### P0.4 Position mechanics
 - Scope: progressive buy spread, buy cap $0.85, sell spread 4%, min position 2%, full sell only
 - БД: новая таблица EngineSettings (key, value, updatedAt) для spread конфига
@@ -733,3 +749,18 @@ Acceptance:
 - [D29] Ghost balance fix (commit ad3e283)
 - [SEC-1] Rate limits via proxy (commit 31349d3)
 - Docker cleanup retention=3
+
+
+### TECH-DEBT-1 Rotate POSTGRES_PASSWORD for postgres-dev 🔴 P0 (created Phase 0.5)
+- Reason: пароль трижды попал в transcript Phase 0.5 (включая Claude Code, чат с Архитектором, отчёт в основной чат)
+- Action: через Coolify UI → postgres-dev → Environment Variables → rotate POSTGRES_PASSWORD
+- Update connected services: ff-sandbox-app DATABASE_URL должен подтянуться автоматически (verify)
+- Verify: dev app перезапускается, login + smoke test работают
+- Estimated: 15 минут
+- Когда делать: ДО любого нового удалённого подключения к postgres-dev по этому паролю
+
+### TECH-DEBT-2 Cleanup ~/prisma.config.ts ⚪ P2 (created Phase 0.5)
+- Reason: устаревший файл в home directory ломает `npx prisma ...` если запускать вне `~/funded-app`
+- Action: либо удалить, либо обновить под текущую версию Prisma
+- Estimated: 5 минут
+- Не блокер
