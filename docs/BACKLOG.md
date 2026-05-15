@@ -764,3 +764,12 @@ Acceptance:
 - Action: либо удалить, либо обновить под текущую версию Prisma
 - Estimated: 5 минут
 - Не блокер
+
+### TECH-DEBT-3 Rename BalanceLog type 'challenge_start' → 'sandbox_welcome' ⚪ P2 (created Phase 0.9)
+- Reason: src/app/api/register/route.ts:94 creates sandbox welcome balance
+  with type='challenge_start' — misleading for admin/audit queries
+  (no Challenge exists at that point, challengeId=NULL)
+- Action: rename in register/route.ts + migration UPDATE for existing records
+- Scope: one line of code + one UPDATE
+- Estimated: 30 минут
+- Не блокер. Делаем после Phase 1.

@@ -46,6 +46,108 @@ ALTER TABLE "Challenge" ADD COLUMN IF NOT EXISTS "qualifyingTradingDaysCount" IN
 
 ---
 
+## Session 2026-05-15 — Phase 0.9 — Wipe dev data + Cron docs CLOSED
+
+### Закрыто
+- P0.3.A4 Wipe dev test data
+  - 269 rows deleted across 12 tables (Challenge=13, Trade=55,
+    Position=34, BalanceLog=99, Payment=31, PaymentTransaction=12,
+    Affiliate{Ledger,Conversion,Click}=4/4/16, ChallengeDailyPnL=1)
+  - 5 sandbox welcome BalanceLog created
+    (alexadminer, test1, test6, test7, test8)
+  - type='challenge_start', amount=$10 — exact mirror of
+    src/app/api/register/route.ts:94-105
+  - test2-5 not found in dev DB at wipe time (legacy ghosts from old
+    brief) — acknowledged, not blocker
+- P0.3.G2 docs/CRON_SCHEDULE.md created — 8 Coolify Scheduled Tasks
+  documented, source SESSION_LOG 2026-05-12
+- P0.3.G3 cleanup-stale-markets — reclassified as working cron
+  (P0.2.e commit ff54927), NOT sirota
+
+### Файлы
+- scripts/wipe-dev-data.sql (NEW) — 14-step DELETE/INSERT
+- scripts/backup-dev-db.sh (NEW) — primary (ssh+docker) + fallback (tunnel)
+- docs/CRON_SCHEDULE.md (NEW)
+
+### Коммиты в develop
+- 111b827 [P0.9] add wipe-dev-data.sql + backup-dev-db.sh
+- c9037ed [P0.9] add CRON_SCHEDULE.md
+- d1c5300 merge PR feature/p0-9-wipe-and-cron-docs
+- 2d4d13f [P0.9] fix backup-dev-db.sh path /root → /home/claude
+
+### Backup pre-wipe
+/home/claude/backups/dev-db-pre-wipe-20260515-1908.sql (3.1 MB on ff-dev)
+
+### Smoke test (alexadminer)
+✅ login, ✅ dashboard $10 balance, ✅ /account/plans (3 tiers visible),
+✅ /markets loaded, ✅ /account history empty
+
+### Discovered (added to BACKLOG)
+- TECH-DEBT-3: rename BalanceLog type 'challenge_start' → 'sandbox_welcome'
+  for sandbox welcome credits (register/route.ts misleading naming)
+
+### Carry-forward to Phase 1
+Clean dev DB ready for ChallengePlan UPDATE work (P0.3.A1-A3).
+No code/schema changes in this phase.
+
+## Session 2026-05-15 — Phase 0.9 — Wipe dev data + Cron docs CLOSED
+
+### Контекст
+Phase 0.9 запущена после закрытия Phase 0.5 (schema reconciliation).
+Цель: очистить dev-БД от legacy test data, восстановить sandbox welcome
+balance $10 для тестовых юзеров, задокументировать Coolify Scheduled Tasks.
+
+### Закрыто
+- P0.3.A4 Wipe dev test data
+  - 269 rows deleted across 12 tables (Challenge=13, Trade=55, Position=34,
+    BalanceLog=99, Payment=31, PaymentTransaction=12, Affiliate{Ledger,
+    Conversion,Click}=4/4/16, ChallengeDailyPnL=1)
+  - 5 sandbox welcome BalanceLog created (alexadminer, test1, test6, test7, test8)
+  - type='challenge_start', amount=$10 — exact mirror of
+    src/app/api/register/route.ts:94-105
+  - test2-5 not found in dev DB at wipe time (legacy ghosts from old brief) —
+    acknowledged, not blocker
+- P0.3.G2 docs/CRON_SCHEDULE.md создан — 8 Coolify Scheduled Tasks
+  документированы, источник SESSION_LOG 2026-05-12
+- P0.3.G3 cleanup-stale-markets — переклассифицирован как working cron
+  (P0.2.e commit ff54927), НЕ sirota. Шаг E1-E3 оригинального брифа отменён.
+
+### Файлы
+- scripts/wipe-dev-data.sql (NEW) — 14-step DELETE/INSERT order respecting
+  Restrict/SetNull FKs
+- scripts/backup-dev-db.sh (NEW) — primary (ssh ff-dev + docker exec) +
+  fallback (local pg_dump via SSH tunnel)
+- docs/CRON_SCHEDULE.md (NEW)
+
+### Коммиты в develop
+- 111b827 [P0.9] add wipe-dev-data.sql + backup-dev-db.sh
+- c9037ed [P0.9] add CRON_SCHEDULE.md
+- d1c5300 merge PR feature/p0-9-wipe-and-cron-docs
+- 2d4d13f [P0.9] fix backup-dev-db.sh path /root → /home/claude (hotfix)
+
+### Backup pre-wipe
+/home/claude/backups/dev-db-pre-wipe-20260515-1908.sql (3.1 MB, на ff-dev)
+
+### Smoke test (alexadminer)
+✅ login, ✅ dashboard $10 balance, ✅ /account/plans (3 tiers visible),
+✅ /markets loaded, ✅ /account history empty
+
+### Discovered (added to BACKLOG)
+- TECH-DEBT-3: rename BalanceLog type 'challenge_start' → 'sandbox_welcome'
+  для sandbox welcome credits (register/route.ts misleading naming)
+
+### Что НЕ сделано (вынесено в отдельные задачи / следующие фазы)
+- inactivity-check cron остаётся в Coolify (LEGACY) — отключение в Phase 4
+  одновременно с rollout end-of-day-check
+- end-of-day-check и end-of-challenge-finalize cron'ы — Phase 4
+- Pre-flight TECH-DEBT-1 (POSTGRES_PASSWORD rotation) — не сделан, решение
+  Алексея: ротация перед prod, не сейчас
+
+### Следующая фаза
+Phase 1 — фундамент schema под бизнес-правила.
+Scope: P0.3.A1 (колонки в ChallengePlan), P0.3.A2 (UPDATE 3 строк ChallengePlan
+новыми значениями DLL/MLL/duration), P0.3.A3 (судьба minTradingDays).
+Первая фаза с реальными изменениями схемы через `prisma migrate dev`.
 
 ## Session 2026-05-15 — Phase 0.5 — Schema reconciliation CLOSED
 
