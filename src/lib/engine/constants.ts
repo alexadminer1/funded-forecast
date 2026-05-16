@@ -2,7 +2,8 @@
  * Engine constants.
  *
  * MIN_RESOLVED_POSITIONS / MIN_UNIQUE_EVENTS — challenge pass thresholds.
- * P0.4 — position mechanics: BUY_SPREAD_TIERS, BUY_PRICE_CAP, SELL_SPREAD_PCT, MIN_POSITION_PCT.
+ * P0.4 — position mechanics: BUY_SPREAD_TIERS, BUY_PRICE_CAP, SELL_SPREAD_PCT.
+ * Phase 2.A — pre-trade position size rules: MIN_POSITION_PCT, MAX_AGGREGATE_POSITION_PCT.
  *
  * Per Architect (P0.4 Q1): constants live here, NOT in EngineSettings DB.
  */
@@ -40,12 +41,24 @@ export const BUY_PRICE_CAP = 0.85;
 export const SELL_SPREAD_PCT = 4;
 
 /**
- * Legacy constant — was per-trade min position size (P0.4).
- * P0.4.next: per-trade min position rule was removed. The same threshold is
- * now used as the daily qualifying-volume threshold (see MIN_DAILY_VOLUME_PCT).
- * Constant kept for backwards compatibility with any remaining callers.
+ * Phase 2.A — Min position size as percent of Challenge.startBalance.
+ * Hard reject if trade cost (after buy spread) < startBalance × MIN_POSITION_PCT/100.
+ * Applied only in challenge mode, NOT in sandbox.
+ * See docs/BUSINESS_RULES.md rule #2.
+ *
+ * Note: value coincides with MIN_DAILY_VOLUME_PCT below (both = 2), but these
+ * are distinct rules. Do not consolidate.
  */
 export const MIN_POSITION_PCT = 2;
+
+/**
+ * Phase 2.A — Max aggregate position size as percent of Challenge.startBalance.
+ * Hard reject if (existing_position.costBasis + new_trade.cost) > startBalance × MAX_AGGREGATE_POSITION_PCT/100.
+ * Applied per (marketId, side) pair, in challenge mode only.
+ * Closes the "split into small purchases" workaround for position size limits.
+ * See docs/BUSINESS_RULES.md rule #3.
+ */
+export const MAX_AGGREGATE_POSITION_PCT = 5;
 
 /**
  * P0.4.next — minimum daily buy volume (as percent of Challenge.startBalance)

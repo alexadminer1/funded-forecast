@@ -4,7 +4,11 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { apiFetch, getToken } from "@/lib/api";
 import { MarketDetail } from "@/lib/types";
-import { BUY_PRICE_CAP } from "@/lib/engine/constants";
+import {
+  BUY_PRICE_CAP,
+  MIN_POSITION_PCT,
+  MAX_AGGREGATE_POSITION_PCT,
+} from "@/lib/engine/constants";
 import {
   applyBuySpread,
   applySellSpread,
@@ -243,6 +247,17 @@ function TradeModal({
   const payoutIfWin = parseFloat((amount * 1).toFixed(2));
   const profitIfWin = parseFloat((payoutIfWin - cost).toFixed(2));
 
+  // Phase 2.A — preview info: min/max position USD when in challenge mode.
+  // Pure display, no submit gating (gating deferred to Phase 5).
+  const startBalance = userPositions?.activeChallenge?.startBalance ?? null;
+  const showLimits = action === "buy" && startBalance !== null;
+  const minPositionUsd = showLimits
+    ? parseFloat((startBalance * MIN_POSITION_PCT / 100).toFixed(2))
+    : null;
+  const maxAggregateUsd = showLimits
+    ? parseFloat((startBalance * MAX_AGGREGATE_POSITION_PCT / 100).toFixed(2))
+    : null;
+
   // P0.4.next: per-trade min position removed. Daily volume qualifying rule
   // is now enforced by cron daily-pnl-aggregate, not at trade submission.
   const submitDisabled =
@@ -423,6 +438,12 @@ function TradeModal({
                   { label: "Cost", value: `$${cost.toFixed(2)}`, color: "var(--text-primary)" },
                   { label: "Payout if win", value: `$${payoutIfWin.toFixed(2)}`, color: "#22C55E" },
                   { label: "Profit if win", value: `+$${profitIfWin.toFixed(2)}`, color: "#22C55E" },
+                  ...(showLimits
+                    ? [
+                        { label: "Min position", value: `$${minPositionUsd!.toFixed(2)}`, color: "var(--text-muted)" },
+                        { label: "Max aggregate", value: `$${maxAggregateUsd!.toFixed(2)}`, color: "var(--text-muted)" },
+                      ]
+                    : []),
                 ]
                 : [
                   { label: "Payout", value: `$${cost.toFixed(2)}`, color: "#22C55E" },
