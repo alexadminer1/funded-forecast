@@ -8,6 +8,10 @@ import { BUY_PRICE_CAP } from "@/lib/engine/constants";
 import {
   applyBuySpread,
   checkBuyCap,
+  checkMinPosition,
+  getMinPositionUsd,
+  checkAggregatePosition,
+  getMaxAggregatePositionUsd,
 } from "@/lib/engine/spreads";
 
 const MAX_SLIPPAGE = 0.02;
@@ -48,6 +52,34 @@ class BuyCapExceededError extends Error {
   constructor(rawPrice: number) {
     super("BUY_CAP_EXCEEDED");
     this.rawPrice = rawPrice;
+  }
+}
+
+// Phase 2.A — pre-trade position size rejects (BUSINESS_RULES rules #2, #3)
+// Pure HTTP 400 errors. No side effects on Challenge.status.
+// DO NOT mimic DrawdownViolatedError persistence pattern for these.
+
+class MinPositionError extends Error {
+  cost: number;
+  minRequired: number;
+  constructor(cost: number, minRequired: number) {
+    super("MIN_POSITION_BELOW_LIMIT");
+    this.cost = cost;
+    this.minRequired = minRequired;
+  }
+}
+
+class AggregatePositionExceededError extends Error {
+  existingCost: number;
+  newCost: number;
+  totalAfter: number;
+  maxAllowed: number;
+  constructor(existingCost: number, newCost: number, totalAfter: number, maxAllowed: number) {
+    super("AGGREGATE_POSITION_EXCEEDED");
+    this.existingCost = existingCost;
+    this.newCost = newCost;
+    this.totalAfter = totalAfter;
+    this.maxAllowed = maxAllowed;
   }
 }
 
@@ -152,9 +184,6 @@ export async function POST(req: NextRequest) {
       const executionPrice = effectivePrice;
       const cost = parseFloat((amount * executionPrice).toFixed(2));
 
-      // P0.4.next: per-trade min position removed — replaced by daily volume
-      // qualifying-day rule (cron daily-pnl-aggregate). Per-trade only guards
-      // against zero/negative cost (bug protection).
       if (!(cost > 0)) throw new Error("INVALID_TRADE_COST");
 
       const lastLog = await tx.balanceLog.findFirst({
@@ -168,22 +197,43 @@ export async function POST(req: NextRequest) {
 
       if (currentBalance < cost) throw new Error("INSUFFICIENT_BALANCE");
 
-      // Position size check
+      // Phase 2.A: existingPosition fetched ONCE here, reused for:
+      //   1. aggregate position cap check (rule #3)
+      //   2. upsert decision below
+      // Do NOT add a second findFirst later.
+      const existingPosition = await tx.position.findFirst({
+        where: { userId, marketId, side, status: "open", challengeId },
+      });
+
+      // Phase 2.A: position size rules per BUSINESS_RULES.md
+      // - Challenge mode: rule #2 (min 2% startBalance) + rule #3 (max aggregate 5% startBalance per market+side)
+      // - Sandbox mode: legacy per-trade cap vs currentBalance (unchanged)
       if (activeChallenge) {
-        const maxCost = parseFloat(
-          (activeChallenge.realizedBalance * activeChallenge.maxPositionSizePct / 100).toFixed(2)
-        );
-        if (cost > maxCost) throw new Error("POSITION_SIZE_EXCEEDED");
+        // Rule #2: min position
+        if (!checkMinPosition(cost, activeChallenge.startBalance)) {
+          throw new MinPositionError(
+            cost,
+            getMinPositionUsd(activeChallenge.startBalance),
+          );
+        }
+
+        // Rule #3: max aggregate position per (marketId, side)
+        const existingCost = existingPosition?.costBasis ?? 0;
+        if (!checkAggregatePosition(existingCost, cost, activeChallenge.startBalance)) {
+          const totalAfter = parseFloat((existingCost + cost).toFixed(2));
+          throw new AggregatePositionExceededError(
+            existingCost,
+            cost,
+            totalAfter,
+            getMaxAggregatePositionUsd(activeChallenge.startBalance),
+          );
+        }
       } else {
         const maxCost = parseFloat((currentBalance * SANDBOX_MAX_POSITION_PCT / 100).toFixed(2));
         if (cost > maxCost) throw new Error("POSITION_SIZE_EXCEEDED");
       }
 
-      // Upsert position
-      const existingPosition = await tx.position.findFirst({
-        where: { userId, marketId, side, status: "open", challengeId },
-      });
-
+      // Upsert position (reusing existingPosition fetched above)
       let position;
       if (existingPosition) {
         const newCostBasis = parseFloat((existingPosition.costBasis + cost).toFixed(2));
@@ -356,6 +406,34 @@ export async function POST(req: NextRequest) {
           error: `Buy cap exceeded: price $${error.rawPrice.toFixed(4)} is at or above $${BUY_PRICE_CAP.toFixed(2)}`,
           rawPrice: error.rawPrice,
           cap: BUY_PRICE_CAP,
+        },
+        { status: 400 }
+      );
+    }
+
+    // Phase 2.A — pre-trade position size rejects (rules #2, #3).
+    // Pure 400, no Challenge state changes.
+    if (error instanceof MinPositionError) {
+      return NextResponse.json(
+        {
+          error: `Minimum position is $${error.minRequired.toFixed(2)}. Your trade cost: $${error.cost.toFixed(2)}.`,
+          error_code: "MIN_POSITION_BELOW_LIMIT",
+          cost: error.cost,
+          minRequired: error.minRequired,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (error instanceof AggregatePositionExceededError) {
+      return NextResponse.json(
+        {
+          error: `Position cap exceeded. Existing: $${error.existingCost.toFixed(2)}, new: $${error.newCost.toFixed(2)}, total: $${error.totalAfter.toFixed(2)}, max: $${error.maxAllowed.toFixed(2)}.`,
+          error_code: "AGGREGATE_POSITION_EXCEEDED",
+          existingCost: error.existingCost,
+          newCost: error.newCost,
+          totalAfter: error.totalAfter,
+          maxAllowed: error.maxAllowed,
         },
         { status: 400 }
       );
