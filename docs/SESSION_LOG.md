@@ -9,6 +9,97 @@
 
 ---
 
+## Session 2026-05-16 — Phase 2.A — Trade position guards CLOSED
+
+### Закрыто
+- P0.3.B1 Max aggregate position 5% per (marketId, side) — hard reject 400
+- P0.3.B2 Min position 2% — hard reject 400 (re-introduced after P0.4.next removal)
+- UI info-row in TradeModal preview (Min/Max position display, challenge mode only)
+
+### Контекст
+Первая фаза с реальными изменениями в коде приложения после Phase 0.5
+reconciliation + Phase 1 data update. Pure logic + helpers + UI display.
+No schema changes.
+
+### Реализация
+- Branch: feature/p0-3-b-trade-position-guards (3 commits + merge)
+- engine/constants.ts: добавлена MAX_AGGREGATE_POSITION_PCT = 5;
+  MIN_POSITION_PCT docstring обновлён (no longer "legacy", active rule)
+- engine/spreads.ts: добавлены getMaxAggregatePositionUsd + checkAggregatePosition
+  helpers по паттерну существующих getMinPositionUsd/checkMinPosition
+- trade/buy/route.ts: 2 новых error class (MinPositionError, AggregatePositionExceededError);
+  existingPosition findFirst перемещён вверх (single fetch для aggregate check + upsert);
+  старый per-trade `maxPositionSizePct` check заменён на pair (MIN → AGGREGATE);
+  sandbox branch не изменён (legacy per-trade vs currentBalance);
+  catch блок: 2 новых handler (400 status, no Challenge state changes)
+- markets/[id]/page.tsx: TradeModal preview — info-row "Min position: $X /
+  Max aggregate: $Y" (только action=buy + activeChallenge)
+
+### Commits в develop
+- a0d7a01 [P0.3.B] add MAX_AGGREGATE_POSITION_PCT constant + helpers in spreads.ts
+- 223c871 [P0.3.B] trade/buy: add min position 2% + aggregate position 5% rejects (rules #2, #3)
+- a79542c [P0.3.B] TradeModal: preview info-row for min/max position in challenge mode
+- 8faf040 merge PR #11 feature/p0-3-b-trade-position-guards → develop
+
+### Smoke test (alexadminer на https://dev.tradepredictions.online, Coolify temp-switched to feature branch)
+Setup: SQL hack — INSERT Challenge #23 (Starter $1000, status=active) +
+BalanceLog `challenge_start` $1000 (alexadminer не имеет реального
+payment-activated challenge на dev). После тестов Challenge #23 переведён
+в status=failed для проверки sandbox mode.
+
+| # | Сценарий | Результат |
+|---|----------|-----------|
+| 1 | Min position reject (10 shares × $0.275 = $2.75 < $20) | ✅ 400 "Minimum position is $20.00" |
+| 2 | Legitimate buy (28 NO × $0.7540 = $21.11) | ✅ Position created, balance $978.89 |
+| 3 | Aggregate cap single trade (74 NO × $0.7540 = $55.80 > $50) | ✅ 400 "Position cap exceeded" |
+| 4 | Aggregate pass at boundary | ⏭️ Skipped (покрыт логикой #5) |
+| 5 | Aggregate cap split ($21.11 existing + $29.41 new = $50.52 > $50) | ✅ 400, existing учтён правильно |
+| 6 | Sandbox без active challenge (1 YES × $0.0550 = $0.06) | ✅ Прошло, Min/Max info-row не отображается, правила #2/#3 не применены |
+| Reg | Buy cap $0.85 (NO @ $0.90) | ✅ 400 BuyCapExceeded (incidentally tested) |
+
+### Side effect / implicit bugfix
+До Phase 2.A admin-созданные challenges имели maxPositionSizePct=2,
+plan-созданные = 5. Phase 2.A унифицирует это через engine constant
+MAX_AGGREGATE_POSITION_PCT=5 для всех Challenges независимо от пути
+создания. Поле Challenge.maxPositionSizePct (snapshot) и
+ChallengePlan.maxPositionSizePct остаются в schema как dead columns —
+runtime их больше не читает в trade-time path. Удаление — TECH-DEBT-5
+(после Phase 4).
+
+### Process notes
+- Phase 1 (feature/p0-3-a-challenge-plan-update) не была смерджена в develop
+  до старта Phase 2.A — обнаружено в Task A discovery. Phase 1 смерджена
+  непосредственно перед началом Task B (rebase Phase 2.A onto fresh develop).
+  Memory для основного чата: после "Phase N closed" подтверждать merge done
+  перед выдачей следующего brief.
+- Test setup через SQL hack (INSERT Challenge напрямую), не через payment
+  activation flow. Это может потребовать отдельной валидации payment flow в
+  Phase 2.B или позже.
+- Coolify source branch временно переключался на feature-ветку для smoke
+  test, после merge возвращён на develop. Передеплой подтверждён
+  (image tag 8faf040, container 060107228046).
+- Commit 223c871 message упоминает "TECH-DEBT-6" — anticipatory off-by-one;
+  фактический номер TECH-DEBT-5 (см. ниже).
+
+### Production release (отложено для develop→main)
+- Никаких schema changes — миграций не требуется
+- Изменения чисто логические + UI display
+- Smoke test на prod после deploy: повторить сценарии #1, #3 (или их аналоги)
+
+### Что НЕ сделано (вне scope Phase 2.A)
+- TECH-DEBT-5 (maxPositionSizePct removal) — отложено в BACKLOG
+- Phase 2.B (max daily volume + User.isBlocked + Market.endDate checks) — следующая фаза
+- Client-side submitDisabled для MIN/AGGREGATE (preview info-only сейчас) — Phase 5
+
+### Следующая фаза
+Phase 2.B — trade guards: volume + security
+- B3: Max daily volume 5% — block trade
+- B4: User.isBlocked check
+- B5: Market.endDate check
+PHASE_2_B_BRIEF.md будет выдан после ACK закрытия Phase 2.A.
+
+---
+
 ## Session 2026-05-15 — Phase 1 — ChallengePlan business model update CLOSED
 
 ### Закрыто

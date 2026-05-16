@@ -795,3 +795,22 @@ Acceptance:
 - Scope: schema.prisma + ~5-10 файлов в src/ + миграция
 - Estimated: 1-2 часа
 - Не блокер. Делаем после Phase 4 (когда все cron'ы по новой модели готовы).
+
+### TECH-DEBT-5 Remove redundant maxPositionSizePct from ChallengePlan and Challenge ⚪ P2 (created Phase 2.A)
+- Reason: после Phase 2.A значение 5% хранится в engine constant
+  MAX_AGGREGATE_POSITION_PCT. Поля Challenge.maxPositionSizePct и
+  ChallengePlan.maxPositionSizePct больше не используются в runtime
+  trade-time path. Snapshot logic в payment/activation.ts и
+  admin/users/[id]/action/route.ts продолжает копировать значение из
+  plan в challenge, но trade/buy его не читает.
+- Action: миграция ALTER TABLE DROP COLUMN на обеих таблицах, удаление
+  поля из schema.prisma, удаление references в коде (snapshot logic в
+  покупке challenge + admin actions + admin UI inputs)
+- Scope: schema.prisma + ~5-7 файлов в src/ (admin/page.tsx,
+  admin/plans/route.ts, admin/plans/[id]/route.ts,
+  admin/users/[id]/action/route.ts, payment/activation.ts) + миграция
+- Estimated: 1-2 часа
+- Не блокер. Делаем после Phase 4 (когда все cron'ы по новой модели готовы),
+  одновременно с TECH-DEBT-4 (minTradingDays).
+- Created: Phase 2.A discovery (commit 223c871 ошибочно ссылается на
+  TECH-DEBT-6 — anticipatory off-by-one)
