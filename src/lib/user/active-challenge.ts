@@ -3,6 +3,7 @@ import { computeConsistencyLive } from "@/lib/consistency";
 import {
   MIN_POSITION_PCT,
   MAX_AGGREGATE_POSITION_PCT,
+  MAX_DAILY_VOLUME_PCT,
 } from "@/lib/engine/constants";
 
 // Phase 3 — shared shape consumed by /api/user/me and /api/user/mode.
@@ -18,6 +19,9 @@ import {
 //   engine constants — currently uniform across all tiers (per-tier
 //   values pending; tracked in BACKLOG as a TECH-DEBT entry). When
 //   per-tier position limits ship, switch to plan-driven values.
+// - `maxDailyVolumeUsd` is the Phase 2.B Rule #4 cap surfaced as USD
+//   (startBalance × MAX_DAILY_VOLUME_PCT / 100). Matches the helper
+//   getMaxDailyVolumeUsd() in src/lib/engine/spreads.ts.
 // - `plan` may be null on legacy challenges (no plan attached). We
 //   surface that honestly via nullable type rather than fabricating
 //   a placeholder object.
@@ -35,6 +39,40 @@ import {
 //                       days) — challenge can still be "active".
 //     isPassed        = strict status === "passed".
 //   Both exposed independently.
+
+// Shape that callers must supply when pre-loading the Challenge record
+// to skip the helper's own findFirst. Must be a strict superset of every
+// field the helper reads — keep this in sync with the fallback select
+// inside buildActiveChallenge.
+export interface PreloadedChallenge {
+  id: number;
+  stage: string;
+  status: string;
+  startedAt: Date;
+  expiresAt: Date | null;
+  startBalance: number;
+  realizedBalance: number;
+  peakBalance: number;
+  dayStartBalance: number | null;
+  dayStartDate: Date | null;
+  maxDailyDdPct: number;
+  maxTotalDdPct: number;
+  qualifyingTradingDaysCount: number;
+  minTradingDays: number;
+  profitTargetPct: number;
+  profitTargetMet: boolean;
+  plan: { id: number; name: string; price: number } | null;
+}
+
+export interface BuildActiveChallengeOptions {
+  /**
+   * Pre-loaded Challenge row (e.g. selected by the calling endpoint for
+   * its own response composition). When supplied, the helper skips its
+   * own `prisma.challenge.findFirst` and uses this record verbatim,
+   * cutting the per-call query count by one.
+   */
+  challenge?: PreloadedChallenge;
+}
 
 export interface ActiveChallenge {
   // Identity & lifecycle
@@ -62,6 +100,7 @@ export interface ActiveChallenge {
   dailyDrawdownPercent: number;
   minPositionPercent: number;
   maxAggregatePositionPercent: number;
+  maxDailyVolumeUsd: number;
 }
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
@@ -72,35 +111,38 @@ function round2(n: number): number {
 
 export async function buildActiveChallenge(
   userId: number,
+  opts?: BuildActiveChallengeOptions,
 ): Promise<ActiveChallenge | null> {
-  const challenge = await prisma.challenge.findFirst({
-    where: { userId, status: "active" },
-    select: {
-      id: true,
-      stage: true,
-      status: true,
-      startedAt: true,
-      expiresAt: true,
-      startBalance: true,
-      realizedBalance: true,
-      peakBalance: true,
-      dayStartBalance: true,
-      dayStartDate: true,
-      maxDailyDdPct: true,
-      maxTotalDdPct: true,
-      qualifyingTradingDaysCount: true,
-      minTradingDays: true,
-      profitTargetPct: true,
-      profitTargetMet: true,
-      plan: {
-        select: {
-          id: true,
-          name: true,
-          price: true,
+  const challenge: PreloadedChallenge | null =
+    opts?.challenge ??
+    (await prisma.challenge.findFirst({
+      where: { userId, status: "active" },
+      select: {
+        id: true,
+        stage: true,
+        status: true,
+        startedAt: true,
+        expiresAt: true,
+        startBalance: true,
+        realizedBalance: true,
+        peakBalance: true,
+        dayStartBalance: true,
+        dayStartDate: true,
+        maxDailyDdPct: true,
+        maxTotalDdPct: true,
+        qualifyingTradingDaysCount: true,
+        minTradingDays: true,
+        profitTargetPct: true,
+        profitTargetMet: true,
+        plan: {
+          select: {
+            id: true,
+            name: true,
+            price: true,
+          },
         },
       },
-    },
-  });
+    }));
 
   if (!challenge) return null;
 
@@ -160,6 +202,10 @@ export async function buildActiveChallenge(
       ? round2((dailyDrawdownAmount / effectiveDayStart) * 100)
       : 0;
 
+  const maxDailyVolumeUsd = round2(
+    challenge.startBalance * (MAX_DAILY_VOLUME_PCT / 100),
+  );
+
   return {
     id: challenge.id,
     stage: challenge.stage,
@@ -188,5 +234,6 @@ export async function buildActiveChallenge(
     dailyDrawdownPercent,
     minPositionPercent: MIN_POSITION_PCT,
     maxAggregatePositionPercent: MAX_AGGREGATE_POSITION_PCT,
+    maxDailyVolumeUsd,
   };
 }
