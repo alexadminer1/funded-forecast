@@ -275,6 +275,32 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Файлы: только migration.sql (нет изменений в schema.prisma и коде)
 - Оценка: 2ч (factual: ~1.5ч)
 
+### P0.3.B Trade volume + security guards ✓ CLOSED (Phase 2.B, 2026-05-17)
+- Parent: P0.3 challenge rules — business rules #4/#5/#6 из docs/BUSINESS_RULES.md
+- Phase 2.A (Session 2026-05-16) уже закрыла B1 (min position) + B2 (max aggregate position);
+  Phase 2.B закрывает B3/B4/B5.
+- Status: merged to develop via PR #12 (merge commit 7a7a7dc)
+- Файлы: src/lib/engine/{constants,spreads}.ts + src/app/api/trade/{buy,sell}/route.ts +
+  src/app/api/user/positions/route.ts + src/app/markets/[id]/page.tsx
+- TECH-DEBT spawned: 6 (admin endpoint для isBlocked), 7 (dailyBuyVolume race), 8 (Trade composite index)
+
+#### P0.3.B3 Max daily buy volume cap (rule #4) ✓ CLOSED
+- 5% of Challenge.startBalance per UTC day, buy-only, challenge mode only
+- Hard reject 400 DAILY_VOLUME_EXCEEDED с структурированным response (currentDailyVolume, newCost, totalAfter, maxAllowed)
+- Реализация: trade/buy после Phase 2.A aggregate check, до trade.create; pre-insert tx.trade.aggregate
+- Commits: 511b9c6 (helpers), 0dc5344 (guard)
+
+#### P0.3.B4 Market endDate guard for buy (rule #5) ✓ CLOSED
+- Hard reject 400 MARKET_ENDED на buy при market.endDate < NOW AND status=live (gap window)
+- Sell route НЕ модифицирован — Blocker 3 resolution (legitimate position close)
+- Commit: 0dc5344
+
+#### P0.3.B5 User.isBlocked guard for trade routes (rule #6) ✓ CLOSED
+- 403 USER_BLOCKED возвращается BEFORE main transaction в обоих buy и sell
+- Симметричный response shape: {error, error_code, blockReason}
+- Admin UI/API для записи isBlocked НЕ включены — см. TECH-DEBT-6
+- Commits: 0dc5344 (buy), ec2b5c3 (sell)
+
 ### P0.4 Position mechanics
 - Scope: progressive buy spread, buy cap $0.85, sell spread 4%, min position 2%, full sell only
 - БД: новая таблица EngineSettings (key, value, updatedAt) для spread конфига
@@ -814,3 +840,45 @@ Acceptance:
   одновременно с TECH-DEBT-4 (minTradingDays).
 - Created: Phase 2.A discovery (commit 223c871 ошибочно ссылается на
   TECH-DEBT-6 — anticipatory off-by-one)
+
+### TECH-DEBT-6 Admin endpoint for User.isBlocked write ⚪ P2 (created Phase 2.B)
+- Source: Phase 2.B (rule #6 implementation)
+- Currently isBlocked can only be set via direct SQL UPDATE — no API surface, no admin UI.
+  Smoke test для P0.3.B5 выполнялся через `dev-psql -c "UPDATE \"User\" SET \"isBlocked\"=true WHERE id=1;"`.
+- Action: добавить POST /api/admin/users/[id]/block (set true/false + optional blockReason) +
+  admin UI page (либо action в существующем /admin/users если он есть)
+- Scope: 1 новый endpoint + 1 admin UI block + audit log entry
+- Estimated: 1-2 часа
+- Не блокер: trade-time guard работает, нужен только write-side surface.
+- Priority: P2 (когда понадобится оперативно блокировать юзеров без SQL access).
+
+### TECH-DEBT-7 Concurrent dailyBuyVolume race condition ⚪ P3 (created Phase 2.B)
+- Source: Phase 2.B (rule #4 implementation)
+- tx.trade.aggregate — это SELECT, не SELECT FOR UPDATE. Два параллельных buy
+  внутри одного transaction snapshot могут оба пройти aggregate check,
+  превысив cap на commit.
+- Probability на single-user UI: очень низкая (нет concurrent clicks).
+  API-based abuse: возможна (skript автоматизация).
+- Action: одно из:
+  (a) SELECT FOR UPDATE на Challenge row внутри tx
+  (b) SERIALIZABLE isolation level для buy транзакций
+  (c) application-level mutex (Redis advisory lock per challengeId)
+- Estimated: 2-4 часа (зависит от выбранного подхода)
+- Не блокер: per Architect decision приемлемо на MVP.
+- Priority: P3 (revisit когда появится evidence реальных race conditions
+  в production logs или при подготовке к публичному API).
+
+### TECH-DEBT-8 Missing composite index Trade(challengeId, action, createdAt) ⚪ P3 (created Phase 2.B)
+- Source: Phase 2.B (rule #4 implementation, Discovery C0.b)
+- Daily-volume aggregate query: WHERE challengeId=$1 AND action='buy' AND createdAt>=$2
+- No covering index exists. Closest match — Trade_challengeId_idx (только challengeId) →
+  Postgres делает in-memory filter для action+createdAt после index scan.
+- Та же query shape используется в /api/user/me и /api/user/mode — индекс
+  улучшил бы и эти endpoints тоже.
+- Action: добавить `@@index([challengeId, action, createdAt])` в schema.prisma на model Trade,
+  создать миграцию через `prisma migrate dev --create-only`, ревью, `prisma migrate deploy` на dev,
+  затем prod через PROD_RELEASE_CHECKLIST.
+- Scope: schema.prisma (1 строка) + migration file (CREATE INDEX)
+- Estimated: 30 минут
+- Не блокер: linear в worst case, но per-challenge buy-counts <1k currently.
+- Priority: P3 (revisit когда challenges начнут расти или появятся slow-query alerts).

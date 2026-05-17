@@ -9,6 +9,58 @@
 
 ---
 
+## Session 2026-05-17 — Phase 2.B — Trade volume + security guards CLOSED
+
+### Закрыто
+- P0.3.B3 Max daily buy volume = 5% of startBalance — hard reject 400 (challenge mode only, buy only)
+- P0.3.B4 Market endDate guard for buy — hard reject 400; sell intentionally NOT blocked (legitimate position close)
+- P0.3.B5 User.isBlocked guard for buy AND sell — hard reject 403 (BEFORE main transaction, no state mutations on reject)
+
+### Контекст
+Закрытие core trade-flow guards. После Phase 2.A (rules #2, #3 — min/max position) добавлены rules #4, #5, #6. Pure logic + helpers + 3 file-local error classes per route + minimal /api/user/positions extension + 1 UI info-row. No schema changes.
+
+### Реализация
+- Branch: feature/p0-3-b-trade-volume-security-guards (4 commits + merge)
+- engine/constants.ts: добавлена MAX_DAILY_VOLUME_PCT = 5
+- engine/spreads.ts: добавлены getMaxDailyVolumeUsd + checkMaxDailyVolume (паттерн Phase 2.A)
+- trade/buy/route.ts: 3 новых error class (UserBlockedError, MarketEndedError, DailyVolumeExceededError); isBlocked guard OUTSIDE main transaction в dedicated try/catch (main try wraps only $transaction); endDate guard inside tx, immediately after market.status; dailyVolume guard inside tx, inside if(activeChallenge), after aggregate position check
+- trade/sell/route.ts: UserBlockedError class (file-local duplicate, by design); isBlocked guard same pattern as buy; sell does NOT receive endDate or dailyVolume guards (Blocker 3 resolution — legitimate position close)
+- /api/user/positions: extended response — activeChallenge now includes todayBuyVolume, minDailyVolumeUsd, maxDailyVolumeUsd (mirrors /api/user/me raw SQL pattern)
+- markets/[id]/page.tsx: новый info-row "Daily volume $X / $Y" в TradeModal preview (action=buy + activeChallenge, паттерн Phase 2.A row)
+
+### Commits в develop
+- 511b9c6 [P0.3.B] add MAX_DAILY_VOLUME_PCT constant + helpers in spreads.ts
+- 0dc5344 [P0.3.B] trade/buy: add user-blocked, market-ended, daily-volume guards + extend /api/user/positions
+- ec2b5c3 [P0.3.B] trade/sell: add user-blocked guard
+- 830a88d [P0.3.B] TradeModal: daily volume preview row in challenge mode
+- 7a7a7dc merge PR #12 feature/p0-3-b-trade-volume-security-guards → develop
+
+### Smoke test (alexadminer на https://dev.tradepredictions.online, Coolify temp-switched to feature branch; Challenge #23 reactivated via SQL UPDATE + BalanceLog manual_reset $1000)
+
+| # | Сценарий | Результат |
+|---|----------|-----------|
+| A | Buy on blocked user → 403 USER_BLOCKED | ✅ {error:"Account is blocked", blockReason:null} |
+| B | Sell on blocked user → 403 USER_BLOCKED (symmetric shape) | ✅ identical to A |
+| C | Buy on expired market (endDate<NOW, status=live) → 400 MARKET_ENDED | ✅ {endDate:"2026-05-17T00:00:00.000Z"} |
+| D | Sell on expired market with open position → 200 success | ✅ Blocker 3 validated; tradeId 82, realizedPnl -0.82 |
+| E | Single buy exceeding daily cap → 400 DAILY_VOLUME_EXCEEDED | ✅ currentDailyVolume:20.6, totalAfter:56.27, maxAllowed:50 |
+| F | Split daily volume (3 cumulative buys past cap) → 400 with correct aggregate | ✅ currentDailyVolume:40.91 matched SQL SUM exactly |
+| G | Regression — MIN_POSITION still works (Phase 2.A) | ✅ cost:9.99, minRequired:20 |
+| H | Regression — AGGREGATE_POSITION fires before DAILY_VOLUME | ✅ existingCost:20.31, totalAfter:56.94, maxAllowed:50 |
+| I | Sandbox mode without active challenge — new rules NOT applied | ✅ buy cost $0.17 succeeded (MIN_POSITION challenge-only) |
+
+### Process notes
+- Discovery phase (Task A) uncovered three blocking questions for Architect, all resolved before Step B: (1) Trade.cost = Float not Decimal → no Prisma.Decimal handling; (2) timezone for daily-volume aggregate aligned with /api/user/me UTC-day bucket; (3) UserPositionsResp inline type extended (Option 1 — extend /api/user/positions response). Architect approved Variant A for /api/user/me + /api/user/mode (NOT extended in Phase 2.B — deferred to Phase 3 along with 8 other dashboard fields).
+- Architectural decision (Blocker 3): sell route does NOT receive endDate guard. Rationale: legitimate position close on a market where endDate passed but cron has not yet flipped status to resolved. POSITION_NOT_FOUND fallback handles the "no position to sell" case downstream. See PR #12 description for decision-log anchor.
+- isBlocked guard sits OUTSIDE main transaction in a dedicated try/catch wrapper, because main try in both buy and sell only wraps prisma.$transaction (not the entire handler). Refactoring to single top-level try/catch — TECH-DEBT, not in scope.
+- Note: maxDailyVolumeUsd намеренно НЕ добавлен в /api/user/me и /api/user/mode в Phase 2.B. Это будет сделано в Phase 3 (API extension) вместе с другими 8 полями для dashboard widgets — единым согласованным пакетом. Решение зафиксировано как deferred.
+- Process note: GitHub auto-linked `#4`/`#5`/`#6` в PR description body to unrelated issue numbers in the repo. In future PR bodies, escape with `\#N` when referencing BUSINESS_RULES.md rule numbers. Cosmetic — does not affect repository state.
+- Test setup: Challenge #23 reactivated via SQL UPDATE (status='active' + nullify endedAt/violationReason/lastTradingDay/dayStartBalance) + manual_reset BalanceLog row ($990.06 amount, runningBalance 1000) because runningBalance was at $9.94 from Phase 2.A market_resolve. Without the manual_reset row, buy guard would have rejected with INSUFFICIENT_BALANCE.
+- Coolify source branch temporarily switched to feature/p0-3-b-trade-volume-security-guards for smoke test, restored to develop after merge (image tag 7a7a7dc → e9a8428 → 7a7a7dc auto after merge). Verified deployments via Coolify UI.
+- API tested via direct curl (not UI), because /api/user/me 403 cascade with isBlocked=true breaks dashboard rendering. Pre-existing legacy behavior, not Phase 2.B regression.
+
+---
+
 ## Session 2026-05-16 — Phase 2.A — Trade position guards CLOSED
 
 ### Закрыто
