@@ -62,7 +62,21 @@ export interface User {
     minTradingDays: number;
     startedAt: string;
     planId: number | null;
-    plan: { name: string } | null;
+    plan: { name: string; id?: number; price?: number } | null;
+
+    // Phase 3 dashboard overlay — optional so old cached responses still type-check.
+    status?: string;
+    isPassed?: boolean;
+    consistency?: number;
+    daysRemaining?: number;
+    daysTraded?: number;
+    dailyLossLimitPercent?: number;
+    maxLossLimitPercent?: number;
+    currentDrawdownPercent?: number;
+    dailyDrawdownPercent?: number;
+    minPositionPercent?: number;
+    maxAggregatePositionPercent?: number;
+    maxDailyVolumeUsd?: number;
   };
 }
 
