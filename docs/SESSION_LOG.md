@@ -9,6 +9,100 @@
 
 ---
 
+## Session 2026-05-17 — Phase 3 — API extension for dashboard widgets CLOSED
+
+### Закрыто
+- P0.3.D1 buildActiveChallenge helper + ActiveChallenge / PreloadedChallenge / BuildActiveChallengeOptions contract
+- P0.3.D1.5 maxDailyVolumeUsd field + optional preloaded challenge param (опт. для зеро-additional-query вызова из endpoints)
+- P0.3.D2 /api/user/me extended: activeChallenge с 17 до 29 полей (+12 derived dashboard metrics)
+- P0.3.D3 /api/user/mode extended: challenge с 37 до 49 полей (+11 overlay; status уже в raw spread)
+
+### Контекст
+API extension (не refactor): existing response shape сохраняется байт-идентично, добавляются только новые derived поля. Цель — дать фронту cohesive набор метрик для dashboard widgets (consistency, drawdown%, daysRemaining и т.д.) без duplicate вычислений на UI. No schema changes.
+
+### Реализация
+- Branch: feature/p0-3-d-api-extension (7 commits + planned merge)
+- Helper: src/lib/user/active-challenge.ts (239 строк, новый файл) — централизует derived вычисления из Challenge columns + computeConsistencyLive aggregate
+- Exported types:
+  - ActiveChallenge (21 поле) — canonical shape для будущих widgets / endpoints
+  - PreloadedChallenge (17 полей) — strict subset, helper input contract (callers preload Challenge row themselves)
+  - BuildActiveChallengeOptions { challenge?: PreloadedChallenge } — opt-in zero-extra-query путь
+- /api/user/me: extended findFirst select до superset PreloadedChallenge (status, expiresAt, dayStartBalance, dayStartDate, plan.id, plan.price), response через explicit cherry-pick + 12-field overlay
+- /api/user/mode: findFirst → findFirst({ include: { plan } }), response через spread + 11-field overlay (status уже в spread)
+- types.ts: User.activeChallenge inline shape расширен 11 optional полями + plan.id/price expansion
+- dashboard/page.tsx Challenge interface: расширен 11 optional + plan relation
+- Production build cast: import type { PreloadedChallenge }, передаётся как `activeChallenge as PreloadedChallenge` в обоих endpoints — обход Coolify TS inference degradation (local build clean без cast, Coolify падал)
+
+### Commits в feature/p0-3-d-api-extension
+- bec9564 feat(phase-3): add buildActiveChallenge helper
+- c05c4c1 fix(phase-3): apply Step 1 review fixes (expiresAt-based daysRemaining, nullable plan, profitTargetMet rename)
+- 4baa873 fix(phase-3): expose both stage/status and profitTargetMet/isPassed (distinct fields)
+- 715b77b feat(phase-3): add maxDailyVolumeUsd field + optional preloaded challenge param
+- cc8a698 feat(phase-3): extend /api/user/me with 12 dashboard fields via preloaded challenge
+- d7d757d feat(phase-3): extend /api/user/mode with 12 dashboard fields
+- 6eca53e fix(phase-3): production build PreloadedChallenge cast
+
+### Decisions (sticky — see Architect chat thread for full debate)
+1. **Consistency: chose computeConsistencyLive** (raw Trade aggregate) over computeConsistency (ChallengeDailyPnL). Reason: cron-aggregated table обновляется раз в день, не подходит для post-trade accuracy на dashboard.
+2. **Drawdown formula peak-based** (matches engine MLL inline logic at trade/buy:400-402), не initial-based как написано в BUSINESS_RULES.md rule #6. BR doc update tracked as TASK-DOC-1.
+3. **Mixed units API:** consistency = доля 0–1, остальные percentages = integer/float (5 = 5%). Matches engine internal representation. Future unification — breaking.
+4. **Position limits sourced from engine constants** (MIN_POSITION_PCT=2, MAX_AGGREGATE_POSITION_PCT=5) — uniform across all tiers per current DB (все 3 plan'а имеют maxPositionSizePct=5). Per-tier values pending TECH-DEBT-9.
+5. **stage и status — два separate Challenge column.** isPassed = computed (status === "passed"), profitTargetMet = column. Все четыре exposed independently. None — rename of another.
+6. **plan nullable** в helper output для legacy challenges без attached plan (честный null vs fabricated placeholder).
+7. **daysRemaining через Challenge.expiresAt** (set в activation как startedAt + plan.challengePeriodDays × MS_PER_DAY), не через plan.challengePeriodDays напрямую — работает для legacy challenges с expiresAt но null plan.
+8. **Endpoint composition strategy расходится** между /me (explicit cherry-pick) и /mode (spread всех 35 columns). Mode endpoint's existing data leak preserved для back-compat (фронт читает drawdownViolated etc. без типизации). Cleanup tracked как TASK-CLEANUP-1.
+9. **PreloadedChallenge contract** introduced в Step 1.3 — endpoints передают pre-loaded Challenge row helper'у, eliminating duplicate findFirst. Helper делает свой findFirst ТОЛЬКО когда opts.challenge не передан. Net cost per endpoint: +1 query (computeConsistencyLive).
+10. **Production build vs local TSC discrepancy:** local `npm run build` clean (with `prisma generate &&` prefix), Coolify падал на TS error в plan-shape. Cast `as PreloadedChallenge` применён в обоих endpoints — safe narrowing (shape действительно совместим). Underlying cause: Coolify, видимо, выполняет `next build` без свежего `prisma generate` в той же команде → Prisma's select-narrowed types deg radebrade до generic.
+
+### Smoke test (dev.tradepredictions.online, JWT test1 id=53, Starter challenge active, Coolify source branch manually switched to feature/p0-3-d-api-extension per Phase 2.B precedent)
+
+App-dev image verified: `wlugzzo3b2482ji68l6r3zcv:6eca53e...` (matches feature tip).
+
+| # | Сценарий | Результат |
+|---|----------|-----------|
+| A | /api/user/me.activeChallenge keys count | ✅ 29 (17 existing + 12 new) |
+| B | Все 12 новых полей присутствуют | ✅ status, isPassed, consistency, daysRemaining, daysTraded, dailyLossLimitPercent, maxLossLimitPercent, currentDrawdownPercent, dailyDrawdownPercent, minPositionPercent, maxAggregatePositionPercent, maxDailyVolumeUsd |
+| C | Значения для Starter tier (startBalance=$1000, без trades) | ✅ consistency=0, daysRemaining=10, daysTraded=0, dailyLossLimitPercent=5, maxLossLimitPercent=10, currentDrawdownPercent=0, dailyDrawdownPercent=0, minPositionPercent=2, maxAggregatePositionPercent=5, maxDailyVolumeUsd=50, status="active", isPassed=false |
+| D | /api/user/mode.challenge keys count | ✅ 49 (37 existing + 11 overlay + plan relation) |
+| E | Performance: 20 requests, p95 latency | ✅ 18/20 в 277-299ms (network-dominated через VPN), p95 ≈ 300ms |
+| F | Existing fields байт-идентично | ✅ id/stage/realizedBalance/profitTargetPct/maxDailyDdPct/todayBuyVolume unchanged |
+| G | Helper НЕ делает второй findFirst (opts.challenge передан) | ✅ confirmed через docker logs — только 1 Challenge query на запрос |
+
+### Files Changed
+**New:**
+- `src/lib/user/active-challenge.ts` (239 строк)
+
+**Modified:**
+- `src/app/api/user/me/route.ts` (129 → 209 строк)
+- `src/app/api/user/mode/route.ts` (102 → 163 строки)
+- `src/lib/types.ts` (78 → 96 строк, +18 в User.activeChallenge)
+- `src/app/dashboard/page.tsx` (lines 8–40, Challenge interface +16 строк)
+
+### Process notes
+- **Discovery в 2 phases** (Phase 3 Discovery + Discovery Addendum + Step 1 Micro-Discovery): три отдельных read-only прохода чтобы убедиться, что: (1) recomputeAndPersistChallenge / src/lib/challenge/recompute.ts не существуют (брифовые имена были плановые, не реальные); (2) `consistency` НЕ column на Challenge; (3) Prisma typed return для extended select структурно совместим с PreloadedChallenge; (4) Coolify крутил old code до redeploy с feature branch (image 65cc94f vs requested 6eca53e). Это сэкономило implementation цикл.
+- **Step 1.3 inserted** (после Step 1.2) для добавления maxDailyVolumeUsd и optional opts.challenge параметра — Architect realized что Step 2 без preloaded contract сделает +2 query вместо +1. Helper-only refactor, без endpoint trogания.
+- **Step 2 переписан** (rewrite): первая версия использовала Promise.all([legacy findFirst, helper findFirst]) — +2 query naive путь. Переписан на preloaded challenge contract из Step 1.3 → +1 query.
+- **Coolify auto-deploy НЕ срабатывает на push в feature branch.** Подтверждено в Phase 3 deploy diagnostic: app-dev image оставался на develop tip (65cc94f) после push. Алексей вручную переключил Coolify source branch на feature/p0-3-d-api-extension через UI (Settings → Source) — это та же ручная процедура, что в Phase 2.B SESSION_LOG. После merge в develop branch будет возвращён обратно.
+- **Local build pass vs Coolify build fail** — повторяющаяся проблема (несколько фаз назад тот же класс ошибок). Cast `as PreloadedChallenge` — превентивная страховка. Узнали о ней только когда увидели Coolify лог: local `npm run build` НЕ воспроизводит ошибку даже на коммите d7d757d (до фикса).
+- **Дублирование пометки `Coolify env=production`**: docker labels показывают `coolify.environmentName=production` на app-dev контейнере, но это Coolify-internal terminology — реальная роль контейнера всё равно dev. Чтобы не путаться, ориентируемся на `coolify.resourceName=app-dev` (= dev) vs `coolify.resourceName=ff-sandbox-app` (= prod).
+
+### Production release (отложено для develop → main)
+- Никаких schema changes — миграций не требуется.
+- Изменения чисто additive: existing response shape сохранён, только новые поля.
+- Smoke test на prod после deploy: повторить scenarios A/B/D (key count + presence of 12 new fields) через curl с production JWT.
+
+### Что НЕ сделано (вне scope Phase 3)
+- TASK-DOC-1: update BUSINESS_RULES.md rule #6 (peak-based DD formula).
+- TASK-CLEANUP-1: replace /api/user/mode `{...activeChallenge}` spread с explicit cherry-pick.
+- TASK-CLEANUP-2: remove dashboard/page.tsx:425 local `const isPassed = last.status === "passed"` (теперь приходит из response).
+- TECH-DEBT-9: per-tier position limits (Starter/Pro/Elite differentiated, ChallengePlan + engine refactor).
+- /api/user/me не получил `isBlocked` early-403 для /api/user/mode (асимметрия preserved).
+
+### Следующая фаза
+Phase 4 — dashboard widgets implementation. Front-end consume новых 12 полей через apiFetch<User>("/api/user/me"), render как Stats / Progress / DD bars в src/app/dashboard/page.tsx. Не требует backend changes (всё уже доступно после Phase 3).
+
+---
+
 ## Session 2026-05-17 — Phase 2.B — Trade volume + security guards CLOSED
 
 ### Закрыто
