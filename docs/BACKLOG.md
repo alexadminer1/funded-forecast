@@ -220,7 +220,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
   - 30 trades на 30 событий → passing
 - Оценка: 10ч
 
-#### P0.3.d Inactivity Timer 72ч ✓ CLOSED (Session 11, 2026-05-12)
+#### P0.3.d Inactivity Timer 72ч ✓ CLOSED (Session 11, 2026-05-12) — ⚠ DEPRECATED in Phase 4.A (2026-05-17)
 - Scope: failed если нет new position >72ч (challenge) / 120ч (funded)
 - БД: Challenge.lastNewPositionAt DateTime?
 - Логика:
@@ -237,6 +237,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
   - 73ч без new position → failed
   - 71ч без new position → active
   - Update existing position НЕ resetит таймер
+- Deprecated 2026-05-17: replaced by daily end-of-day-check cron (rule #7). See Phase 4.A ниже.
 - Оценка: 6ч
 
 #### P0.3.e Trading Days дефолт 10 → 15
@@ -365,6 +366,17 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
   - sell 50% shares → reject (only full)
   - position cost < 2% balance → reject
 - Оценка: 14ч
+
+### P0.3.C1 / P0.3.C3 End-of-day cron + remove inactivity ✓ CLOSED (Phase 4.A, 2026-05-17)
+- Scope: cron `/api/cron/end-of-day-check` (rules #7, #8), удаление `inactivity-check`
+- Rules covered:
+  - #7 No trading activity (buyVolume === 0) — fail "No trading activity"
+  - #8 Min daily volume not reached (0 < buyVolume < 2% startBalance) — fail "Daily volume below minimum"
+- Grace day: challenge started today (UTC) — skipped
+- Schedule: `55 23 * * *` UTC (must run BEFORE midnight, see endpoint header invariant)
+- Commits: 51c8e75, a1de048, 9661150
+- Coolify task setup: manual by Alexey (add `end-of-day-check`, remove `inactivity-check`)
+- See: SESSION_LOG.md → Session 2026-05-17 — Phase 4.A — End-of-day cron + remove inactivity-check
 
 ### P0.4.bis Pre-trade challenge failure UX ✓ CLOSED (Session 17, 2026-05-14, commit a6c1789)
 - Severity: HIGH (blocker запуска — юзеры запутаются)

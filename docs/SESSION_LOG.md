@@ -9,6 +9,75 @@
 
 ---
 
+## Session 2026-05-17 — Phase 4.A — End-of-day cron + remove inactivity-check CLOSED
+
+### Закрыто
+- Phase 4.A Step 1: new endpoint `/api/cron/end-of-day-check` (rules #7, #8)
+- Phase 4.A Step 2: deleted `/api/cron/inactivity-check` (legacy 72h/120h)
+- Phase 4.A Step 3: docs sync (CRON_SCHEDULE.md, BACKLOG.md, SESSION_LOG.md)
+
+### Контекст
+BUSINESS_RULES.md (Phase 0.5) уже отметил inactivity-check как legacy. Phase 4.A — фактическая замена hour-based fail на daily UTC-day cron. Один endpoint покрывает два правила:
+- #7 No trading activity (buyVolume === 0)
+- #8 Min daily volume not reached (0 < buyVolume < 2% startBalance)
+
+Grace day: challenge с `startedAt >= todayStart UTC` — skip (трейдер не имел полного дня).
+
+### Реализация
+- New file: `src/app/api/cron/end-of-day-check/route.ts` (145 строк)
+- Pattern: `$queryRaw SUM("cost") WHERE action='buy' AND createdAt IN [todayStart, tomorrowStart)` — mirrors `daily-pnl-aggregate` и `user/me todayBuyVolume`
+- Float drift mitigation: cents comparison `Math.round(value * 100)`; JSON response — raw Float
+- Auth: `Bearer ${CRON_SECRET}` (consistent with all cron endpoints)
+- Failure write: `status='failed', violationReason=<reason>, endedAt=checkedAt` (consistent с `expire-challenges`)
+- Batch limit: `take: 5000` с warning при достижении cap
+- Violation reasons (exact strings, match BUSINESS_RULES.md):
+  - `"No trading activity"` (buyVolume === 0)
+  - `"Daily volume below minimum"` (0 < buyVolume < minDailyVolume)
+
+### Invariants (в коде endpoint'а)
+- Cron MUST run BEFORE UTC midnight (recommended `55 23 * * *`). Grace day logic ломается если `00:00 ≤ now` после midnight: challenges созданные вчера будут оценены против сегодняшнего todayStart.
+- All date arithmetic в UTC. `Date.UTC()` и `.toISOString()` only; никаких local Date methods (TZ container-dependent).
+
+### Удаление inactivity-check
+- File deleted: `src/app/api/cron/inactivity-check/route.ts` (66 строк)
+- Stale ref updated: `daily-pnl-aggregate/route.ts:30` — `inactivity-check` → `end-of-day-check` в auth pattern комментарии
+- Historical comments в новом endpoint сохранены (объясняют что заменяет — полезно для future readers)
+
+### Commits в develop
+- 51c8e75 Phase 4.A Step 1: add end-of-day-check cron endpoint
+- a1de048 Phase 4.A Step 2: remove legacy inactivity-check cron, update stale ref in daily-pnl-aggregate
+- 9661150 Phase 4.A Step 3: docs sync (CRON_SCHEDULE, BACKLOG, SESSION_LOG)
+
+### Coolify task setup (manual by Alexey)
+1. Удалить Scheduled Task `inactivity-check`
+2. Добавить Scheduled Task `end-of-day-check`:
+   - Command: `curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://app/api/cron/end-of-day-check`
+   - Schedule: `55 23 * * *`
+
+### Smoke test plan (TBD после Coolify setup)
+SQL fixtures + curl, 4 сценария:
+- Ch#A: startedAt=NOW() → grace skip
+- Ch#B: startedAt=NOW()-2d, 0 buy → failed "No trading activity"
+- Ch#C: startedAt=NOW()-2d, buyVolume < min → failed "Daily volume below minimum"
+- Ch#D: startedAt=NOW()-2d, buyVolume >= min → no change
+
+Note: Эта секция будет дополнена результатами в follow-up commit после smoke test execution. Запись закрыта как WIP до получения 4/4 expected outcomes.
+
+### Files Changed
+**New:**
+- `src/app/api/cron/end-of-day-check/route.ts` (145 строк)
+
+**Deleted:**
+- `src/app/api/cron/inactivity-check/route.ts` (66 строк)
+
+**Modified:**
+- `src/app/api/cron/daily-pnl-aggregate/route.ts` (1 строка, stale ref)
+- `docs/CRON_SCHEDULE.md`
+- `docs/BACKLOG.md`
+- `docs/SESSION_LOG.md` (this entry)
+
+---
+
 ## Session 2026-05-17 — Phase 3 — API extension for dashboard widgets CLOSED
 
 ### Закрыто
