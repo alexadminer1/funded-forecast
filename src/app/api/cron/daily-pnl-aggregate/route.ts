@@ -27,7 +27,7 @@ import { MIN_DAILY_VOLUME_PCT } from "@/lib/engine/constants";
 // See ChallengeDailyPnL model comment in prisma/schema.prisma for the
 // rationale (naive timestamp + Prisma UTC wall-clock invariant).
 //
-// Auth: Bearer ${CRON_SECRET} (same pattern as inactivity-check, expire-*).
+// Auth: Bearer ${CRON_SECRET} (same pattern as end-of-day-check, expire-*).
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
