@@ -54,7 +54,7 @@ Grace day: challenge с `startedAt >= todayStart UTC` — skip (трейдер �
    - Command: `curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://app/api/cron/end-of-day-check`
    - Schedule: `55 23 * * *`
 
-### Smoke test executed (2026-05-17 16:40 UTC)
+### Smoke test executed (2026-05-17 16:40 UTC) — 4/4 PASS
 
 **Setup:** dev.tradepredictions.online, userId=53 (test1), Starter tier (startBalance=$1000, minDailyVolume=$20). Coolify Scheduled Task `end-of-day-check` triggered via Execute Now.
 
@@ -64,7 +64,7 @@ Grace day: challenge с `startedAt >= todayStart UTC` — skip (трейдер �
 - Ch#26 — INSERT, startedAt=NOW()-2d, 1 buy trade cost=$10
 - Ch#27 — INSERT, startedAt=NOW()-2d, 1 buy trade cost=$25
 
-**Endpoint response** (`POST /api/cron/end-of-day-check`):
+**Endpoint response** (`GET /api/cron/end-of-day-check`):
 ```json
 {
   "checkedAt":"2026-05-17T16:40:30.029Z",
@@ -86,10 +86,10 @@ Grace day: challenge с `startedAt >= todayStart UTC` — skip (трейдер �
 
 **Results — 4/4 expected outcomes match:**
 
-| ID | Expected | Actual | ✅ |
+| ID | Expected | Actual | OK |
 |----|----------|--------|----|
 | 24 | grace (skip) | gracedIds:[24], no DB change | ✅ |
-| 25 | failed "No trading activity", buyVolume=0 | status=failed, violationReason="No trading activity", endedAt=2026-05-17 16:40:30.029 | ✅ |
+| 25 | failed "No trading activity", buyVolume=$0 | status=failed, violationReason="No trading activity", endedAt=2026-05-17 16:40:30.029 | ✅ |
 | 26 | failed "Daily volume below minimum", buyVolume=$10 | status=failed, violationReason="Daily volume below minimum", endedAt=2026-05-17 16:40:30.029 | ✅ |
 | 27 | passed (no change), buyVolume=$25 | status=active, violationReason=NULL | ✅ |
 
@@ -107,8 +107,11 @@ Cleanup: тестовые фикстуры (id=25, 26, 27) и их trades уда
 
 **Coolify configuration verified:**
 - Scheduled Task `end-of-day-check`: command `curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://dev.tradepredictions.online/api/cron/end-of-day-check`, schedule `55 23 * * *`, timeout 300s.
-- Initial command had typos (`url` instead of `curl`, then Cyrillic `с`). После исправления Execute Now → Success. Production sanity check для будущих Coolify task setup: copy-paste from clean source, не type manually.
+- Initial command had typos (`url` instead of `curl`, then Cyrillic `с` instead of latin `c`). После исправления Execute Now → Success. Production sanity check для будущих Coolify task setup: copy-paste from clean source, не type manually.
 - Legacy task `inactivity-check` удалён.
+
+**Infrastructure note:**
+Во время smoke test session возникло 502 на dev — корневой диск VPS заполнился до 100% (старые Docker image layers, накопленные за Phase 0.5 → Phase 4.A multiple deploys). `docker system prune -a -f` освободил 8 GB (32 GB → 14 GB used), сервер восстановился. Tracked для future maintenance — Coolify image retention policy может потребовать настройки если deploy frequency высокая.
 
 ### Files Changed
 **New:**
