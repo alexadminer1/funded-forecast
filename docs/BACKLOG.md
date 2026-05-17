@@ -301,6 +301,41 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Admin UI/API для записи isBlocked НЕ включены — см. TECH-DEBT-6
 - Commits: 0dc5344 (buy), ec2b5c3 (sell)
 
+### P0.3.D API extension for dashboard widgets ✓ CLOSED (Phase 3, 2026-05-17)
+- Parent: P0.3 challenge rules — supplies derived metrics для UI widgets без duplication на front-end
+- Status: feature/p0-3-d-api-extension готова к merge (smoke test ✅ на image 6eca53e)
+- Файлы: src/lib/user/active-challenge.ts (new) + src/app/api/user/{me,mode}/route.ts + src/lib/types.ts + src/app/dashboard/page.tsx
+- TECH-DEBT spawned: 9 (per-tier position limits)
+- TASK spawned: TASK-DOC-1 (BR doc), TASK-CLEANUP-1 (/mode spread), TASK-CLEANUP-2 (dashboard isPassed local)
+
+#### P0.3.D1 buildActiveChallenge helper + contract ✓ CLOSED
+- Helper `src/lib/user/active-challenge.ts` (239 строк): централизует derived вычисления из Challenge columns + computeConsistencyLive aggregate
+- Exported types: ActiveChallenge (21 поле — canonical), PreloadedChallenge (17 — input contract), BuildActiveChallengeOptions
+- `buildActiveChallenge(userId, opts?)` — если opts.challenge передан, helper пропускает свой findFirst, делает только consistency aggregate (+1 query path)
+- Commits: bec9564, c05c4c1, 4baa873
+
+#### P0.3.D1.5 maxDailyVolumeUsd + PreloadedChallenge optimization ✓ CLOSED
+- Добавлено 21-е поле в ActiveChallenge: maxDailyVolumeUsd = startBalance × MAX_DAILY_VOLUME_PCT / 100
+- Optional `opts.challenge: PreloadedChallenge` параметр — endpoints передают pre-loaded row, helper не делает второй findFirst
+- Net cost для endpoint refactor: +1 query (computeConsistencyLive) вместо +2 (двойной findFirst)
+- Commit: 715b77b
+
+#### P0.3.D2 /api/user/me extension ✓ CLOSED
+- activeChallenge: 17 existing → 29 полей (+12 new derived dashboard metrics)
+- Extended findFirst select до superset PreloadedChallenge (status, expiresAt, dayStartBalance, dayStartDate, plan.id, plan.price)
+- Response через explicit cherry-pick + overlay (никаких лишних columns не утекает)
+- 12 новых полей: status, isPassed, consistency, daysRemaining, daysTraded, dailyLossLimitPercent, maxLossLimitPercent, currentDrawdownPercent, dailyDrawdownPercent, minPositionPercent, maxAggregatePositionPercent, maxDailyVolumeUsd
+- types.ts: User.activeChallenge inline shape расширен 11 optional + plan.id/price expansion
+- Commits: cc8a698 (endpoint + types), 6eca53e (production build cast)
+
+#### P0.3.D3 /api/user/mode extension ✓ CLOSED
+- challenge: 37 existing → 49 полей (+11 overlay; status уже в raw spread; plan через include)
+- findFirst → findFirst({ include: { plan: { id, name, price } } }) — сохраняет existing 35-columns leak (back-compat) + добавляет plan relation
+- Response через spread + 11-field overlay (status pas duplicated, уже spread'нут)
+- dashboard/page.tsx Challenge interface: +11 optional + plan relation
+- Расхождение strategy с /me (cherry-pick vs spread) — намеренное (back-compat /mode). Cleanup как TASK-CLEANUP-1.
+- Commits: d7d757d (endpoint + types), 6eca53e (production build cast)
+
 ### P0.4 Position mechanics
 - Scope: progressive buy spread, buy cap $0.85, sell spread 4%, min position 2%, full sell only
 - БД: новая таблица EngineSettings (key, value, updatedAt) для spread конфига
@@ -882,3 +917,70 @@ Acceptance:
 - Estimated: 30 минут
 - Не блокер: linear в worst case, но per-challenge buy-counts <1k currently.
 - Priority: P3 (revisit когда challenges начнут расти или появятся slow-query alerts).
+
+### TECH-DEBT-9 Per-tier position limits (Starter/Pro/Elite differentiated) ⚪ P3 (created Phase 3)
+- Source: Phase 3 (Discovery Step 1 micro-discovery — `maxPositionSizePct=5` для всех 3 plan'ов в БД)
+- Currently engine constants `MIN_POSITION_PCT=2` и `MAX_AGGREGATE_POSITION_PCT=5` глобальны.
+  Helper buildActiveChallenge берёт их из constants. ChallengePlan имеет только legacy
+  `maxPositionSizePct` (=5 для всех, dead column — см. TECH-DEBT-5).
+- BUSINESS_RULES.md предположительно специфицирует per-tier values
+  (Starter min 2% / max 5%, Pro min 1.5% / max 4%, Elite min 1% / max 3% — verify against BR).
+- Action plan:
+  (a) Verify BUSINESS_RULES спецификацию vs engine constants — какая правда?
+  (b) Добавить `minPositionPercent`, `maxAggregatePositionPercent` columns в ChallengePlan (migration)
+  (c) Backfill existing rows tier-appropriate значениями
+  (d) Update trade/buy/route.ts: читать из plan вместо engine constants
+  (e) Update buildActiveChallenge: source `minPositionPercent` / `maxAggregatePositionPercent` из plan, не из constants
+  (f) Keep engine constants как fallback для legacy challenges без plan
+- Scope: schema.prisma + migration + trade/buy + helper + tests
+- Estimated: 3-4 часа
+- Не блокер: текущий unified-5%-rate работает для всех планов одинаково (нет per-tier разницы в DB).
+- Priority: P3 (revisit когда BR разногласие решено и есть commercial reason для differentiation).
+- Related: TECH-DEBT-5 (maxPositionSizePct cleanup) — лучше делать ОДНОВРЕМЕННО.
+
+### TASK-DOC-1 Update BUSINESS_RULES.md rule #6 (MLL formula peak-based) ⚪ P3 (created Phase 3)
+- Source: Phase 3 (Step 1 helper review — formula mismatch BR vs engine inline)
+- Текущая запись в BR rule #6 (по памяти из chat): drawdown = `(initialBalance - currentBalance) / initialBalance × 100`
+- Engine реально считает: `(peakBalance - realizedBalance) / startBalance × 100` (peak-based)
+  See trade/buy/route.ts:400-402, trade/sell/route.ts:266-268, marketResolve.ts:136-138
+- Helper buildActiveChallenge.ts:177-184 использует ту же peak-based formula
+- Action: открыть docs/BUSINESS_RULES.md, найти rule #6, заменить формулу на peak-based,
+  добавить comment "(matches engine MLL inline logic in trade/buy/route.ts:400)"
+- Scope: docs/BUSINESS_RULES.md (1 параграф)
+- Estimated: 15 минут
+- Не блокер: docs accuracy issue, не runtime bug. Engine behaviour не меняется.
+- Priority: P3.
+
+### TASK-CLEANUP-1 Replace /api/user/mode `{...activeChallenge}` spread with explicit cherry-pick ⚪ P3 (created Phase 3)
+- Source: Phase 3 (Step 3 — спред 35 columns Challenge утекает в response)
+- Currently /api/user/mode response.challenge включает все 35 columns Challenge model
+  (peakEquity, drawdownViolated, planId, refundableFeeCents, etc.), большинство из которых
+  фронт не типизирует и не использует.
+- Сравни с /api/user/me Step 2 (explicit cherry-pick — clean).
+- Action:
+  (a) Audit dashboard/page.tsx Challenge interface (15 documented полей) + найти untyped reads
+  (b) Build explicit list полей которые фронт consumes
+  (c) Replace spread в mode/route.ts:120-141 на explicit cherry-pick по образцу me/route.ts:139-163
+  (d) Smoke test что фронт не упал (особенно поля типа drawdownViolated которые есть в interface но не должны быть)
+- Scope: src/app/api/user/mode/route.ts (~30 строк)
+- Estimated: 1 час
+- Не блокер: data leak не security issue (всё это уже на response, фронт может читать; просто less clean API).
+- Priority: P3.
+
+### TASK-CLEANUP-2 Remove dashboard/page.tsx:425 local `isPassed` compute ⚪ P3 (created Phase 3)
+- Source: Phase 3 (Step 2 — endpoint теперь exposes isPassed в response)
+- Currently dashboard/page.tsx:425: `const isPassed = last.status === "passed";` — local compute
+  для past challenges display logic
+- После Phase 3 `/api/user/me.activeChallenge.isPassed` (для active) и эквивалентно для past
+  challenges нужно решить — добавить isPassed в LastChallenge тип или extend /api/user/challenges
+- Action:
+  (a) Add `isPassed` к LastChallenge interface (dashboard/page.tsx:26-32)
+  (b) /api/user/mode returns lastChallenge только с {id, status, violationReason, profitTargetMet, endedAt} —
+      нужно либо добавить isPassed в select, либо вычислять на фронте из status (что уже делается).
+  (c) Если предпочитаем централизованный compute — extend /api/user/mode lastChallenge select +
+      add `isPassed: lastChallenge.status === "passed"` в response composition.
+  (d) Remove local compute в dashboard/page.tsx:425.
+- Scope: 2 файла, ~5 строк изменений
+- Estimated: 30 минут
+- Не блокер: cosmetic. Local compute работает корректно.
+- Priority: P3.

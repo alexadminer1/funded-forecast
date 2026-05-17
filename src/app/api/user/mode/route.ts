@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { verifyToken } from "@/lib/auth";
 import { MIN_DAILY_VOLUME_PCT } from "@/lib/engine/constants";
+import { buildActiveChallenge, type PreloadedChallenge } from "@/lib/user/active-challenge";
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
@@ -20,8 +21,16 @@ export async function GET(req: NextRequest) {
   const userId = payload.userId as number;
 
   try {
+    // Phase 3: keep `findFirst` without `select` to preserve back-compat
+    // for the existing spread (all 35 Challenge columns leak through into
+    // response). Add `include: { plan }` so the relation is loaded too —
+    // makes the row structurally compatible with PreloadedChallenge so we
+    // can pass it into the helper and skip its internal findFirst.
     const activeChallenge = await prisma.challenge.findFirst({
       where: { userId, status: "active" },
+      include: {
+        plan: { select: { id: true, name: true, price: true } },
+      },
     });
 
     const mode = activeChallenge ? "challenge" : "sandbox";
@@ -64,9 +73,39 @@ export async function GET(req: NextRequest) {
       sandboxPositionsCount = sandboxCount;
     }
 
+    // Phase 3: helper computes 12 dashboard fields from the same Challenge row.
+    // We pass `activeChallenge` via opts.challenge so the helper skips its own
+    // findFirst and only runs computeConsistencyLive — net +1 query.
+    let helperData: Awaited<ReturnType<typeof buildActiveChallenge>> = null;
+    if (activeChallenge) {
+      helperData = await buildActiveChallenge(userId, {
+        // Narrowing cast — see /api/user/me/route.ts for rationale.
+        // Prisma `include` returns Challenge + plan; PreloadedChallenge
+        // is a strict structural subset. Cast keeps production build
+        // (where Prisma type inference can degrade) happy.
+        challenge: activeChallenge as PreloadedChallenge,
+      });
+    }
+
     // P0.4.next — augment active challenge with today's buy volume + min required.
     // Mirrors logic in /api/user/me (kept in two places to avoid coupling those endpoints).
-    let challengeWithVolume: typeof activeChallenge & { todayBuyVolume?: number; minDailyVolumeUsd?: number } | null = null;
+    let challengeWithVolume: typeof activeChallenge & {
+      todayBuyVolume?: number;
+      minDailyVolumeUsd?: number;
+      // Phase 3 overlay — 11 dashboard fields (status already lives in
+      // ...activeChallenge spread as a raw Challenge column; not duplicated).
+      isPassed?: boolean;
+      consistency?: number;
+      daysRemaining?: number;
+      daysTraded?: number;
+      dailyLossLimitPercent?: number;
+      maxLossLimitPercent?: number;
+      currentDrawdownPercent?: number;
+      dailyDrawdownPercent?: number;
+      minPositionPercent?: number;
+      maxAggregatePositionPercent?: number;
+      maxDailyVolumeUsd?: number;
+    } | null = null;
     if (activeChallenge) {
       const todayUtcDateStr = new Date().toISOString().slice(0, 10);
       const rows = await prisma.$queryRaw<{ volume: Prisma.Decimal | number | null }[]>(Prisma.sql`
@@ -81,7 +120,29 @@ export async function GET(req: NextRequest) {
       const minDailyVolumeUsd = parseFloat(
         (activeChallenge.startBalance * (MIN_DAILY_VOLUME_PCT / 100)).toFixed(2),
       );
-      challengeWithVolume = { ...activeChallenge, todayBuyVolume, minDailyVolumeUsd };
+      challengeWithVolume = {
+        ...activeChallenge,
+        todayBuyVolume,
+        minDailyVolumeUsd,
+        // Phase 3 overlay — 11 dashboard fields from helper. `status` already
+        // arrives via ...activeChallenge spread (Challenge column), so it's
+        // not duplicated here. `plan` likewise — included via `include` above.
+        ...(helperData
+          ? {
+              isPassed: helperData.isPassed,
+              consistency: helperData.consistency,
+              daysRemaining: helperData.daysRemaining,
+              daysTraded: helperData.daysTraded,
+              dailyLossLimitPercent: helperData.dailyLossLimitPercent,
+              maxLossLimitPercent: helperData.maxLossLimitPercent,
+              currentDrawdownPercent: helperData.currentDrawdownPercent,
+              dailyDrawdownPercent: helperData.dailyDrawdownPercent,
+              minPositionPercent: helperData.minPositionPercent,
+              maxAggregatePositionPercent: helperData.maxAggregatePositionPercent,
+              maxDailyVolumeUsd: helperData.maxDailyVolumeUsd,
+            }
+          : {}),
+      };
     }
 
     return NextResponse.json({

@@ -21,6 +21,22 @@ interface Challenge {
   minDailyVolumeUsd: number;
   profitTargetMet: boolean;
   drawdownViolated: boolean;
+
+  // Phase 3 dashboard overlay — optional so older cached responses still type-check.
+  isPassed?: boolean;
+  consistency?: number;
+  daysRemaining?: number;
+  daysTraded?: number;
+  dailyLossLimitPercent?: number;
+  maxLossLimitPercent?: number;
+  currentDrawdownPercent?: number;
+  dailyDrawdownPercent?: number;
+  minPositionPercent?: number;
+  maxAggregatePositionPercent?: number;
+  maxDailyVolumeUsd?: number;
+
+  // Plan relation — Phase 3 added it via `include` in /api/user/mode.
+  plan?: { id: number; name: string; price: number } | null;
 }
 
 interface LastChallenge {
