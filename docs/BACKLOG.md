@@ -337,6 +337,17 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Расхождение strategy с /me (cherry-pick vs spread) — намеренное (back-compat /mode). Cleanup как TASK-CLEANUP-1.
 - Commits: d7d757d (endpoint + types), 6eca53e (production build cast)
 
+### P0.3.C1 / P0.3.C3 End-of-day cron + remove inactivity ✓ CLOSED (Phase 4.A, 2026-05-17)
+- Scope: cron `/api/cron/end-of-day-check` (rules #7, #8), удаление `inactivity-check`
+- Rules covered:
+  - #7 No trading activity (buyVolume === 0) — fail "No trading activity"
+  - #8 Min daily volume not reached (0 < buyVolume < 2% startBalance) — fail "Daily volume below minimum"
+- Grace day: challenge started today (UTC) — skipped
+- Schedule: `55 23 * * *` UTC (must run BEFORE midnight, see endpoint header invariant)
+- Commits: 51c8e75, a1de048, 9661150
+- Coolify task setup: manual by Alexey (add `end-of-day-check`, remove `inactivity-check`)
+- See: SESSION_LOG.md → Session 2026-05-17 — Phase 4.A — End-of-day cron + remove inactivity-check
+
 ### P0.4 Position mechanics
 - Scope: progressive buy spread, buy cap $0.85, sell spread 4%, min position 2%, full sell only
 - БД: новая таблица EngineSettings (key, value, updatedAt) для spread конфига
@@ -366,17 +377,6 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
   - sell 50% shares → reject (only full)
   - position cost < 2% balance → reject
 - Оценка: 14ч
-
-### P0.3.C1 / P0.3.C3 End-of-day cron + remove inactivity ✓ CLOSED (Phase 4.A, 2026-05-17)
-- Scope: cron `/api/cron/end-of-day-check` (rules #7, #8), удаление `inactivity-check`
-- Rules covered:
-  - #7 No trading activity (buyVolume === 0) — fail "No trading activity"
-  - #8 Min daily volume not reached (0 < buyVolume < 2% startBalance) — fail "Daily volume below minimum"
-- Grace day: challenge started today (UTC) — skipped
-- Schedule: `55 23 * * *` UTC (must run BEFORE midnight, see endpoint header invariant)
-- Commits: 51c8e75, a1de048, 9661150
-- Coolify task setup: manual by Alexey (add `end-of-day-check`, remove `inactivity-check`)
-- See: SESSION_LOG.md → Session 2026-05-17 — Phase 4.A — End-of-day cron + remove inactivity-check
 
 ### P0.4.bis Pre-trade challenge failure UX ✓ CLOSED (Session 17, 2026-05-14, commit a6c1789)
 - Severity: HIGH (blocker запуска — юзеры запутаются)
