@@ -15,29 +15,43 @@ import {
 //   payment/activation.ts as startedAt + plan.challengePeriodDays days).
 //   Falls back to 0 if expiresAt is null (legacy challenges).
 // - `minPositionPercent` / `maxAggregatePositionPercent` come from
-//   engine constants — currently uniform across all tiers (see BACKLOG
-//   TECH-DEBT-5). When per-tier position limits ship, switch to plan.
+//   engine constants — currently uniform across all tiers (per-tier
+//   values pending; tracked in BACKLOG as a TECH-DEBT entry). When
+//   per-tier position limits ship, switch to plan-driven values.
 // - `plan` may be null on legacy challenges (no plan attached). We
 //   surface that honestly via nullable type rather than fabricating
 //   a placeholder object.
 // - Drawdown formula is peak-based (matches engine MLL logic), not
 //   initial-based as written in BUSINESS_RULES.md. BR doc update is
 //   tracked as TASK-DOC-1.
-// - `status` field reflects Challenge.status lifecycle column
-//   (active / passed / failed). The existing /api/user/me response
-//   exposed `stage` (a different field). The Step 2 endpoint refactor
-//   must reconcile this rename with frontend types.
+// - `stage` and `status` are TWO separate Challenge columns:
+//     stage  = "evaluation" | "funded"             (lifecycle phase)
+//     status = "active" | "passed" | "failed" | "expired"  (current state)
+//   Both are exposed independently; neither is a rename of the other.
+// - `isPassed` (computed: status === "passed") and `profitTargetMet`
+//   (Challenge.profitTargetMet column) are TWO distinct booleans:
+//     profitTargetMet = profit target hit, even if other pass-conditions
+//                       are not met yet (e.g. consistency, min trading
+//                       days) — challenge can still be "active".
+//     isPassed        = strict status === "passed".
+//   Both exposed independently.
 
 export interface ActiveChallenge {
+  // Identity & lifecycle
   id: number;
-  status: string;
+  stage: string;                     // "evaluation" | "funded"
+  status: string;                    // "active" | "passed" | "failed" | "expired"
   plan: { id: number; name: string; price: number } | null;
   startedAt: string;
+
+  // Balance & profit
   currentBalance: number;
   profitTarget: number;
   profitPercent: number;
-  profitTargetMet: boolean;
+  profitTargetMet: boolean;          // column from Challenge.profitTargetMet
+  isPassed: boolean;                 // computed: status === "passed"
 
+  // Phase 3 — dashboard metrics
   consistency: number;
   daysRemaining: number;
   daysTraded: number;
@@ -63,6 +77,7 @@ export async function buildActiveChallenge(
     where: { userId, status: "active" },
     select: {
       id: true,
+      stage: true,
       status: true,
       startedAt: true,
       expiresAt: true,
@@ -147,6 +162,7 @@ export async function buildActiveChallenge(
 
   return {
     id: challenge.id,
+    stage: challenge.stage,
     status: challenge.status,
     plan: challenge.plan
       ? {
@@ -160,6 +176,7 @@ export async function buildActiveChallenge(
     profitTarget,
     profitPercent,
     profitTargetMet: challenge.profitTargetMet,
+    isPassed: challenge.status === "passed",
 
     consistency: consistencyResult.biggestDayPct,
     daysRemaining,
