@@ -5,7 +5,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { verifyToken } from "@/lib/auth";
 import { MIN_DAILY_VOLUME_PCT } from "@/lib/engine/constants";
-import { buildActiveChallenge } from "@/lib/user/active-challenge";
+import { buildActiveChallenge, type PreloadedChallenge } from "@/lib/user/active-challenge";
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
@@ -125,7 +125,13 @@ export async function GET(req: NextRequest) {
     let helperData: Awaited<ReturnType<typeof buildActiveChallenge>> = null;
     if (activeChallenge) {
       helperData = await buildActiveChallenge(userId, {
-        challenge: activeChallenge,
+        // Narrowing cast: Prisma's typed select result is structurally
+        // identical to PreloadedChallenge here (verified locally), but
+        // the production Next.js build (without prisma generate in the
+        // same pass) infers Prisma types more loosely and complains
+        // about plan-shape ordering. The cast is safe — every field
+        // PreloadedChallenge requires is present in this select.
+        challenge: activeChallenge as PreloadedChallenge,
       });
     }
 

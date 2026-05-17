@@ -5,7 +5,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { verifyToken } from "@/lib/auth";
 import { MIN_DAILY_VOLUME_PCT } from "@/lib/engine/constants";
-import { buildActiveChallenge } from "@/lib/user/active-challenge";
+import { buildActiveChallenge, type PreloadedChallenge } from "@/lib/user/active-challenge";
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
@@ -79,7 +79,11 @@ export async function GET(req: NextRequest) {
     let helperData: Awaited<ReturnType<typeof buildActiveChallenge>> = null;
     if (activeChallenge) {
       helperData = await buildActiveChallenge(userId, {
-        challenge: activeChallenge,
+        // Narrowing cast — see /api/user/me/route.ts for rationale.
+        // Prisma `include` returns Challenge + plan; PreloadedChallenge
+        // is a strict structural subset. Cast keeps production build
+        // (where Prisma type inference can degrade) happy.
+        challenge: activeChallenge as PreloadedChallenge,
       });
     }
 
