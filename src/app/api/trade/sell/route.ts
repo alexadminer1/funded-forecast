@@ -51,6 +51,18 @@ class PartialSellError extends Error {
   }
 }
 
+// Phase 2.B — Rule #6: blocked users cannot trade (sell direction).
+// File-local duplicate of the class in trade/buy/route.ts — kept local
+// per architectural decision (no shared module for trade-route errors).
+class UserBlockedError extends Error {
+  blockReason: string | null;
+  constructor(blockReason: string | null) {
+    super("Account is blocked");
+    this.name = "UserBlockedError";
+    this.blockReason = blockReason;
+  }
+}
+
 function todayUtc(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -98,6 +110,35 @@ export async function POST(req: NextRequest) {
 
   if (clientPrice <= 0 || clientPrice >= 1) {
     return NextResponse.json({ error: "Invalid price" }, { status: 400 });
+  }
+
+  // Phase 2.B — Rule #6: blocked users cannot trade.
+  // Hard reject before any state read. No challenge state change.
+  // Dedicated try/catch — the main try below wraps only the transaction-bearing
+  // flow (and lazy daily reset above it sits outside the main try too).
+  try {
+    const userRecord = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, isBlocked: true, blockReason: true },
+    });
+    if (!userRecord) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+    if (userRecord.isBlocked) {
+      throw new UserBlockedError(userRecord.blockReason ?? null);
+    }
+  } catch (err: unknown) {
+    if (err instanceof UserBlockedError) {
+      return NextResponse.json(
+        {
+          error: err.message,
+          error_code: "USER_BLOCKED",
+          blockReason: err.blockReason,
+        },
+        { status: 403 },
+      );
+    }
+    throw err;
   }
 
   // === Lazy daily reset (outside transaction so it persists even on rollback) ===

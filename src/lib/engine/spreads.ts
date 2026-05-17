@@ -4,6 +4,7 @@ import {
   SELL_SPREAD_PCT,
   MIN_POSITION_PCT,
   MAX_AGGREGATE_POSITION_PCT,
+  MAX_DAILY_VOLUME_PCT,
 } from "./constants";
 
 function round6(n: number): number {
@@ -78,4 +79,29 @@ export function checkAggregatePosition(
   startBalance: number,
 ): boolean {
   return existingCost + newCost <= getMaxAggregatePositionUsd(startBalance);
+}
+
+/**
+ * Phase 2.B — Returns max allowed cumulative buy volume per UTC day
+ * for a Challenge with the given startBalance.
+ * Rounded to cents (2 decimal places).
+ */
+export function getMaxDailyVolumeUsd(startBalance: number): number {
+  return Math.round(startBalance * (MAX_DAILY_VOLUME_PCT / 100) * 100) / 100;
+}
+
+/**
+ * Phase 2.B — Returns true if the new trade's cost can be added to the
+ * day's existing buy volume without breaching the per-Challenge daily cap.
+ *
+ * @param currentDailyVolume  SUM(Trade.cost WHERE action='buy', today UTC, this challenge) — pre-insert state
+ * @param newCost             cost of the trade being attempted
+ * @param startBalance        Challenge.startBalance
+ */
+export function checkMaxDailyVolume(
+  currentDailyVolume: number,
+  newCost: number,
+  startBalance: number,
+): boolean {
+  return currentDailyVolume + newCost <= getMaxDailyVolumeUsd(startBalance);
 }

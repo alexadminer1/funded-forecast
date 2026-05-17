@@ -1,8 +1,10 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { verifyToken } from "@/lib/auth";
+import { MIN_DAILY_VOLUME_PCT, MAX_DAILY_VOLUME_PCT } from "@/lib/engine/constants";
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
@@ -79,10 +81,40 @@ export async function GET(req: NextRequest) {
       result.reduce((sum, p) => sum + p.realizedPnl, 0).toFixed(2)
     );
 
+    // Phase 2.B — augment activeChallenge with today's buy volume + min/max caps.
+    // Same UTC-day pattern as /api/user/me (kept duplicated to avoid coupling endpoints).
+    let todayBuyVolume = 0;
+    let minDailyVolumeUsd = 0;
+    let maxDailyVolumeUsd = 0;
+    if (activeChallenge) {
+      minDailyVolumeUsd = parseFloat(
+        (activeChallenge.startBalance * (MIN_DAILY_VOLUME_PCT / 100)).toFixed(2),
+      );
+      maxDailyVolumeUsd = parseFloat(
+        (activeChallenge.startBalance * (MAX_DAILY_VOLUME_PCT / 100)).toFixed(2),
+      );
+      const todayUtcDateStr = new Date().toISOString().slice(0, 10);
+      const rows = await prisma.$queryRaw<{ volume: Prisma.Decimal | number | null }[]>(Prisma.sql`
+        SELECT COALESCE(SUM("cost"), 0) AS volume
+        FROM "Trade"
+        WHERE "challengeId" = ${activeChallenge.id}
+          AND "action" = 'buy'
+          AND DATE("createdAt") = ${todayUtcDateStr}::date
+      `);
+      const raw = rows[0]?.volume;
+      todayBuyVolume = raw == null ? 0 : parseFloat(Number(raw).toFixed(2));
+    }
+
     return NextResponse.json({
       success: true,
       activeChallenge: activeChallenge
-        ? { id: activeChallenge.id, startBalance: activeChallenge.startBalance }
+        ? {
+            id: activeChallenge.id,
+            startBalance: activeChallenge.startBalance,
+            todayBuyVolume,
+            minDailyVolumeUsd,
+            maxDailyVolumeUsd,
+          }
         : null,
       positions: result,
       summary: {

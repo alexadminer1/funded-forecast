@@ -67,3 +67,13 @@ export const MAX_AGGREGATE_POSITION_PCT = 5;
  * minDailyVolumeUsd = startBalance * MIN_DAILY_VOLUME_PCT / 100.
  */
 export const MIN_DAILY_VOLUME_PCT = 2;
+
+/**
+ * Phase 2.B — Max daily buy volume as percent of Challenge.startBalance.
+ * Hard reject if (todayBuyVolume + new_trade.cost) > startBalance × MAX_DAILY_VOLUME_PCT / 100.
+ * todayBuyVolume = SUM(Trade.cost) WHERE action='buy' AND DATE(createdAt)=today UTC
+ *                  scoped to the user's active challenge.
+ * Applied only in challenge mode (i.e. when an active Challenge exists).
+ * See docs/BUSINESS_RULES.md rule #4.
+ */
+export const MAX_DAILY_VOLUME_PCT = 5;
