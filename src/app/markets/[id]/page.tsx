@@ -264,6 +264,16 @@ function TradeModal({
     ? parseFloat((startBalance * MAX_AGGREGATE_POSITION_PCT / 100).toFixed(2))
     : null;
 
+  // Phase 2.B — preview info: today's buy volume vs daily cap.
+  // Values come from /api/user/positions (extended in step C7).
+  // Pure display, no submit gating — server enforces the cap on buy submit.
+  const todayBuyVolume = showLimits
+    ? (userPositions?.activeChallenge?.todayBuyVolume ?? 0)
+    : null;
+  const maxDailyVolumeUsd = showLimits
+    ? (userPositions?.activeChallenge?.maxDailyVolumeUsd ?? 0)
+    : null;
+
   // P0.4.next: per-trade min position removed. Daily volume qualifying rule
   // is now enforced by cron daily-pnl-aggregate, not at trade submission.
   const submitDisabled =
@@ -448,6 +458,7 @@ function TradeModal({
                     ? [
                         { label: "Min position", value: `$${minPositionUsd!.toFixed(2)}`, color: "var(--text-muted)" },
                         { label: "Max aggregate", value: `$${maxAggregateUsd!.toFixed(2)}`, color: "var(--text-muted)" },
+                        { label: "Daily volume", value: `$${todayBuyVolume!.toFixed(2)} / $${maxDailyVolumeUsd!.toFixed(2)}`, color: "var(--text-muted)" },
                       ]
                     : []),
                 ]
