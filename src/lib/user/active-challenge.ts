@@ -6,21 +6,37 @@ import {
 } from "@/lib/engine/constants";
 
 // Phase 3 — shared shape consumed by /api/user/me and /api/user/mode.
-// Field names follow the new dashboard contract; values are derived from
-// the existing Challenge / ChallengePlan columns and the consistency helper.
 //
-// NB: the real ChallengePlan model has no `tier` field (see schema.prisma:167),
-// so the spec's `plan: { id, name, tier, price }` was reduced to the columns
-// that actually exist. Documented in the Step 1 report.
+// Notes on data sources (confirmed in Phase 3 Step 1 micro-discovery):
+// - `currentBalance` = Challenge.realizedBalance. BalanceLog and
+//   Challenge.realizedBalance are updated atomically in the same
+//   prisma.$transaction in trade/sell, so values are consistent.
+// - `daysRemaining` derived from Challenge.expiresAt (set in
+//   payment/activation.ts as startedAt + plan.challengePeriodDays days).
+//   Falls back to 0 if expiresAt is null (legacy challenges).
+// - `minPositionPercent` / `maxAggregatePositionPercent` come from
+//   engine constants — currently uniform across all tiers (see BACKLOG
+//   TECH-DEBT-5). When per-tier position limits ship, switch to plan.
+// - `plan` may be null on legacy challenges (no plan attached). We
+//   surface that honestly via nullable type rather than fabricating
+//   a placeholder object.
+// - Drawdown formula is peak-based (matches engine MLL logic), not
+//   initial-based as written in BUSINESS_RULES.md. BR doc update is
+//   tracked as TASK-DOC-1.
+// - `status` field reflects Challenge.status lifecycle column
+//   (active / passed / failed). The existing /api/user/me response
+//   exposed `stage` (a different field). The Step 2 endpoint refactor
+//   must reconcile this rename with frontend types.
+
 export interface ActiveChallenge {
   id: number;
   status: string;
-  plan: { id: number; name: string; price: number };
+  plan: { id: number; name: string; price: number } | null;
   startedAt: string;
   currentBalance: number;
   profitTarget: number;
   profitPercent: number;
-  isPassed: boolean;
+  profitTargetMet: boolean;
 
   consistency: number;
   daysRemaining: number;
@@ -49,6 +65,7 @@ export async function buildActiveChallenge(
       id: true,
       status: true,
       startedAt: true,
+      expiresAt: true,
       startBalance: true,
       realizedBalance: true,
       peakBalance: true,
@@ -65,7 +82,6 @@ export async function buildActiveChallenge(
           id: true,
           name: true,
           price: true,
-          challengePeriodDays: true,
         },
       },
     },
@@ -73,16 +89,20 @@ export async function buildActiveChallenge(
 
   if (!challenge) return null;
 
-  const [consistencyResult] = await Promise.all([
-    computeConsistencyLive(challenge.id),
-  ]);
+  const consistencyResult = await computeConsistencyLive(challenge.id);
 
   const today = new Date().toISOString().slice(0, 10);
-  const daysSinceStart = Math.floor(
-    (Date.now() - challenge.startedAt.getTime()) / MS_PER_DAY,
-  );
-  const challengePeriodDays = challenge.plan?.challengePeriodDays ?? 0;
-  const daysRemaining = Math.max(0, challengePeriodDays - daysSinceStart);
+
+  // daysRemaining via expiresAt (set in activation as startedAt + plan
+  // period days). Null on legacy challenges → returns 0.
+  const daysRemaining = challenge.expiresAt
+    ? Math.max(
+        0,
+        Math.ceil(
+          (challenge.expiresAt.getTime() - Date.now()) / MS_PER_DAY,
+        ),
+      )
+    : 0;
 
   const profitTarget = round2(
     challenge.startBalance * (challenge.profitTargetPct / 100),
@@ -96,6 +116,7 @@ export async function buildActiveChallenge(
         )
       : 0;
 
+  // Peak-based drawdown (matches engine MLL logic, not initial-based).
   const currentDrawdownAmount = Math.max(
     0,
     challenge.peakBalance - challenge.realizedBalance,
@@ -105,10 +126,10 @@ export async function buildActiveChallenge(
       ? round2((currentDrawdownAmount / challenge.startBalance) * 100)
       : 0;
 
-  // Lazy-reset awareness: if dayStartDate is not today (snapshot stale
-  // before the first trade of the new UTC day), treat daily DD as zero.
-  // The engine refreshes dayStartBalance on the first trade of the day
-  // via the lazy-reset block in trade/buy/route.ts and trade/sell/route.ts.
+  // Lazy-reset awareness: dayStartBalance is a snapshot updated only on
+  // the first trade of each UTC day. Before that snapshot refresh (e.g.
+  // user opens dashboard at 03:00 UTC having not traded yet today), the
+  // value is stale; treat today's DD as zero in that case.
   const dayStartIso =
     challenge.dayStartDate?.toISOString().slice(0, 10) ?? null;
   const effectiveDayStart =
@@ -133,12 +154,12 @@ export async function buildActiveChallenge(
           name: challenge.plan.name,
           price: challenge.plan.price,
         }
-      : { id: 0, name: "", price: 0 },
+      : null,
     startedAt: challenge.startedAt.toISOString(),
     currentBalance: challenge.realizedBalance,
     profitTarget,
     profitPercent,
-    isPassed: challenge.profitTargetMet,
+    profitTargetMet: challenge.profitTargetMet,
 
     consistency: consistencyResult.biggestDayPct,
     daysRemaining,
