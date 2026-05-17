@@ -21,7 +21,13 @@ import {
 
 type UserPositionsResp = {
   success: boolean;
-  activeChallenge: { id: number; startBalance: number } | null;
+  activeChallenge: {
+    id: number;
+    startBalance: number;
+    todayBuyVolume: number;
+    minDailyVolumeUsd: number;
+    maxDailyVolumeUsd: number;
+  } | null;
   positions: Array<{
     id: number;
     marketId: string;

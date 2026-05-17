@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyToken } from "@/lib/auth";
 import { computeEquity } from "@/lib/equity";
-import { BUY_PRICE_CAP } from "@/lib/engine/constants";
+import { BUY_PRICE_CAP, MAX_DAILY_VOLUME_PCT } from "@/lib/engine/constants";
 import {
   applyBuySpread,
   checkBuyCap,
@@ -12,6 +12,7 @@ import {
   getMinPositionUsd,
   checkAggregatePosition,
   getMaxAggregatePositionUsd,
+  checkMaxDailyVolume,
 } from "@/lib/engine/spreads";
 
 const MAX_SLIPPAGE = 0.02;
@@ -83,6 +84,42 @@ class AggregatePositionExceededError extends Error {
   }
 }
 
+// Phase 2.B — pre-trade security + daily-volume rejects (rules #4, #5, #6).
+// Pure HTTP rejects. No side effects on Challenge.status.
+
+class UserBlockedError extends Error {
+  blockReason: string | null;
+  constructor(blockReason: string | null) {
+    super("Account is blocked");
+    this.name = "UserBlockedError";
+    this.blockReason = blockReason;
+  }
+}
+
+class MarketEndedError extends Error {
+  endDate: Date;
+  constructor(endDate: Date) {
+    super("Market trading period has ended");
+    this.name = "MarketEndedError";
+    this.endDate = endDate;
+  }
+}
+
+class DailyVolumeExceededError extends Error {
+  currentDailyVolume: number;
+  newCost: number;
+  totalAfter: number;
+  maxAllowed: number;
+  constructor(currentDailyVolume: number, newCost: number, totalAfter: number, maxAllowed: number) {
+    super("Daily buy volume cap exceeded");
+    this.name = "DailyVolumeExceededError";
+    this.currentDailyVolume = currentDailyVolume;
+    this.newCost = newCost;
+    this.totalAfter = totalAfter;
+    this.maxAllowed = maxAllowed;
+  }
+}
+
 function todayUtc(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -132,6 +169,35 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid price" }, { status: 400 });
   }
 
+  // Phase 2.B — Rule #6: blocked users cannot trade.
+  // Hard reject before any state read. No challenge state change.
+  // Dedicated try/catch — the main try below wraps only the transaction-bearing
+  // flow (and lazy daily reset above it sits outside the main try too).
+  try {
+    const userRecord = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, isBlocked: true, blockReason: true },
+    });
+    if (!userRecord) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+    if (userRecord.isBlocked) {
+      throw new UserBlockedError(userRecord.blockReason ?? null);
+    }
+  } catch (err: unknown) {
+    if (err instanceof UserBlockedError) {
+      return NextResponse.json(
+        {
+          error: err.message,
+          error_code: "USER_BLOCKED",
+          blockReason: err.blockReason,
+        },
+        { status: 403 },
+      );
+    }
+    throw err;
+  }
+
   // === Lazy daily reset (outside transaction so it persists even on rollback) ===
   const activeChallengePre = await prisma.challenge.findFirst({
     where: { userId, status: "active" },
@@ -167,6 +233,14 @@ export async function POST(req: NextRequest) {
       const market = await tx.market.findUnique({ where: { id: marketId } });
       if (!market) throw new Error("MARKET_NOT_FOUND");
       if (market.status !== "live") throw new Error("MARKET_NOT_LIVE");
+
+      // Phase 2.B — Rule #5: market.endDate hard reject for buy.
+      // Existing status check above catches resolved/disputed markets;
+      // this catches the gap window where endDate passed but cron has not yet
+      // flipped status. Buy only — sell allows legitimate position close.
+      if (market.endDate && market.endDate < new Date()) {
+        throw new MarketEndedError(market.endDate);
+      }
 
       const rawPrice = side === "yes" ? market.yesPrice : market.noPrice;
       if (Math.abs(clientPrice - rawPrice) > MAX_SLIPPAGE) {
@@ -226,6 +300,32 @@ export async function POST(req: NextRequest) {
             cost,
             totalAfter,
             getMaxAggregatePositionUsd(activeChallenge.startBalance),
+          );
+        }
+
+        // Phase 2.B — Rule #4: max daily buy volume cap (challenge mode only).
+        // Pre-insert read inside tx — aggregate sums BUY costs for this challenge,
+        // today (UTC), excluding the new trade.
+        const now = new Date();
+        const todayUtcStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+
+        const dailyAgg = await tx.trade.aggregate({
+          _sum: { cost: true },
+          where: {
+            challengeId: activeChallenge.id,
+            action: "buy",
+            createdAt: { gte: todayUtcStart },
+          },
+        });
+        const currentDailyVolume = dailyAgg._sum.cost ?? 0;
+
+        if (!checkMaxDailyVolume(currentDailyVolume, cost, activeChallenge.startBalance)) {
+          const maxAllowed = activeChallenge.startBalance * (MAX_DAILY_VOLUME_PCT / 100);
+          throw new DailyVolumeExceededError(
+            Math.round(currentDailyVolume * 100) / 100,
+            Math.round(cost * 100) / 100,
+            Math.round((currentDailyVolume + cost) * 100) / 100,
+            Math.round(maxAllowed * 100) / 100,
           );
         }
       } else {
@@ -431,6 +531,34 @@ export async function POST(req: NextRequest) {
           error: `Position cap exceeded. Existing: $${error.existingCost.toFixed(2)}, new: $${error.newCost.toFixed(2)}, total: $${error.totalAfter.toFixed(2)}, max: $${error.maxAllowed.toFixed(2)}.`,
           error_code: "AGGREGATE_POSITION_EXCEEDED",
           existingCost: error.existingCost,
+          newCost: error.newCost,
+          totalAfter: error.totalAfter,
+          maxAllowed: error.maxAllowed,
+        },
+        { status: 400 }
+      );
+    }
+
+    // Phase 2.B — pure 400 rejects (rules #4, #5). No Challenge state changes.
+    // UserBlockedError is handled in its own dedicated try/catch above (pre-tx),
+    // so no handler is needed here for rule #6.
+    if (error instanceof MarketEndedError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          error_code: "MARKET_ENDED",
+          endDate: error.endDate.toISOString(),
+        },
+        { status: 400 }
+      );
+    }
+
+    if (error instanceof DailyVolumeExceededError) {
+      return NextResponse.json(
+        {
+          error: `Daily volume cap reached. Spent today: $${error.currentDailyVolume.toFixed(2)}, new trade: $${error.newCost.toFixed(2)}, total: $${error.totalAfter.toFixed(2)}, max: $${error.maxAllowed.toFixed(2)}.`,
+          error_code: "DAILY_VOLUME_EXCEEDED",
+          currentDailyVolume: error.currentDailyVolume,
           newCost: error.newCost,
           totalAfter: error.totalAfter,
           maxAllowed: error.maxAllowed,
