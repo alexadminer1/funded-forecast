@@ -57,13 +57,39 @@ export async function resolveMarketPositions(
           return;
         }
 
+        // Phase 4.A.2 Task 2 (Option A) — skip resolve entirely for positions
+        // whose source Challenge is no longer active. Position remains
+        // status="open" as an orphan; Phase 4.B auto-close-at-finalize or
+        // admin manual close will reconcile it. Sandbox positions
+        // (challengeId === null) proceed normally.
+        // Source: docs/PHASE_4_0_AUDIT.md finding #1.
+        if (fresh.challengeId !== null) {
+          const sourceChallenge = await tx.challenge.findUnique({
+            where: { id: fresh.challengeId },
+            select: { status: true },
+          });
+          if (sourceChallenge && sourceChallenge.status !== "active") {
+            console.log(
+              `[marketResolve] Skipping position ${fresh.id}: challenge ${fresh.challengeId} status=${sourceChallenge.status}`,
+            );
+            positionsSkipped++;
+            return;
+          }
+        }
+
         const isWinner = fresh.side === winningOutcome;
         const payout = isWinner ? parseFloat((fresh.shares * 1.0).toFixed(2)) : 0;
         const profit = parseFloat((payout - fresh.costBasis).toFixed(2));
 
-        // Get current balance
+        // Phase 4.A.2 Task 1 — runningBalance chain must be scoped to the
+        // same (userId, challengeId) pair, otherwise sandbox/challenge
+        // balance chains cross-pollinate at resolve time.
+        // Source: docs/PHASE_4_0_AUDIT.md finding #2.
         const lastLog = await tx.balanceLog.findFirst({
-          where: { userId: fresh.userId },
+          where: {
+            userId: fresh.userId,
+            challengeId: fresh.challengeId,
+          },
           orderBy: { createdAt: "desc" },
           select: { runningBalance: true },
         });
