@@ -51,6 +51,38 @@ class PartialSellError extends Error {
   }
 }
 
+// Phase 4.B Task 3 — explicit sell guard errors (docs/PHASE_4_B_BRIEF.md).
+// Kept file-local per the existing trade-route error pattern (no shared
+// errors module; matches UserBlockedError/DrawdownViolatedError style).
+class PositionNotFoundError extends Error {
+  constructor() {
+    super("POSITION_NOT_FOUND");
+    this.name = "PositionNotFoundError";
+  }
+}
+
+class ChallengeIsolationError extends Error {
+  positionChallengeId: number | null;
+  activeChallengeId:   number | null;
+  constructor(positionChallengeId: number | null, activeChallengeId: number | null) {
+    super("CHALLENGE_ISOLATION");
+    this.name = "ChallengeIsolationError";
+    this.positionChallengeId = positionChallengeId;
+    this.activeChallengeId   = activeChallengeId;
+  }
+}
+
+class ChallengeNotActiveError extends Error {
+  challengeId: number;
+  challengeStatus: string;
+  constructor(challengeId: number, challengeStatus: string) {
+    super("CHALLENGE_NOT_ACTIVE");
+    this.name = "ChallengeNotActiveError";
+    this.challengeId     = challengeId;
+    this.challengeStatus = challengeStatus;
+  }
+}
+
 // Phase 2.B — Rule #6: blocked users cannot trade (sell direction).
 // File-local duplicate of the class in trade/buy/route.ts — kept local
 // per architectural decision (no shared module for trade-route errors).
@@ -165,11 +197,6 @@ export async function POST(req: NextRequest) {
       const activeChallenge = await tx.challenge.findFirst({
         where: { userId, status: "active" },
       });
-      const challengeId = activeChallenge ? activeChallenge.id : null;
-
-      if (activeChallenge && activeChallenge.expiresAt && new Date() > activeChallenge.expiresAt) {
-        throw new ChallengeExpiredError(activeChallenge.id);
-      }
 
       const market = await tx.market.findUnique({ where: { id: marketId } });
       if (!market) throw new Error("MARKET_NOT_FOUND");
@@ -180,11 +207,37 @@ export async function POST(req: NextRequest) {
         throw new PriceMovedError(rawPrice);
       }
 
+      // Phase 4.B Task 3 — explicit sell guard (docs/PHASE_4_B_BRIEF.md).
+      // Lookup position WITHOUT challengeId filter so isolation is enforced
+      // explicitly by the guards below, not silently by the SQL filter.
       const position = await tx.position.findFirst({
-        where: { userId, marketId, side, challengeId, status: "open" },
+        where: { userId, marketId, side, status: "open" },
       });
+      if (!position) throw new PositionNotFoundError();
 
-      if (!position) throw new Error("POSITION_NOT_FOUND");
+      const activeChallengeId = activeChallenge?.id ?? null;
+
+      // Guard 1: position must belong to the currently active challenge,
+      // OR both must be sandbox (challengeId === null on both sides).
+      if (position.challengeId !== activeChallengeId) {
+        throw new ChallengeIsolationError(position.challengeId, activeChallengeId);
+      }
+
+      // Guard 2 + 3 only apply when this is a challenge-mode position.
+      // (Sandbox positions — challengeId === null — pass through.)
+      if (position.challengeId !== null) {
+        if (!activeChallenge || activeChallenge.status !== "active") {
+          throw new ChallengeNotActiveError(
+            position.challengeId,
+            activeChallenge?.status ?? "missing",
+          );
+        }
+        if (activeChallenge.expiresAt && new Date() > activeChallenge.expiresAt) {
+          throw new ChallengeExpiredError(activeChallenge.id);
+        }
+      }
+
+      const challengeId = activeChallengeId;
 
       // P0.4: full sell only. Applies to all positions, including legacy partial-sold.
       if (amount !== position.shares) {
@@ -481,6 +534,42 @@ Our team will reach out shortly with next steps for funding your account.`;
       );
     }
 
+    // Phase 4.B Task 3 — explicit guard errors. Each is a pre-trade reject
+    // with no Challenge state change.
+    if (error instanceof PositionNotFoundError) {
+      return NextResponse.json(
+        {
+          error: "No open position found for this market and side",
+          error_code: "position_not_found",
+        },
+        { status: 404 }
+      );
+    }
+
+    if (error instanceof ChallengeIsolationError) {
+      return NextResponse.json(
+        {
+          error: "Position belongs to a different challenge",
+          error_code: "challenge_isolation",
+          positionChallengeId: error.positionChallengeId,
+          activeChallengeId:   error.activeChallengeId,
+        },
+        { status: 403 }
+      );
+    }
+
+    if (error instanceof ChallengeNotActiveError) {
+      return NextResponse.json(
+        {
+          error: "Challenge is not active",
+          error_code: "challenge_not_active",
+          challengeId:     error.challengeId,
+          challengeStatus: error.challengeStatus,
+        },
+        { status: 403 }
+      );
+    }
+
     if (error instanceof DrawdownViolatedError) {
       try {
         await prisma.challenge.update({
@@ -536,7 +625,6 @@ Our team will reach out shortly with next steps for funding your account.`;
     const clientErrors: Record<string, { status: number; error: string }> = {
       MARKET_NOT_FOUND:       { status: 404, error: "Market not found" },
       MARKET_NOT_LIVE:        { status: 400, error: "Market is not live" },
-      POSITION_NOT_FOUND:     { status: 404, error: "No open position found for this market and side" },
       INSUFFICIENT_SHARES:    { status: 400, error: "Not enough shares to sell" },
     };
     if (message in clientErrors) {
