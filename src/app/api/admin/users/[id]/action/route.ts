@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { closeOpenPositionsForChallenge } from "@/lib/closeChallengePositions";
 
 function checkAdmin(req: NextRequest) {
   return req.headers.get("x-admin-key") === process.env.ADMIN_API_KEY;
@@ -51,22 +52,32 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const challenge = await prisma.challenge.findFirst({ where: { userId, status: "active" } });
       if (!challenge) return NextResponse.json({ error: "No active challenge" }, { status: 400 });
 
-      await prisma.challenge.update({
-        where: { id: challenge.id },
-        data: { status: "failed", drawdownViolated: true, violationReason: "Admin action", endedAt: new Date() },
-      });
-      return NextResponse.json({ success: true, action });
+      // Phase 4.B Task 2 site #9 — auto-close open positions in the same tx.
+      const summary = await prisma.$transaction(async (tx) => {
+        const closed = await closeOpenPositionsForChallenge(tx, challenge.id, "admin_force");
+        await tx.challenge.update({
+          where: { id: challenge.id },
+          data: { status: "failed", drawdownViolated: true, violationReason: "Admin action", endedAt: new Date() },
+        });
+        return closed;
+      }, { timeout: 30000 });
+      return NextResponse.json({ success: true, action, closedPositions: summary.closedCount });
     }
 
     if (action === "pass_challenge") {
       const challenge = await prisma.challenge.findFirst({ where: { userId, status: "active" } });
       if (!challenge) return NextResponse.json({ error: "No active challenge" }, { status: 400 });
 
-      await prisma.challenge.update({
-        where: { id: challenge.id },
-        data: { status: "passed", profitTargetMet: true, endedAt: new Date() },
-      });
-      return NextResponse.json({ success: true, action });
+      // Phase 4.B Task 2 site #10 — auto-close open positions in the same tx.
+      const summary = await prisma.$transaction(async (tx) => {
+        const closed = await closeOpenPositionsForChallenge(tx, challenge.id, "passed");
+        await tx.challenge.update({
+          where: { id: challenge.id },
+          data: { status: "passed", profitTargetMet: true, endedAt: new Date() },
+        });
+        return closed;
+      }, { timeout: 30000 });
+      return NextResponse.json({ success: true, action, closedPositions: summary.closedCount });
     }
 
     if (action === "start_challenge") {
@@ -104,6 +115,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         // End any existing active challenge
         const existing = await tx.challenge.findFirst({ where: { userId, status: "active" } });
         if (existing) {
+          // Phase 4.B Task 2 site #11 — close open positions of the
+          // outgoing challenge before flipping its status.
+          await closeOpenPositionsForChallenge(tx, existing.id, "admin_force");
           await tx.challenge.update({
             where: { id: existing.id },
             data: { status: "failed", violationReason: "Replaced by admin plan assignment", endedAt: new Date() },
