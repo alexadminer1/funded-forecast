@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyToken } from "@/lib/auth";
 import { computeEquity } from "@/lib/equity";
+import { closeOpenPositionsForChallenge } from "@/lib/closeChallengePositions";
 import { BUY_PRICE_CAP, MAX_DAILY_VOLUME_PCT } from "@/lib/engine/constants";
 import {
   applyBuySpread,
@@ -568,17 +569,22 @@ export async function POST(req: NextRequest) {
     }
 
     if (error instanceof DrawdownViolatedError) {
-      // Persist fail outside the rolled-back transaction
+      // Phase 4.B Task 2 site #5 — close open positions in the same tx as
+      // the status flip. Main tx already rolled back, so we open a fresh
+      // one here. Audit ref: docs/PHASE_4_0_AUDIT.md finding #3.
       try {
-        await prisma.challenge.update({
-          where: { id: error.challengeId },
-          data: {
-            status: "failed",
-            drawdownViolated: true,
-            violationReason: error.reason,
-            endedAt: new Date(),
-          },
-        });
+        await prisma.$transaction(async (tx) => {
+          await closeOpenPositionsForChallenge(tx, error.challengeId, "failed_drawdown");
+          await tx.challenge.update({
+            where: { id: error.challengeId },
+            data: {
+              status: "failed",
+              drawdownViolated: true,
+              violationReason: error.reason,
+              endedAt: new Date(),
+            },
+          });
+        }, { timeout: 30000 });
       } catch (e) {
         console.error("[BUY] Failed to persist challenge fail:", e);
       }
@@ -595,15 +601,20 @@ export async function POST(req: NextRequest) {
     }
 
     if (error instanceof ChallengeExpiredError) {
+      // Phase 4.B Task 2 site #6 — close open positions in the same tx
+      // as the status flip. Audit ref: docs/PHASE_4_0_AUDIT.md finding #3.
       try {
-        await prisma.challenge.update({
-          where: { id: error.challengeId },
-          data: {
-            status: "failed",
-            violationReason: "Challenge period expired",
-            endedAt: new Date(),
-          },
-        });
+        await prisma.$transaction(async (tx) => {
+          await closeOpenPositionsForChallenge(tx, error.challengeId, "expired");
+          await tx.challenge.update({
+            where: { id: error.challengeId },
+            data: {
+              status: "failed",
+              violationReason: "Challenge period expired",
+              endedAt: new Date(),
+            },
+          });
+        }, { timeout: 30000 });
       } catch (e) {
         console.error("[BUY] Failed to persist challenge expiry:", e);
       }
