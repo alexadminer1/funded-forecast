@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { computeEquity } from "@/lib/equity";
 import { checkAndMarkPassed } from "@/lib/challengeStatus";
+import { closeOpenPositionsForChallenge } from "@/lib/closeChallengePositions";
 
 export interface ResolveMarketResult {
   positionsProcessed: number;
@@ -192,6 +193,17 @@ export async function resolveMarketPositions(
                 } : {}),
               },
             });
+
+              // Phase 4.B Task 2 site #7 — when this resolve trips the
+              // drawdown limit, close every OTHER open position of the
+              // challenge in the same per-position tx. The current
+              // position was already flipped to status="resolved" above
+              // (line 108-117), so it won't match the helper's
+              // status="open" filter. Audit ref: docs/PHASE_4_0_AUDIT.md
+              // finding #3.
+              if (drawdownViolated) {
+                await closeOpenPositionsForChallenge(tx, fresh.challengeId, "failed_drawdown");
+              }
 
               // P0.3.b — auto-pass check (only if not failed by drawdown)
               if (!drawdownViolated) {

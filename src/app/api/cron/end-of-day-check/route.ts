@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { MIN_DAILY_VOLUME_PCT } from "@/lib/engine/constants";
+import { closeOpenPositionsForChallenge } from "@/lib/closeChallengePositions";
 
 // Phase 4.A — End-of-day activity check (BUSINESS_RULES rule #7, "Daily volume below minimum").
 // Replaces the legacy /api/cron/inactivity-check (72h/120h hour-based fail).
@@ -105,14 +106,19 @@ export async function GET(req: NextRequest) {
           ? "No trading activity"
           : "Daily volume below minimum";
 
-        await prisma.challenge.update({
-          where: { id: c.id },
-          data: {
-            status:          "failed",
-            violationReason: reason,
-            endedAt:         checkedAt,
-          },
-        });
+        // Phase 4.B Task 2 site #2 — close open positions inside the same
+        // tx as the status flip (audit finding #3).
+        await prisma.$transaction(async (tx) => {
+          await closeOpenPositionsForChallenge(tx, c.id, "expired");
+          await tx.challenge.update({
+            where: { id: c.id },
+            data: {
+              status:          "failed",
+              violationReason: reason,
+              endedAt:         checkedAt,
+            },
+          });
+        }, { timeout: 30000 });
         failedResults.push({ challengeId: c.id, reason, buyVolume, minDailyVolume });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

@@ -3,6 +3,7 @@ export const maxDuration = 30;
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { closeOpenPositionsForChallenge } from "@/lib/closeChallengePositions";
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
@@ -27,14 +28,19 @@ export async function GET(req: NextRequest) {
 
     for (const c of expired) {
       try {
-        await prisma.challenge.update({
-          where: { id: c.id },
-          data: {
-            status:          "failed",
-            violationReason: "Challenge period expired",
-            endedAt:         checkedAt,
-          },
-        });
+        // Phase 4.B Task 2 site #1 — close open positions inside the same
+        // tx as the status flip (audit finding #3).
+        await prisma.$transaction(async (tx) => {
+          await closeOpenPositionsForChallenge(tx, c.id, "expired");
+          await tx.challenge.update({
+            where: { id: c.id },
+            data: {
+              status:          "failed",
+              violationReason: "Challenge period expired",
+              endedAt:         checkedAt,
+            },
+          });
+        }, { timeout: 30000 });
         updatedChallengeIds.push(c.id);
       } catch (err) {
         console.error(`[EXPIRE_CHALLENGES] failed to update challenge ${c.id}`, err);
