@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { MIN_RESOLVED_POSITIONS, MIN_UNIQUE_EVENTS } from "@/lib/engine/constants";
 import { computeConsistencyLive, CONSISTENCY_THRESHOLD_CHALLENGE } from "@/lib/consistency";
+import { closeOpenPositionsForChallenge } from "@/lib/closeChallengePositions";
 
 /**
  * Check passing conditions and mark challenge as passed if all met.
@@ -59,6 +60,11 @@ export async function checkAndMarkPassed(
     );
     return false;
   }
+
+  // Phase 4.B Task 2 site #8 — close every remaining open position of the
+  // challenge before flipping status to "passed". Caller's tx wraps both.
+  // Audit ref: docs/PHASE_4_0_AUDIT.md finding #3.
+  await closeOpenPositionsForChallenge(tx, challengeId, "passed");
 
   await tx.challenge.update({
     where: { id: challengeId },
