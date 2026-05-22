@@ -9,6 +9,69 @@
 
 ---
 
+## Session 2026-05-22 — Phase 4 Release (Session 19) CLOSED
+
+### Released
+- develop → main merge commit: a039f74
+- Range: de6bf39..a039f74 (75 commits, 15 phases accumulated)
+
+### Phases included
+- P1.infra.* (Session 12-13) — dev env setup, PROD_RELEASE_CHECKLIST, CLAUDE.md, GitHub Actions
+- P0.3.a — consistency rule (src/lib/consistency.ts)
+- SEC-5 — on-chain txHash verification for admin payouts
+- P0.4 — Position mechanics (spreads, cap, min position, full-sell-only)
+- P0.4.bis — Pre-trade challenge-failure UX modal
+- P0.4.next — min daily volume rule
+- Phase 0.5 — schema reconciliation (prisma-managed migrations, UNMANAGED_DDL.md)
+- P0.9 — dev infra (wipe scripts, backup, CRON_SCHEDULE.md)
+- Phase 1 — ChallengePlan business model (challengePeriodDays 30→10, minTradingDays 15→10)
+- P0.3.B Phase 2.A — trade position guards (min 2%, aggregate 5%)
+- P0.3.B Phase 2.B — trade volume + security guards (daily volume, user-blocked, market-ended)
+- Phase 3 — dashboard API extension (/api/user/me + /mode, 12 fields)
+- Phase 4.A — cron lifecycle (end-of-day-check replacing inactivity-check, daily-pnl-aggregate, verify-pending-payouts)
+- Phase 4.0 — position isolation audit (READ-ONLY, docs/PHASE_4_0_AUDIT.md, 13 findings)
+- Phase 4.A.2 — CRITICAL hot-fix marketResolve.ts (findings #1, #2)
+- Phase 4.B — auto-close-at-finalize + sell guard (findings #3, #4, #5, #6)
+
+### Release gates executed
+1. Pre-flight check: ENV vars OK, dev observation crons OK
+2. Backup prod БД: pg-dump-fundedforecast-1779447625.dmp (1.64 MB, 11:00 UTC)
+3. Corruption baseline captured (prod БД):
+   - chain_leak: 8 rows / 4 users
+   - audit_corruption: 0 / 0
+   - ghost_positions: 4 (status=failed)
+4. Prisma baseline marker (manual INSERT into _prisma_migrations, checksum 0ed1f071...)
+5. ChallengePlan verified on dev
+6. PR #17 merged into main (a039f74)
+7. Deploy initially failed: legacy migration 20260426111052_init triggered on old container before redeploy. Recovery: removed pre-deployment command "npx prisma migrate deploy" from Coolify ff-sandbox-app Configuration, redeployed successfully. Failed migration marked rolled-back via prisma migrate resolve --rolled-back. Phase 1 migration applied successfully (challengePeriodDays=10 on all 3 plans).
+8. Coolify Scheduled Tasks reconciled:
+   - DELETED: inactivity-check
+   - ADDED: end-of-day-check (55 23 * * *)
+   - ADDED: verify-pending-payouts (*/10 * * * *)
+   - ADDED: daily-pnl-aggregate (0 1 * * *)
+   - Total: 10 active tasks
+9. Post-deploy smoke: site loads OK; corruption metrics stable (no growth post-deploy)
+10. 24h observation: PENDING (next morning check)
+
+### Tech debt opened by this release
+- Coolify pre-deploy hook fix: npx prisma migrate deploy is still wired somewhere in build pipeline, triggered legacy migration on old container during Gate 7 retry. Needs investigation into Dockerfile/package.json/Coolify config.
+- 4 ghost positions on prod (failed challenges with status=open positions, pre-Phase-4.B legacy). Cleanup via admin endpoint or one-off script using closeOpenPositionsForChallenge helper.
+- docs/CRON_SCHEDULE.md is missing rows for verify-pending-payouts and daily-pnl-aggregate. Update needed.
+- Prisma version update available 5.22.0 → 7.8.0 (major).
+
+### Audit findings status
+Closed:
+- 2 CRITICAL (#1 marketResolve audit trail corruption, #2 balance chain leak)
+- 4 HIGH (#3 sell guard, #4 cron finalize, #5 ghost positions, #6 non-tx status flips)
+
+Remaining as TECH-DEBT:
+- #7 Market.status update + resolveMarketPositions not in single tx
+- #8 DB unique on active Challenge per user
+- #10 Status fields as bare String (no enum)
+- #11 JS clock for all time checks (no DB NOW())
+- #12 /api/user/positions no historical
+- #13 walletId TODO
+
 ## Session 2026-05-17 — Phase 4.A — End-of-day cron + remove inactivity-check CLOSED
 
 ### Закрыто
