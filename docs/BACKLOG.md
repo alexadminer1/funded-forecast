@@ -8,7 +8,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Decisions: ✓ получены от заказчика (см. ниже)
 - Open questions: 4 блокера → docs/OPEN_QUESTIONS_P0.md
 - Production readiness: requires P0 work (~17 дней)
-- 9 задач закрыто (P0.3.e, P0.6, P0.10 drafts, P0.1, P0.2 Wave A, P0.2.b, P0.2.c, P0.2.d, P0.2.e)
+- 10 задач закрыто (P0.3.e, P0.6, P0.10 drafts, P0.1, P0.2 Wave A, P0.2.b, P0.2.c, P0.2.d, P0.2.e, P0.5)
 - P0 production blockers: +2 новых (P0.2.d, P0.2.e)
 
 ---
@@ -159,7 +159,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 
 ### P0.3 Недостающие challenge rules
 
-#### P0.3.a Consistency Rule
+#### P0.3.a Consistency Rule ✓ CLOSED (Session 14, 2026-05-14, commit ba46520)
 - Scope: запретить passing если biggest day > 25% от total profit
 - БД: новая таблица ChallengeDailyPnL (id, challengeId, date, dailyPnl, dailyTrades, isWinningDay)
 - Формула:
@@ -220,7 +220,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
   - 30 trades на 30 событий → passing
 - Оценка: 10ч
 
-#### P0.3.d Inactivity Timer 72ч ✓ CLOSED (Session 11, 2026-05-12)
+#### P0.3.d Inactivity Timer 72ч ✓ CLOSED (Session 11, 2026-05-12) — ⚠ DEPRECATED in Phase 4.A (2026-05-17)
 - Scope: failed если нет new position >72ч (challenge) / 120ч (funded)
 - БД: Challenge.lastNewPositionAt DateTime?
 - Логика:
@@ -237,6 +237,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
   - 73ч без new position → failed
   - 71ч без new position → active
   - Update existing position НЕ resetит таймер
+- Deprecated 2026-05-17: replaced by daily end-of-day-check cron (rule #7). See Phase 4.A ниже.
 - Оценка: 6ч
 
 #### P0.3.e Trading Days дефолт 10 → 15
@@ -245,6 +246,107 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Файлы: только UPDATE через Plans editor
 - Status: ✓ DONE 2026-05-11 (SQL UPDATE через Coolify DB Terminal, sandbox)
 - Оценка: 0.5ч
+
+### P0.3.G1 Schema reconciliation + migrations baseline ⚠ PARTIALLY CLOSED (Phase 0.5, 2026-05-15)
+- Parent: G1 tech debt — schema drift через `prisma db push` history
+- Scope Phase 0.5: schema.prisma приведена в соответствие с dev DB, baseline migration создана, migrations tracking перестроен
+- Status: develop НЕ обновлён (Phase 0.5 closed, ветка готова к merge)
+- Closed работы:
+  - Explicit onDelete/onUpdate на всех 30 FK
+  - @db.Timestamp на PayoutRequest.lastVerifyAttemptAt
+  - Partial indexes документированы (UNMANAGED_DDL.md)
+  - Старые миграции архивированы (prisma/_archived_migrations/)
+  - 0_baseline_reconciled создан и помечен applied
+- Открытые работы (deferred):
+  - Prod БД до сих пор не сверена — будет нужно при первом prod release
+  - Migration freeze policy в CI (P1 задача, не блокер)
+  - Periodic schema drift check (P2)
+- Связь: после merge — все будущие schema changes через `prisma migrate dev`
+
+### P0.3.A ChallengePlan business model update ✓ CLOSED (Phase 1, 2026-05-15)
+- Parent: P0.3 challenge rules — фундамент бизнес-модели в БД
+- Scope:
+  - A1: Hybrid storage модель подтверждена — никаких новых колонок,
+    tier-params в ChallengePlan, engine rules в `src/lib/engine/constants.ts`
+  - A2: UPDATE 3 строк ChallengePlan (challengePeriodDays 30→10, minTradingDays 15→10;
+    DLL/MLL re-asserted явно для идемпотентности — фактически без изменений)
+  - A3: minTradingDays оставлен в схеме (значение = challengePeriodDays). Удаление поля → TECH-DEBT-4
+- Migration: `prisma/migrations/20260515165522_phase_1_challenge_plan_values/migration.sql`
+- Status: applied on dev (postgres-dev). Prod release deferred to PROD_RELEASE_CHECKLIST.
+- Файлы: только migration.sql (нет изменений в schema.prisma и коде)
+- Оценка: 2ч (factual: ~1.5ч)
+
+### P0.3.B Trade volume + security guards ✓ CLOSED (Phase 2.B, 2026-05-17)
+- Parent: P0.3 challenge rules — business rules #4/#5/#6 из docs/BUSINESS_RULES.md
+- Phase 2.A (Session 2026-05-16) уже закрыла B1 (min position) + B2 (max aggregate position);
+  Phase 2.B закрывает B3/B4/B5.
+- Status: merged to develop via PR #12 (merge commit 7a7a7dc)
+- Файлы: src/lib/engine/{constants,spreads}.ts + src/app/api/trade/{buy,sell}/route.ts +
+  src/app/api/user/positions/route.ts + src/app/markets/[id]/page.tsx
+- TECH-DEBT spawned: 6 (admin endpoint для isBlocked), 7 (dailyBuyVolume race), 8 (Trade composite index)
+
+#### P0.3.B3 Max daily buy volume cap (rule #4) ✓ CLOSED
+- 5% of Challenge.startBalance per UTC day, buy-only, challenge mode only
+- Hard reject 400 DAILY_VOLUME_EXCEEDED с структурированным response (currentDailyVolume, newCost, totalAfter, maxAllowed)
+- Реализация: trade/buy после Phase 2.A aggregate check, до trade.create; pre-insert tx.trade.aggregate
+- Commits: 511b9c6 (helpers), 0dc5344 (guard)
+
+#### P0.3.B4 Market endDate guard for buy (rule #5) ✓ CLOSED
+- Hard reject 400 MARKET_ENDED на buy при market.endDate < NOW AND status=live (gap window)
+- Sell route НЕ модифицирован — Blocker 3 resolution (legitimate position close)
+- Commit: 0dc5344
+
+#### P0.3.B5 User.isBlocked guard for trade routes (rule #6) ✓ CLOSED
+- 403 USER_BLOCKED возвращается BEFORE main transaction в обоих buy и sell
+- Симметричный response shape: {error, error_code, blockReason}
+- Admin UI/API для записи isBlocked НЕ включены — см. TECH-DEBT-6
+- Commits: 0dc5344 (buy), ec2b5c3 (sell)
+
+### P0.3.D API extension for dashboard widgets ✓ CLOSED (Phase 3, 2026-05-17)
+- Parent: P0.3 challenge rules — supplies derived metrics для UI widgets без duplication на front-end
+- Status: feature/p0-3-d-api-extension готова к merge (smoke test ✅ на image 6eca53e)
+- Файлы: src/lib/user/active-challenge.ts (new) + src/app/api/user/{me,mode}/route.ts + src/lib/types.ts + src/app/dashboard/page.tsx
+- TECH-DEBT spawned: 9 (per-tier position limits)
+- TASK spawned: TASK-DOC-1 (BR doc), TASK-CLEANUP-1 (/mode spread), TASK-CLEANUP-2 (dashboard isPassed local)
+
+#### P0.3.D1 buildActiveChallenge helper + contract ✓ CLOSED
+- Helper `src/lib/user/active-challenge.ts` (239 строк): централизует derived вычисления из Challenge columns + computeConsistencyLive aggregate
+- Exported types: ActiveChallenge (21 поле — canonical), PreloadedChallenge (17 — input contract), BuildActiveChallengeOptions
+- `buildActiveChallenge(userId, opts?)` — если opts.challenge передан, helper пропускает свой findFirst, делает только consistency aggregate (+1 query path)
+- Commits: bec9564, c05c4c1, 4baa873
+
+#### P0.3.D1.5 maxDailyVolumeUsd + PreloadedChallenge optimization ✓ CLOSED
+- Добавлено 21-е поле в ActiveChallenge: maxDailyVolumeUsd = startBalance × MAX_DAILY_VOLUME_PCT / 100
+- Optional `opts.challenge: PreloadedChallenge` параметр — endpoints передают pre-loaded row, helper не делает второй findFirst
+- Net cost для endpoint refactor: +1 query (computeConsistencyLive) вместо +2 (двойной findFirst)
+- Commit: 715b77b
+
+#### P0.3.D2 /api/user/me extension ✓ CLOSED
+- activeChallenge: 17 existing → 29 полей (+12 new derived dashboard metrics)
+- Extended findFirst select до superset PreloadedChallenge (status, expiresAt, dayStartBalance, dayStartDate, plan.id, plan.price)
+- Response через explicit cherry-pick + overlay (никаких лишних columns не утекает)
+- 12 новых полей: status, isPassed, consistency, daysRemaining, daysTraded, dailyLossLimitPercent, maxLossLimitPercent, currentDrawdownPercent, dailyDrawdownPercent, minPositionPercent, maxAggregatePositionPercent, maxDailyVolumeUsd
+- types.ts: User.activeChallenge inline shape расширен 11 optional + plan.id/price expansion
+- Commits: cc8a698 (endpoint + types), 6eca53e (production build cast)
+
+#### P0.3.D3 /api/user/mode extension ✓ CLOSED
+- challenge: 37 existing → 49 полей (+11 overlay; status уже в raw spread; plan через include)
+- findFirst → findFirst({ include: { plan: { id, name, price } } }) — сохраняет existing 35-columns leak (back-compat) + добавляет plan relation
+- Response через spread + 11-field overlay (status pas duplicated, уже spread'нут)
+- dashboard/page.tsx Challenge interface: +11 optional + plan relation
+- Расхождение strategy с /me (cherry-pick vs spread) — намеренное (back-compat /mode). Cleanup как TASK-CLEANUP-1.
+- Commits: d7d757d (endpoint + types), 6eca53e (production build cast)
+
+### P0.3.C1 / P0.3.C3 End-of-day cron + remove inactivity ✓ CLOSED (Phase 4.A, 2026-05-17)
+- Scope: cron `/api/cron/end-of-day-check` (rules #7, #8), удаление `inactivity-check`
+- Rules covered:
+  - #7 No trading activity (buyVolume === 0) — fail "No trading activity"
+  - #8 Min daily volume not reached (0 < buyVolume < 2% startBalance) — fail "Daily volume below minimum"
+- Grace day: challenge started today (UTC) — skipped
+- Schedule: `55 23 * * *` UTC (must run BEFORE midnight, see endpoint header invariant)
+- Commits: 51c8e75, a1de048, 9661150
+- Coolify task setup: manual by Alexey (add `end-of-day-check`, remove `inactivity-check`)
+- See: SESSION_LOG.md → Session 2026-05-17 — Phase 4.A — End-of-day cron + remove inactivity-check
 
 ### P0.4 Position mechanics
 - Scope: progressive buy spread, buy cap $0.85, sell spread 4%, min position 2%, full sell only
@@ -276,9 +378,49 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
   - position cost < 2% balance → reject
 - Оценка: 14ч
 
-### P0.5 On-chain txHash verification (SEC-5)
+### P0.4.bis Pre-trade challenge failure UX ✓ CLOSED (Session 17, 2026-05-14, commit a6c1789)
+- Severity: HIGH (blocker запуска — юзеры запутаются)
+- Parent: P0.4 (mechanics done, UX осталось)
+- Effort: 4-6h
+- Status: CLOSED (без Instant Reset CTA — P1.5 не реализован)
+
+Проблема:
+При попытке buy если challenge уже выполнил fail-condition (например Daily DD превышен из-за движения цен на существующих позициях), API возвращает 400 "Challenge failed: ...". Юзер видит ошибку вместо понятного сообщения "ваш challenge закончился".
+
+Решение:
+
+Backend:
+- Сменить 400 → 409 Conflict для случая "challenge failed during pre-trade check"
+- Структурированный response body: { error_code: "CHALLENGE_FAILED_PRE_TRADE", reason: "daily_drawdown_exceeded" | "mll_breach" | "inactivity" | "time_limit", details: "...", challengeStatusAfter: "failed", violationCause: "price_movement_on_existing_positions" | ... }
+- Применить во всех endpoints где идёт pre-trade check: trade/buy, trade/sell
+
+Frontend:
+- Перехват 409 + error_code=CHALLENGE_FAILED_PRE_TRADE
+- Модальное окно с текстом причины и тремя CTA: Buy Instant Reset (30% off) / Buy new challenge / Continue in sandbox
+- После закрытия модалки — refresh dashboard
+- Убрать toast "Challenge failed" возле кнопки Buy
+
+FAQ (Wave 4):
+- Описать сценарий "позиции просели до DD лимита пока готовил сделку — challenge зафейлен"
+
+Acceptance:
+- API возвращает 409 со структурированным body когда pre-trade check ловит already-failed challenge
+- Frontend показывает модалку, не toast
+- Smoke test: создать ситуацию когда DD достигнут на существующих позициях, попробовать buy → видим модалку
+
+### P0.4.next Replace min position with min daily volume rule ✓ CLOSED (Session 18, 2026-05-14, commit baf7c27)
+- Parent: P0.4 (mechanics revision)
+- Scope: убран per-trade min position rule, добавлен daily volume requirement через `qualifyingTradingDaysCount`
+- Schema: `Challenge.qualifyingTradingDaysCount Int @default(0)` (SQL применён к postgres-dev)
+- Cron `daily-pnl-aggregate`: пересчёт qualifying days per active challenge
+- Pass-condition: переключена с `tradingDaysCount` на `qualifyingTradingDaysCount`
+- API/UI: `todayBuyVolume`, `minDailyVolumeUsd` в /api/user/me + mode; новые widgets на dashboard; FAQ entry
+- Status: CLOSED on develop, ожидает prod release (ALTER TABLE на ff-sandbox-db + cron pre-run)
+- Deferred: backfill для PASSED/FAILED/EXPIRED, qualifyingTradingDaysCount в /api/user/challenges history view
+
+### P0.5 On-chain txHash verification (SEC-5) ✓ CLOSED (Session 15, 2026-05-14, commit 9ff36d8, PR #8)
 - Scope: verify USDC transfer перед approving payout
-- Логика (через Alchemy):
+- Логика (через viem + Alchemy RPC):
   - tx exists на Base
   - to address = expected (из PayoutRequest.address)
   - amount = approved amount (с tolerance ±1 cent)
@@ -287,16 +429,13 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Retry cron:
   - Новый cron /api/cron/verify-pending-payouts каждые 10 минут
   - Max 24 попытки (4 часа), после — flag для manual review
-  - Включён в Wave 3
-- Файлы:
-  - src/lib/onchain-verify (новый)
-  - src/app/api/admin/payouts/[id]/complete: integration
-  - src/app/api/cron/verify-pending-payouts (новый)
-- Тесты:
-  - Valid USDC tx → approved
-  - Wrong amount → rejected
-  - Wrong recipient → rejected
-  - Insufficient confirmations → pending, retry cron picks up
+- Файлы изменены:
+  - src/lib/onchain-verify.ts (новый)
+  - src/app/api/admin/payouts/[id]/route.ts (изменён — перехват paid transition)
+  - src/app/api/cron/verify-pending-payouts/route.ts (новый)
+  - prisma/schema.prisma (добавлены verificationAttempts, manualReview, lastVerifyAttemptAt, @unique на txHash)
+  - src/app/admin/page.tsx (pending_verification tab + badges)
+- Статус: CLOSED (issue #6, branch claude/issue-6-20260514-0902)
 - Оценка: 8ч
 
 ### P0.6 Валютная унификация USDC (SEC-4)
@@ -412,7 +551,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 
 ## P1.early — Critical post-launch
 
-### P1.infra.1 Branch protection на main
+### P1.infra.1 Branch protection на main — ✅ DONE (Session 13)
 - Source: Session 12 (2026-05-13)
 - Scope: GitHub Settings → Branches → Add rule для `main`
 - Rules:
@@ -423,16 +562,18 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Файлы: настройки GitHub (не код)
 - Тесты: попытка `git push origin main` → должна быть отвергнута
 - Оценка: 0.5ч
+- Результат: Ruleset `protect-main` Active. Bypass list: Repository admin. Direct push отвергается с GH013.
 
-### P1.infra.2 Выключить auto-deploy main в Coolify
+### P1.infra.2 Выключить auto-deploy main в Coolify — ✅ DONE (Session 13)
 - Source: Session 12 (2026-05-13)
 - Scope: для ff-prod-app в Coolify GUI отключить GitHub webhook (auto-deploy)
 - Логика: после этого push в main НЕ деплоится автоматически; Алексей нажимает Deploy вручную
 - Файлы: настройки Coolify (не код)
 - Тесты: dummy commit в main → Coolify НЕ запускает deploy
 - Оценка: 0.5ч
+- Результат: галочка "Auto Deploy" снята у ff-sandbox-app. Webhook остаётся подключён.
 
-### P1.infra.3 Bash helpers + sudoers для user claude
+### P1.infra.3 Bash helpers + sudoers для user claude — ✅ DONE (Session 13)
 - Source: Session 12 (2026-05-13), Q4 решение Архитектора
 - Scope: на VPS создать helpers и ограничения для пользователя `claude`
 - Создать:
@@ -444,8 +585,10 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
   - `dev-exec ls /app` → работает
   - `docker exec ff-prod-app ls /app` от user claude → отказ (sudoers)
 - Оценка: 2ч
+- Результат: helpers `dev-exec`, `dev-logs`, `dev-psql` созданы в `/usr/local/bin/` (owner root, executable). Контейнеры резолвятся через label `coolify.resourceName`.
+- Заметка: sudoers пропущен, см. SESSION_LOG Session 13. OS-level защита перенесена в новую задачу **P1.infra.7** (см. ниже).
 
-### P1.infra.4 Создать docs/PROD_RELEASE_CHECKLIST.md
+### P1.infra.4 Создать docs/PROD_RELEASE_CHECKLIST.md — ✅ DONE (Session 13)
 - Source: Session 12 (2026-05-13)
 - Scope: чеклист перед deploy develop → main
 - Включает:
@@ -456,8 +599,9 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
   - Rollback план (как откатиться если deploy сломал прод)
 - Файлы: `docs/PROD_RELEASE_CHECKLIST.md`
 - Оценка: 1ч
+- Результат: создан с 8 секциями (pre-merge verification, DB migrations, backup, merge to main, deploy, post-deploy verification, rollback plan, communication).
 
-### P1.infra.5 Smoke test @claude GitHub App
+### P1.infra.5 Smoke test @claude GitHub App — ✅ DONE (Session 13)
 - Source: Session 12 (2026-05-13)
 - Scope: первая безопасная задача через @claude-mention в issue
 - Идея: создать GitHub Issue с мелкой косметической задачей (typo fix, добавить console.log, etc.) и @claude mention
@@ -467,6 +611,7 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
   - PR содержит ожидаемые изменения
   - Алексей может смерджить PR
 - Оценка: 1ч
+- Результат: workflow `.github/workflows/claude.yml` создан через `/install-github-app`, auth через OAuth token Max-подписки. Issue #1 — @claude прочитал CLAUDE.md, добавил комментарий, запушил ветку `claude/issue-1-20260513-1111`. Косяк с PR в main, откатан через PR #5 revert.
 
 ### P1.infra.6 Разделить prod/dev secrets перед боевым запуском
 - Source: Session 12 (2026-05-13), Q2 решение Архитектора
@@ -482,6 +627,42 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - BLOCKER: эта задача обязательна перед Wave 6 (P0.9) — выход прода в боевой режим
 - Файлы: Coolify env vars (на двух apps)
 - Оценка: 4ч
+
+### P1.infra.7 OS-level write protection on prod containers
+- Source: Session 13 (2026-05-13) — sudoers пропущен из P1.infra.3
+- Priority: P1
+- Trigger: **when prod exits sandbox mode** (см. P0.9 / Wave 6)
+- Scope: реальная защита user `claude` от случайных `docker exec/stop/rm` на `ff-sandbox-app` и `ff-sandbox-db`
+- Варианты реализации (обсудить с Архитектором):
+  - `sudoers` + ограничение docker socket access
+  - docker authz plugin (более гибко, но сложнее в настройке)
+  - отдельный user без доступа в группу docker для prod-операций
+- Сейчас отсутствует: защита только на дисциплине (CLAUDE.md whitelist) и helper-скриптах
+- BLOCKER: обязательно до выхода прода в боевой режим
+- Файлы: на VPS, не в репо
+- Оценка: 2-4ч (зависит от выбранного варианта)
+
+### P1.infra.8 Remove Vercel GitHub App — ✅ DONE (Session 13)
+- Source: Session 13 (2026-05-13) — наблюдение
+- Priority: P2
+- Scope: отключить Vercel GitHub App от репо `funded-forecast` (и от `funded-forecast-wrt4`, если применимо)
+- Причина: Vercel деплоит превью на каждый PR. CLAUDE.md явно говорит "Vercel — забыли, не используем". Лишний шум в PR checks.
+- Как: GitHub Settings → Integrations → Vercel → Configure → удалить доступ к репо (или Suspend)
+- Файлы: настройки GitHub (не код)
+- Оценка: 0.2ч
+- Результат: Vercel GitHub App suspended через GitHub Settings → Applications → Vercel → Suspend. Конфигурация Vercel-аккаунта сохранена, при необходимости — Unsuspend в один клик.
+
+### P1.infra.9 Unify dev cron tasks style + sync drift
+- Source: Session 14 (2026-05-14)
+- Priority: P2
+- Scope:
+  - 3 tasks на `app-dev` имеют cosmetic differences vs prod style (выявлено при разведке после переноса 8 prod cron'ов на dev):
+    - `activate-payments`: `container=watch-payments` → нужно `app-dev` (на dev нет контейнера `watch-payments`; в БД значение осталось от копирования с prod, но execution прошла успешно — почему точно не разбирались)
+    - `daily-pnl-aggregate`: `curl -sf ...` → нужно `curl -fsS ...` (флаг `S` нужен для show-errors при failures в execution logs)
+    - `Expire Challenges`: `curl -H "Auth..."` (без флагов) → нужно `curl -fsS -H "Auth..."`
+  - Функционально работает (подтверждено execution logs Session 14: все 3 cron'а вернули 200), но differences усложняют debug при будущих failures
+- Файлы: Coolify GUI (не код)
+- Оценка: 0.5ч
 
 
 ### P1.0 [A1] Wallet isolation
@@ -571,6 +752,43 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - Email support@, шаблоны на типовые вопросы, SLA definition
 - Оценка: 4ч
 
+### P1.UX.1 Challenge naming & identifiers
+- Severity: MEDIUM (UX clarity + support workflow)
+- Status: OPEN
+
+Проблема:
+Сейчас юзер видит на dashboard "Evaluation Challenge ACTIVE" без идентификатора, в Past Challenges — только "Starter · May 14, 2026". У одного юзера может быть несколько challenges одновременно (passed + failed + active — пример: id=10, 11, 12 у alexadminer). Юзер не может различить свои challenges между собой. Support не может быстро найти конкретный challenge в БД когда юзер пишет жалобу.
+
+Решение:
+
+A. User-facing identifier (видит юзер на dashboard и в Past Challenges):
+   - Формат: #N TierName · Date старта
+   - Пример: #1 Starter · May 14, 2026
+   - N — порядковый номер challenge ЭТОГО юзера (1, 2, 3...). Считается на лету через ROW_NUMBER() OVER (PARTITION BY userId ORDER BY startedAt).
+   - Не хранится в БД отдельной колонкой.
+   - Применяется и к Evaluation Challenge (активный), и к Past Challenges (история).
+
+B. Internal global ID (видим только admin/support):
+   - Формат: CH-NNNNNN (zero-padded до 6 знаков). Пример: CH-000042.
+   - Базируется на существующем Challenge.id из БД, просто форматируется при выводе через helper. Никаких новых колонок.
+   - Виден в admin panel рядом с user-facing именем.
+   - Используется в логах AuditLog, email уведомлениях для support, error reports.
+   - Юзер этот ID НЕ видит на dashboard. Видит только когда обращается в support — support по нему ищет.
+
+Файлы (предположительно — Claude Code адаптирует к реальной структуре):
+- src/lib/challenge-display.ts (NEW) — два helper'а: formatUserFacingName(challenge, userChallenges[]), formatGlobalId(challenge.id)
+- src/app/dashboard/page.tsx (или компонент Evaluation Challenge card) — использует formatUserFacingName
+- Компонент Past Challenges — использует formatUserFacingName
+- src/app/admin/page.tsx — использует formatGlobalId + formatUserFacingName рядом
+- src/app/api/user/challenges/route.ts — возможно нужно вернуть userIndex (порядковый номер) в API response
+
+Acceptance:
+- Юзер с 3 challenges видит на dashboard и в Past Challenges три РАЗНЫХ имени: #1 Starter · ..., #2 Starter · ..., #3 Starter · ...
+- В admin panel рядом с каждым challenge виден CH-000010, CH-000011, CH-000012
+- Не сломаны существующие фичи (история, фильтры по статусу, нав)
+
+Это P1 — НЕ блокер запуска, но важно для UX и support workflow в первые недели после запуска.
+
 **Subtotal P1.late: 48ч ≈ 6 дней**
 
 ---
@@ -617,3 +835,164 @@ Source: Бизнес-аудит TFP + 10 decisions заказчика + 22 пу�
 - [D29] Ghost balance fix (commit ad3e283)
 - [SEC-1] Rate limits via proxy (commit 31349d3)
 - Docker cleanup retention=3
+
+
+### TECH-DEBT-1 Rotate POSTGRES_PASSWORD for postgres-dev 🔴 P0 (created Phase 0.5)
+- Reason: пароль трижды попал в transcript Phase 0.5 (включая Claude Code, чат с Архитектором, отчёт в основной чат)
+- Action: через Coolify UI → postgres-dev → Environment Variables → rotate POSTGRES_PASSWORD
+- Update connected services: ff-sandbox-app DATABASE_URL должен подтянуться автоматически (verify)
+- Verify: dev app перезапускается, login + smoke test работают
+- Estimated: 15 минут
+- Когда делать: ДО любого нового удалённого подключения к postgres-dev по этому паролю
+- Priority raised 2026-05-15 (Phase 1): пароль повторно засветился в transcript основной сессии. Обязательная ротация ДО prod release.
+
+### TECH-DEBT-2 Cleanup ~/prisma.config.ts ⚪ P2 (created Phase 0.5)
+- Reason: устаревший файл в home directory ломает `npx prisma ...` если запускать вне `~/funded-app`
+- Action: либо удалить, либо обновить под текущую версию Prisma
+- Estimated: 5 минут
+- Не блокер
+
+### TECH-DEBT-3 Rename BalanceLog type 'challenge_start' → 'sandbox_welcome' ⚪ P2 (created Phase 0.9)
+- Reason: src/app/api/register/route.ts:94 creates sandbox welcome balance
+  with type='challenge_start' — misleading for admin/audit queries
+  (no Challenge exists at that point, challengeId=NULL)
+- Action: rename in register/route.ts + migration UPDATE for existing records
+- Scope: one line of code + one UPDATE
+- Estimated: 30 минут
+- Не блокер. Делаем после Phase 1.
+
+### TECH-DEBT-4 Remove redundant minTradingDays field from ChallengePlan ⚪ P2 (created Phase 1)
+- Reason: после Phase 1 minTradingDays = challengePeriodDays всегда.
+  Поле дублирует значение, является tech debt.
+- Action: миграция ALTER TABLE DROP COLUMN, удаление всех references в коде
+- Scope: schema.prisma + ~5-10 файлов в src/ + миграция
+- Estimated: 1-2 часа
+- Не блокер. Делаем после Phase 4 (когда все cron'ы по новой модели готовы).
+
+### TECH-DEBT-5 Remove redundant maxPositionSizePct from ChallengePlan and Challenge ⚪ P2 (created Phase 2.A)
+- Reason: после Phase 2.A значение 5% хранится в engine constant
+  MAX_AGGREGATE_POSITION_PCT. Поля Challenge.maxPositionSizePct и
+  ChallengePlan.maxPositionSizePct больше не используются в runtime
+  trade-time path. Snapshot logic в payment/activation.ts и
+  admin/users/[id]/action/route.ts продолжает копировать значение из
+  plan в challenge, но trade/buy его не читает.
+- Action: миграция ALTER TABLE DROP COLUMN на обеих таблицах, удаление
+  поля из schema.prisma, удаление references в коде (snapshot logic в
+  покупке challenge + admin actions + admin UI inputs)
+- Scope: schema.prisma + ~5-7 файлов в src/ (admin/page.tsx,
+  admin/plans/route.ts, admin/plans/[id]/route.ts,
+  admin/users/[id]/action/route.ts, payment/activation.ts) + миграция
+- Estimated: 1-2 часа
+- Не блокер. Делаем после Phase 4 (когда все cron'ы по новой модели готовы),
+  одновременно с TECH-DEBT-4 (minTradingDays).
+- Created: Phase 2.A discovery (commit 223c871 ошибочно ссылается на
+  TECH-DEBT-6 — anticipatory off-by-one)
+
+### TECH-DEBT-6 Admin endpoint for User.isBlocked write ⚪ P2 (created Phase 2.B)
+- Source: Phase 2.B (rule #6 implementation)
+- Currently isBlocked can only be set via direct SQL UPDATE — no API surface, no admin UI.
+  Smoke test для P0.3.B5 выполнялся через `dev-psql -c "UPDATE \"User\" SET \"isBlocked\"=true WHERE id=1;"`.
+- Action: добавить POST /api/admin/users/[id]/block (set true/false + optional blockReason) +
+  admin UI page (либо action в существующем /admin/users если он есть)
+- Scope: 1 новый endpoint + 1 admin UI block + audit log entry
+- Estimated: 1-2 часа
+- Не блокер: trade-time guard работает, нужен только write-side surface.
+- Priority: P2 (когда понадобится оперативно блокировать юзеров без SQL access).
+
+### TECH-DEBT-7 Concurrent dailyBuyVolume race condition ⚪ P3 (created Phase 2.B)
+- Source: Phase 2.B (rule #4 implementation)
+- tx.trade.aggregate — это SELECT, не SELECT FOR UPDATE. Два параллельных buy
+  внутри одного transaction snapshot могут оба пройти aggregate check,
+  превысив cap на commit.
+- Probability на single-user UI: очень низкая (нет concurrent clicks).
+  API-based abuse: возможна (skript автоматизация).
+- Action: одно из:
+  (a) SELECT FOR UPDATE на Challenge row внутри tx
+  (b) SERIALIZABLE isolation level для buy транзакций
+  (c) application-level mutex (Redis advisory lock per challengeId)
+- Estimated: 2-4 часа (зависит от выбранного подхода)
+- Не блокер: per Architect decision приемлемо на MVP.
+- Priority: P3 (revisit когда появится evidence реальных race conditions
+  в production logs или при подготовке к публичному API).
+
+### TECH-DEBT-8 Missing composite index Trade(challengeId, action, createdAt) ⚪ P3 (created Phase 2.B)
+- Source: Phase 2.B (rule #4 implementation, Discovery C0.b)
+- Daily-volume aggregate query: WHERE challengeId=$1 AND action='buy' AND createdAt>=$2
+- No covering index exists. Closest match — Trade_challengeId_idx (только challengeId) →
+  Postgres делает in-memory filter для action+createdAt после index scan.
+- Та же query shape используется в /api/user/me и /api/user/mode — индекс
+  улучшил бы и эти endpoints тоже.
+- Action: добавить `@@index([challengeId, action, createdAt])` в schema.prisma на model Trade,
+  создать миграцию через `prisma migrate dev --create-only`, ревью, `prisma migrate deploy` на dev,
+  затем prod через PROD_RELEASE_CHECKLIST.
+- Scope: schema.prisma (1 строка) + migration file (CREATE INDEX)
+- Estimated: 30 минут
+- Не блокер: linear в worst case, но per-challenge buy-counts <1k currently.
+- Priority: P3 (revisit когда challenges начнут расти или появятся slow-query alerts).
+
+### TECH-DEBT-9 Per-tier position limits (Starter/Pro/Elite differentiated) ⚪ P3 (created Phase 3)
+- Source: Phase 3 (Discovery Step 1 micro-discovery — `maxPositionSizePct=5` для всех 3 plan'ов в БД)
+- Currently engine constants `MIN_POSITION_PCT=2` и `MAX_AGGREGATE_POSITION_PCT=5` глобальны.
+  Helper buildActiveChallenge берёт их из constants. ChallengePlan имеет только legacy
+  `maxPositionSizePct` (=5 для всех, dead column — см. TECH-DEBT-5).
+- BUSINESS_RULES.md предположительно специфицирует per-tier values
+  (Starter min 2% / max 5%, Pro min 1.5% / max 4%, Elite min 1% / max 3% — verify against BR).
+- Action plan:
+  (a) Verify BUSINESS_RULES спецификацию vs engine constants — какая правда?
+  (b) Добавить `minPositionPercent`, `maxAggregatePositionPercent` columns в ChallengePlan (migration)
+  (c) Backfill existing rows tier-appropriate значениями
+  (d) Update trade/buy/route.ts: читать из plan вместо engine constants
+  (e) Update buildActiveChallenge: source `minPositionPercent` / `maxAggregatePositionPercent` из plan, не из constants
+  (f) Keep engine constants как fallback для legacy challenges без plan
+- Scope: schema.prisma + migration + trade/buy + helper + tests
+- Estimated: 3-4 часа
+- Не блокер: текущий unified-5%-rate работает для всех планов одинаково (нет per-tier разницы в DB).
+- Priority: P3 (revisit когда BR разногласие решено и есть commercial reason для differentiation).
+- Related: TECH-DEBT-5 (maxPositionSizePct cleanup) — лучше делать ОДНОВРЕМЕННО.
+
+### TASK-DOC-1 Update BUSINESS_RULES.md rule #6 (MLL formula peak-based) ⚪ P3 (created Phase 3)
+- Source: Phase 3 (Step 1 helper review — formula mismatch BR vs engine inline)
+- Текущая запись в BR rule #6 (по памяти из chat): drawdown = `(initialBalance - currentBalance) / initialBalance × 100`
+- Engine реально считает: `(peakBalance - realizedBalance) / startBalance × 100` (peak-based)
+  See trade/buy/route.ts:400-402, trade/sell/route.ts:266-268, marketResolve.ts:136-138
+- Helper buildActiveChallenge.ts:177-184 использует ту же peak-based formula
+- Action: открыть docs/BUSINESS_RULES.md, найти rule #6, заменить формулу на peak-based,
+  добавить comment "(matches engine MLL inline logic in trade/buy/route.ts:400)"
+- Scope: docs/BUSINESS_RULES.md (1 параграф)
+- Estimated: 15 минут
+- Не блокер: docs accuracy issue, не runtime bug. Engine behaviour не меняется.
+- Priority: P3.
+
+### TASK-CLEANUP-1 Replace /api/user/mode `{...activeChallenge}` spread with explicit cherry-pick ⚪ P3 (created Phase 3)
+- Source: Phase 3 (Step 3 — спред 35 columns Challenge утекает в response)
+- Currently /api/user/mode response.challenge включает все 35 columns Challenge model
+  (peakEquity, drawdownViolated, planId, refundableFeeCents, etc.), большинство из которых
+  фронт не типизирует и не использует.
+- Сравни с /api/user/me Step 2 (explicit cherry-pick — clean).
+- Action:
+  (a) Audit dashboard/page.tsx Challenge interface (15 documented полей) + найти untyped reads
+  (b) Build explicit list полей которые фронт consumes
+  (c) Replace spread в mode/route.ts:120-141 на explicit cherry-pick по образцу me/route.ts:139-163
+  (d) Smoke test что фронт не упал (особенно поля типа drawdownViolated которые есть в interface но не должны быть)
+- Scope: src/app/api/user/mode/route.ts (~30 строк)
+- Estimated: 1 час
+- Не блокер: data leak не security issue (всё это уже на response, фронт может читать; просто less clean API).
+- Priority: P3.
+
+### TASK-CLEANUP-2 Remove dashboard/page.tsx:425 local `isPassed` compute ⚪ P3 (created Phase 3)
+- Source: Phase 3 (Step 2 — endpoint теперь exposes isPassed в response)
+- Currently dashboard/page.tsx:425: `const isPassed = last.status === "passed";` — local compute
+  для past challenges display logic
+- После Phase 3 `/api/user/me.activeChallenge.isPassed` (для active) и эквивалентно для past
+  challenges нужно решить — добавить isPassed в LastChallenge тип или extend /api/user/challenges
+- Action:
+  (a) Add `isPassed` к LastChallenge interface (dashboard/page.tsx:26-32)
+  (b) /api/user/mode returns lastChallenge только с {id, status, violationReason, profitTargetMet, endedAt} —
+      нужно либо добавить isPassed в select, либо вычислять на фронте из status (что уже делается).
+  (c) Если предпочитаем централизованный compute — extend /api/user/mode lastChallenge select +
+      add `isPassed: lastChallenge.status === "passed"` в response composition.
+  (d) Remove local compute в dashboard/page.tsx:425.
+- Scope: 2 файла, ~5 строк изменений
+- Estimated: 30 минут
+- Не блокер: cosmetic. Local compute работает корректно.
+- Priority: P3.

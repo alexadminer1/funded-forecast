@@ -70,7 +70,9 @@ export async function POST(
 
     const { positionsProcessed, positionsSkipped } = await resolveMarketPositions(
       marketId,
-      winningOutcome
+      winningOutcome,
+      market.yesPrice,
+      market.noPrice,
     );
 
     await prisma.auditLog.create({

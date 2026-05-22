@@ -16,8 +16,27 @@ interface Challenge {
   maxTotalDdPct: number;
   minTradingDays: number;
   tradingDaysCount: number;
+  qualifyingTradingDaysCount: number;
+  todayBuyVolume: number;
+  minDailyVolumeUsd: number;
   profitTargetMet: boolean;
   drawdownViolated: boolean;
+
+  // Phase 3 dashboard overlay — optional so older cached responses still type-check.
+  isPassed?: boolean;
+  consistency?: number;
+  daysRemaining?: number;
+  daysTraded?: number;
+  dailyLossLimitPercent?: number;
+  maxLossLimitPercent?: number;
+  currentDrawdownPercent?: number;
+  dailyDrawdownPercent?: number;
+  minPositionPercent?: number;
+  maxAggregatePositionPercent?: number;
+  maxDailyVolumeUsd?: number;
+
+  // Plan relation — Phase 3 added it via `include` in /api/user/mode.
+  plan?: { id: number; name: string; price: number } | null;
 }
 
 interface LastChallenge {
@@ -256,6 +275,11 @@ function ChallengeCard({ challenge: c }: { challenge: Challenge }) {
           { label: "Target", value: `$${target.toFixed(2)}` },
           { label: "Max Drawdown", value: `${c.maxTotalDdPct}%` },
           { label: "Trading Days", value: `${c.tradingDaysCount} / ${c.minTradingDays}` },
+          { label: "Qualifying Days", value: `${c.qualifyingTradingDaysCount ?? 0} / ${c.minTradingDays}` },
+          {
+            label: "Daily Volume",
+            value: `$${(c.todayBuyVolume ?? 0).toFixed(2)} / $${(c.minDailyVolumeUsd ?? 0).toFixed(2)}`,
+          },
         ].map(({ label, value }) => (
           <div key={label}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5 }}>{label}</div>

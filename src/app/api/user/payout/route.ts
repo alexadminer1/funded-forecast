@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyToken } from "@/lib/auth";
 import { PaymentStatus } from "@prisma/client";
+import { computeConsistency, CONSISTENCY_THRESHOLD_PAYOUT } from "@/lib/consistency";
 
 const ALLOWED_NETWORKS = ["TRC20", "ERC20", "BEP20", "POLYGON"] as const;
 type Network = typeof ALLOWED_NETWORKS[number];
@@ -161,6 +162,24 @@ export async function POST(req: NextRequest) {
   });
   if (existing) {
     return NextResponse.json({ error: "Payout already requested for this challenge" }, { status: 400 });
+  }
+
+  // P0.3.a — consistency rule for payout (35% threshold). Reads from the
+  // pre-aggregated ChallengeDailyPnL table: payout cooldown is ≥14 days
+  // (see check above) so the daily cron has had many chances to refresh.
+  const consistency = await computeConsistency(challengeId);
+  if (!consistency.isPassPayout) {
+    const pctStr = (consistency.biggestDayPct * 100).toFixed(2);
+    const thresholdStr = (CONSISTENCY_THRESHOLD_PAYOUT * 100).toFixed(0);
+    return NextResponse.json(
+      {
+        error: "Consistency rule violated",
+        message: `Biggest winning day is ${pctStr}% of total profit, exceeds ${thresholdStr}% threshold for payout requests`,
+        biggestDayPct: consistency.biggestDayPct,
+        threshold: CONSISTENCY_THRESHOLD_PAYOUT,
+      },
+      { status: 422 },
+    );
   }
 
   const finalAmount = amount;

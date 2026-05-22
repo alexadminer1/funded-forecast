@@ -6,6 +6,9 @@ import { verifyToken } from "@/lib/auth";
 import { sendEmail, buildBrandTemplate, buildKeyValueTable, escapeHtml } from "@/lib/email";
 import { computeEquity } from "@/lib/equity";
 import { MIN_RESOLVED_POSITIONS, MIN_UNIQUE_EVENTS } from "@/lib/engine/constants";
+import { applySellSpread } from "@/lib/engine/spreads";
+import { computeConsistencyLive, CONSISTENCY_THRESHOLD_CHALLENGE } from "@/lib/consistency";
+import { closeOpenPositionsForChallenge } from "@/lib/closeChallengePositions";
 
 const MAX_SLIPPAGE = 0.02;
 
@@ -17,13 +20,79 @@ class PriceMovedError extends Error {
   }
 }
 
+type PreTradeFailCategory = "mll_breach" | "daily_drawdown_exceeded";
+
 class DrawdownViolatedError extends Error {
   challengeId: number;
   reason: string;
-  constructor(challengeId: number, reason: string) {
+  category: PreTradeFailCategory;
+  constructor(challengeId: number, reason: string, category: PreTradeFailCategory) {
     super("CHALLENGE_DRAWDOWN_VIOLATED");
     this.challengeId = challengeId;
     this.reason = reason;
+    this.category = category;
+  }
+}
+
+class ChallengeExpiredError extends Error {
+  challengeId: number;
+  constructor(challengeId: number) {
+    super("CHALLENGE_EXPIRED");
+    this.challengeId = challengeId;
+  }
+}
+
+class PartialSellError extends Error {
+  positionShares: number;
+  requestedAmount: number;
+  constructor(positionShares: number, requestedAmount: number) {
+    super("PARTIAL_SELL_NOT_ALLOWED");
+    this.positionShares = positionShares;
+    this.requestedAmount = requestedAmount;
+  }
+}
+
+// Phase 4.B Task 3 — explicit sell guard errors (docs/PHASE_4_B_BRIEF.md).
+// Kept file-local per the existing trade-route error pattern (no shared
+// errors module; matches UserBlockedError/DrawdownViolatedError style).
+class PositionNotFoundError extends Error {
+  constructor() {
+    super("POSITION_NOT_FOUND");
+    this.name = "PositionNotFoundError";
+  }
+}
+
+class ChallengeIsolationError extends Error {
+  positionChallengeId: number | null;
+  activeChallengeId:   number | null;
+  constructor(positionChallengeId: number | null, activeChallengeId: number | null) {
+    super("CHALLENGE_ISOLATION");
+    this.name = "ChallengeIsolationError";
+    this.positionChallengeId = positionChallengeId;
+    this.activeChallengeId   = activeChallengeId;
+  }
+}
+
+class ChallengeNotActiveError extends Error {
+  challengeId: number;
+  challengeStatus: string;
+  constructor(challengeId: number, challengeStatus: string) {
+    super("CHALLENGE_NOT_ACTIVE");
+    this.name = "ChallengeNotActiveError";
+    this.challengeId     = challengeId;
+    this.challengeStatus = challengeStatus;
+  }
+}
+
+// Phase 2.B — Rule #6: blocked users cannot trade (sell direction).
+// File-local duplicate of the class in trade/buy/route.ts — kept local
+// per architectural decision (no shared module for trade-route errors).
+class UserBlockedError extends Error {
+  blockReason: string | null;
+  constructor(blockReason: string | null) {
+    super("Account is blocked");
+    this.name = "UserBlockedError";
+    this.blockReason = blockReason;
   }
 }
 
@@ -76,6 +145,35 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid price" }, { status: 400 });
   }
 
+  // Phase 2.B — Rule #6: blocked users cannot trade.
+  // Hard reject before any state read. No challenge state change.
+  // Dedicated try/catch — the main try below wraps only the transaction-bearing
+  // flow (and lazy daily reset above it sits outside the main try too).
+  try {
+    const userRecord = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, isBlocked: true, blockReason: true },
+    });
+    if (!userRecord) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+    if (userRecord.isBlocked) {
+      throw new UserBlockedError(userRecord.blockReason ?? null);
+    }
+  } catch (err: unknown) {
+    if (err instanceof UserBlockedError) {
+      return NextResponse.json(
+        {
+          error: err.message,
+          error_code: "USER_BLOCKED",
+          blockReason: err.blockReason,
+        },
+        { status: 403 },
+      );
+    }
+    throw err;
+  }
+
   // === Lazy daily reset (outside transaction so it persists even on rollback) ===
   const activeChallengePre = await prisma.challenge.findFirst({
     where: { userId, status: "active" },
@@ -100,29 +198,58 @@ export async function POST(req: NextRequest) {
       const activeChallenge = await tx.challenge.findFirst({
         where: { userId, status: "active" },
       });
-      const challengeId = activeChallenge ? activeChallenge.id : null;
-
-      if (activeChallenge && activeChallenge.expiresAt && new Date() > activeChallenge.expiresAt) {
-        throw new Error("CHALLENGE_EXPIRED");
-      }
 
       const market = await tx.market.findUnique({ where: { id: marketId } });
       if (!market) throw new Error("MARKET_NOT_FOUND");
       if (market.status !== "live") throw new Error("MARKET_NOT_LIVE");
 
-      const currentPrice = side === "yes" ? market.yesPrice : market.noPrice;
-      if (Math.abs(clientPrice - currentPrice) > MAX_SLIPPAGE) {
-        throw new PriceMovedError(currentPrice);
+      const rawPrice = side === "yes" ? market.yesPrice : market.noPrice;
+      if (Math.abs(clientPrice - rawPrice) > MAX_SLIPPAGE) {
+        throw new PriceMovedError(rawPrice);
       }
 
-      const executionPrice = currentPrice;
-
+      // Phase 4.B Task 3 — explicit sell guard (docs/PHASE_4_B_BRIEF.md).
+      // Lookup position WITHOUT challengeId filter so isolation is enforced
+      // explicitly by the guards below, not silently by the SQL filter.
       const position = await tx.position.findFirst({
-        where: { userId, marketId, side, challengeId, status: "open" },
+        where: { userId, marketId, side, status: "open" },
       });
+      if (!position) throw new PositionNotFoundError();
 
-      if (!position) throw new Error("POSITION_NOT_FOUND");
-      if (position.shares < amount) throw new Error("INSUFFICIENT_SHARES");
+      const activeChallengeId = activeChallenge?.id ?? null;
+
+      // Guard 1: position must belong to the currently active challenge,
+      // OR both must be sandbox (challengeId === null on both sides).
+      if (position.challengeId !== activeChallengeId) {
+        throw new ChallengeIsolationError(position.challengeId, activeChallengeId);
+      }
+
+      // Guard 2 + 3 only apply when this is a challenge-mode position.
+      // (Sandbox positions — challengeId === null — pass through.)
+      if (position.challengeId !== null) {
+        if (!activeChallenge || activeChallenge.status !== "active") {
+          throw new ChallengeNotActiveError(
+            position.challengeId,
+            activeChallenge?.status ?? "missing",
+          );
+        }
+        if (activeChallenge.expiresAt && new Date() > activeChallenge.expiresAt) {
+          throw new ChallengeExpiredError(activeChallenge.id);
+        }
+      }
+
+      const challengeId = activeChallengeId;
+
+      // P0.4: full sell only. Applies to all positions, including legacy partial-sold.
+      if (amount !== position.shares) {
+        throw new PartialSellError(position.shares, amount);
+      }
+
+      // P0.4: sell spread against user. Position.avgPrice is already effective
+      // (set on buy via applyBuySpread), so realizedPnl computed below is the
+      // true net user PnL: effectiveSell - effectiveBuy.
+      const { effectivePrice, spreadPct } = applySellSpread(rawPrice);
+      const executionPrice = effectivePrice;
 
       const proceeds = parseFloat((amount * executionPrice).toFixed(2));
       const realizedPnl = parseFloat((amount * (executionPrice - position.avgPrice)).toFixed(2));
@@ -152,6 +279,7 @@ export async function POST(req: NextRequest) {
           amount, price: executionPrice, cost: proceeds,
           marketYesPriceAtExecution: market.yesPrice,
           marketNoPriceAtExecution: market.noPrice,
+          realizedPnl,
         },
       });
 
@@ -206,7 +334,7 @@ export async function POST(req: NextRequest) {
           const reason = isFailedByEquity && !isFailedByCash
             ? `Max Loss hit (equity): equity $${equity.toFixed(2)} below limit $${equityMLL.toFixed(2)} (peak equity $${newPeakEquity.toFixed(2)})`
             : `Max Loss hit: balance $${newRealizedBalance.toFixed(2)} below limit $${mll.toFixed(2)} (peak $${newPeakBalance.toFixed(2)})`;
-          throw new DrawdownViolatedError(challengeId, reason);
+          throw new DrawdownViolatedError(challengeId, reason, "mll_breach");
         }
 
         // Daily drawdown check
@@ -218,7 +346,8 @@ export async function POST(req: NextRequest) {
           if (dailyDrawdownPct >= activeChallenge.maxDailyDdPct) {
             throw new DrawdownViolatedError(
               challengeId,
-              `Daily drawdown ${dailyDrawdownPct}% exceeded limit ${activeChallenge.maxDailyDdPct}%`
+              `Daily drawdown ${dailyDrawdownPct}% exceeded limit ${activeChallenge.maxDailyDdPct}%`,
+              "daily_drawdown_exceeded"
             );
           }
         }
@@ -261,45 +390,61 @@ export async function POST(req: NextRequest) {
           },
         });
 
-        if (
-            profitTargetMet
-            && effectiveTradingDays >= activeChallenge.minTradingDays
-            && activeChallenge.resolvedPositionsCount >= MIN_RESOLVED_POSITIONS
-            && activeChallenge.uniqueEventsCount >= MIN_UNIQUE_EVENTS
-          ) {
-          autoPass = true;
-          passMeta = {
-            profitPct,
-            profitTargetPct: activeChallenge.profitTargetPct,
-            tradingDays: effectiveTradingDays,
-            minTradingDays: activeChallenge.minTradingDays,
-          };
-          await tx.challenge.update({
-            where: { id: challengeId },
-            data: { status: "passed", endedAt: new Date() },
-          });
-          await tx.auditLog.create({
-            data: {
-              actorId: userId,
-              targetType: "challenge",
-              targetId: String(challengeId),
-              category: "challenge",
-              action: "challenge_auto_passed",
-              metadata: {
-                profitPct,
-                profitTargetPct: activeChallenge.profitTargetPct,
-                tradingDays: effectiveTradingDays,
-                minTradingDays: activeChallenge.minTradingDays,
-                realizedBalance: newRealizedBalance,
+        // P0.4.next — pass-condition uses qualifyingTradingDaysCount (updated
+        // by daily-pnl-aggregate cron). Today's buys do not contribute to the
+        // pass check until the next cron tick recounts the day. `effectiveTradingDays`
+        // is kept for the auto-pass email payload (legacy semantics).
+        const otherConditionsMet =
+          profitTargetMet
+          && activeChallenge.qualifyingTradingDaysCount >= activeChallenge.minTradingDays
+          && activeChallenge.resolvedPositionsCount >= MIN_RESOLVED_POSITIONS
+          && activeChallenge.uniqueEventsCount >= MIN_UNIQUE_EVENTS;
+
+        if (otherConditionsMet) {
+          // P0.3.a — live consistency aggregation includes the Trade row just inserted in this tx.
+          const consistency = await computeConsistencyLive(challengeId, tx);
+          if (consistency.isPassChallenge) {
+            autoPass = true;
+            passMeta = {
+              profitPct,
+              profitTargetPct: activeChallenge.profitTargetPct,
+              tradingDays: effectiveTradingDays,
+              minTradingDays: activeChallenge.minTradingDays,
+            };
+            await tx.challenge.update({
+              where: { id: challengeId },
+              data: { status: "passed", endedAt: new Date() },
+            });
+            await tx.auditLog.create({
+              data: {
+                actorId: userId,
+                targetType: "challenge",
+                targetId: String(challengeId),
+                category: "challenge",
+                action: "challenge_auto_passed",
+                metadata: {
+                  profitPct,
+                  profitTargetPct: activeChallenge.profitTargetPct,
+                  tradingDays: effectiveTradingDays,
+                  minTradingDays: activeChallenge.minTradingDays,
+                  realizedBalance: newRealizedBalance,
+                },
               },
-            },
-          });
+            });
+          } else {
+            console.warn(
+              `[AUTO_PASS_BLOCKED] challenge ${challengeId} consistency rule failed: ` +
+              `biggestDayPct=${(consistency.biggestDayPct * 100).toFixed(2)}% ` +
+              `exceeds ${(CONSISTENCY_THRESHOLD_CHALLENGE * 100).toFixed(0)}% threshold ` +
+              `(totalProfit=$${consistency.totalProfit.toFixed(2)})`,
+            );
+          }
         }
       }
 
       await tx.user.update({ where: { id: userId }, data: { lastTradeAt: new Date() } });
 
-      return { trade, position: updatedPosition, proceeds, realizedPnl, balanceAfter: newBalance, positionClosed: isFullClose, autoPass, passMeta };
+      return { trade, position: updatedPosition, proceeds, realizedPnl, balanceAfter: newBalance, positionClosed: isFullClose, autoPass, passMeta, rawPrice, effectivePrice, spreadPct };
     });
 
     if (result.autoPass && result.passMeta) {
@@ -363,6 +508,9 @@ Our team will reach out shortly with next steps for funding your account.`;
       realizedPnl: result.realizedPnl,
       balanceAfter: result.balanceAfter,
       positionClosed: result.positionClosed,
+      rawPrice: result.rawPrice,
+      effectivePrice: result.effectivePrice,
+      spreadPct: result.spreadPct,
     });
 
   } catch (error: unknown) {
@@ -376,23 +524,112 @@ Our team will reach out shortly with next steps for funding your account.`;
       );
     }
 
+    if (error instanceof PartialSellError) {
+      return NextResponse.json(
+        {
+          error: `Full sell only. Position has ${error.positionShares} shares; requested ${error.requestedAmount}. Sell all ${error.positionShares}.`,
+          positionShares: error.positionShares,
+          requestedAmount: error.requestedAmount,
+        },
+        { status: 400 }
+      );
+    }
+
+    // Phase 4.B Task 3 — explicit guard errors. Each is a pre-trade reject
+    // with no Challenge state change.
+    if (error instanceof PositionNotFoundError) {
+      return NextResponse.json(
+        {
+          error: "No open position found for this market and side",
+          error_code: "position_not_found",
+        },
+        { status: 404 }
+      );
+    }
+
+    if (error instanceof ChallengeIsolationError) {
+      return NextResponse.json(
+        {
+          error: "Position belongs to a different challenge",
+          error_code: "challenge_isolation",
+          positionChallengeId: error.positionChallengeId,
+          activeChallengeId:   error.activeChallengeId,
+        },
+        { status: 403 }
+      );
+    }
+
+    if (error instanceof ChallengeNotActiveError) {
+      return NextResponse.json(
+        {
+          error: "Challenge is not active",
+          error_code: "challenge_not_active",
+          challengeId:     error.challengeId,
+          challengeStatus: error.challengeStatus,
+        },
+        { status: 403 }
+      );
+    }
+
     if (error instanceof DrawdownViolatedError) {
+      // Phase 4.B Task 2 site #3 — close open positions in the same tx as
+      // the status flip. Main tx already rolled back, so we open a fresh
+      // one here. Audit ref: docs/PHASE_4_0_AUDIT.md finding #3.
       try {
-        await prisma.challenge.update({
-          where: { id: error.challengeId },
-          data: {
-            status: "failed",
-            drawdownViolated: true,
-            violationReason: error.reason,
-            endedAt: new Date(),
-          },
-        });
+        await prisma.$transaction(async (tx) => {
+          await closeOpenPositionsForChallenge(tx, error.challengeId, "failed_drawdown");
+          await tx.challenge.update({
+            where: { id: error.challengeId },
+            data: {
+              status: "failed",
+              drawdownViolated: true,
+              violationReason: error.reason,
+              endedAt: new Date(),
+            },
+          });
+        }, { timeout: 30000 });
       } catch (e) {
         console.error("[SELL] Failed to persist challenge fail:", e);
       }
       return NextResponse.json(
-        { error: `Challenge failed: ${error.reason}` },
-        { status: 400 }
+        {
+          error_code: "CHALLENGE_FAILED_PRE_TRADE",
+          reason: error.category,
+          details: error.reason,
+          challengeStatusAfter: "failed",
+          violationCause: "price_movement_on_existing_positions",
+        },
+        { status: 409 }
+      );
+    }
+
+    if (error instanceof ChallengeExpiredError) {
+      // Phase 4.B Task 2 site #4 — close open positions in the same tx
+      // as the status flip. Audit ref: docs/PHASE_4_0_AUDIT.md finding #3.
+      try {
+        await prisma.$transaction(async (tx) => {
+          await closeOpenPositionsForChallenge(tx, error.challengeId, "expired");
+          await tx.challenge.update({
+            where: { id: error.challengeId },
+            data: {
+              status: "failed",
+              violationReason: "Challenge period expired",
+              endedAt: new Date(),
+            },
+          });
+        }, { timeout: 30000 });
+      } catch (e) {
+        console.error("[SELL] Failed to persist challenge expiry:", e);
+      }
+      return NextResponse.json(
+        {
+          error_code: "CHALLENGE_FAILED_PRE_TRADE",
+          reason: "time_limit",
+          details: "Challenge period has ended",
+          challengeStatusAfter: "failed",
+          violationCause: "challenge_period_ended",
+        },
+        { status: 409 }
       );
     }
 
@@ -400,9 +637,7 @@ Our team will reach out shortly with next steps for funding your account.`;
     const clientErrors: Record<string, { status: number; error: string }> = {
       MARKET_NOT_FOUND:       { status: 404, error: "Market not found" },
       MARKET_NOT_LIVE:        { status: 400, error: "Market is not live" },
-      POSITION_NOT_FOUND:     { status: 404, error: "No open position found for this market and side" },
       INSUFFICIENT_SHARES:    { status: 400, error: "Not enough shares to sell" },
-      CHALLENGE_EXPIRED:      { status: 400, error: "Challenge period has ended" },
     };
     if (message in clientErrors) {
       const { status, error } = clientErrors[message];

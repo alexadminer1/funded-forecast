@@ -30,6 +30,7 @@ export const faqData: FAQCategory[] = [
       { q: "What happens if I break the rules?", a: "Violating any challenge rule (drawdown, daily loss, or other restrictions) will automatically terminate the challenge. No partial credit is given." },
       { q: "Can I have multiple challenges?", a: "Yes. You can run multiple challenges simultaneously using separate accounts." },
       { q: "How long does a challenge last?", a: "There is no fixed time limit on challenges, but you must trade on a minimum number of calendar days (typically 10) to be eligible to pass." },
+      { q: "How does a trading day count?", a: "To qualify a trading day, you need a minimum daily volume of $20 (2% of starting balance). This can be a single trade or multiple smaller trades — only the total daily cost basis matters. There is no minimum size for an individual trade." },
       { q: "What happens after I pass?", a: "After passing the evaluation, you become eligible for funded trader status and can request payouts on profits generated." },
     ],
   },

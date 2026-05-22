@@ -1,11 +1,13 @@
-export const dynamic = 'force-dynamic'
+export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { verifyPayoutTx } from "@/lib/onchain-verify";
 
 const ALLOWED_STATUSES = ["pending", "approved", "rejected", "paid"] as const;
-type Status = typeof ALLOWED_STATUSES[number];
+type Status = (typeof ALLOWED_STATUSES)[number];
 
 // Allowed transitions: from -> to[]
+// pending_verification is set programmatically (not directly by admin via status field)
 const TRANSITIONS: Record<Status, Status[]> = {
   pending: ["approved", "rejected"],
   approved: ["paid", "rejected"],
@@ -17,7 +19,10 @@ function checkAdmin(req: NextRequest) {
   return req.headers.get("x-admin-key") === process.env.ADMIN_API_KEY;
 }
 
-export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   if (!checkAdmin(req)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -53,20 +58,170 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!current) {
     return NextResponse.json({ error: "Payout not found" }, { status: 404 });
   }
-  const currentStatus = current.status as Status;
+
+  // pending_verification is a system state — treat it as approved for transition purposes
+  const effectiveCurrentStatus =
+    current.status === "pending_verification" ? "approved" : (current.status as Status);
 
   // Validate transition
-  if (currentStatus === newStatus) {
-    return NextResponse.json({ error: `Already in status: ${newStatus}` }, { status: 400 });
-  }
-  if (!TRANSITIONS[currentStatus]?.includes(newStatus)) {
+  if (effectiveCurrentStatus === newStatus) {
     return NextResponse.json(
-      { error: `Cannot transition from ${currentStatus} to ${newStatus}` },
+      { error: `Already in status: ${newStatus}` },
+      { status: 400 }
+    );
+  }
+  if (!TRANSITIONS[effectiveCurrentStatus]?.includes(newStatus)) {
+    return NextResponse.json(
+      { error: `Cannot transition from ${current.status} to ${newStatus}` },
       { status: 400 }
     );
   }
 
-  // Field requirements per target status
+  // ─────────────────────────────────────────────────────────────────────
+  // PAID transition: on-chain verification required
+  // ─────────────────────────────────────────────────────────────────────
+  if (newStatus === "paid") {
+    if (typeof txHash !== "string" || txHash.trim().length < 10) {
+      return NextResponse.json(
+        { error: "txHash required (min 10 chars)" },
+        { status: 400 }
+      );
+    }
+    const cleanTxHash = txHash.trim().slice(0, 200);
+
+    if (!current.walletAddress) {
+      return NextResponse.json(
+        { error: "PayoutRequest has no walletAddress — cannot verify on-chain transfer" },
+        { status: 400 }
+      );
+    }
+
+    // Pre-check: reject if another payout already uses this txHash
+    const conflicting = await prisma.payoutRequest.findFirst({
+      where: { txHash: cleanTxHash, NOT: { id } },
+      select: { id: true },
+    });
+    if (conflicting) {
+      return NextResponse.json({ error: "tx_already_used" }, { status: 400 });
+    }
+
+    const expectedAmountCents =
+      current.finalAmountCents ?? Math.round(current.netAmount * 100);
+
+    const now = new Date();
+
+    // Stage: save txHash and move to pending_verification
+    await prisma.payoutRequest.update({
+      where: { id },
+      data: {
+        txHash: cleanTxHash,
+        status: "pending_verification",
+        processedAt: current.processedAt ?? now,
+        lastVerifyAttemptAt: now,
+      },
+    });
+
+    // Run synchronous on-chain verification
+    const result = await verifyPayoutTx({
+      txHash: cleanTxHash,
+      expectedRecipient: current.walletAddress,
+      expectedAmountCents,
+      payoutRequestId: id,
+    });
+
+    if (result.ok) {
+      // Verification passed → complete the payout
+      const [payout] = await prisma.$transaction([
+        prisma.payoutRequest.update({
+          where: { id },
+          data: {
+            status: "paid",
+            paidAt: now,
+          },
+        }),
+        prisma.challenge.update({
+          where: { id: current.challengeId },
+          data: { lastApprovedPayoutAt: now },
+        }),
+        prisma.auditLog.create({
+          data: {
+            actorId: null,
+            targetType: "PayoutRequest",
+            targetId: String(id),
+            category: "payout",
+            action: "payout_completed",
+            metadata: {
+              txHash: cleanTxHash,
+              confirmations: result.confirmations,
+              source: "admin_sync",
+            },
+          },
+        }),
+      ]);
+      return NextResponse.json(payout);
+    }
+
+    if (result.reason === "insufficient_confirmations") {
+      // Not enough confirmations yet — leave in pending_verification, cron will retry
+      await prisma.payoutRequest.update({
+        where: { id },
+        data: { verificationAttempts: { increment: 1 } },
+      });
+      return NextResponse.json(
+        {
+          status: "pending_verification",
+          message: "Transaction found but needs more confirmations. Cron will retry.",
+          confirmations: result.confirmations,
+        },
+        { status: 202 }
+      );
+    }
+
+    if (result.reason === "rpc_error") {
+      // Transient RPC failure — leave in pending_verification, do not count attempt
+      return NextResponse.json(
+        {
+          status: "pending_verification",
+          message: "RPC error during verification. Will retry automatically.",
+        },
+        { status: 503 }
+      );
+    }
+
+    // Hard verification failure — roll back to approved, clear txHash
+    await prisma.$transaction([
+      prisma.payoutRequest.update({
+        where: { id },
+        data: {
+          status: "approved",
+          txHash: null,
+          lastVerifyAttemptAt: now,
+        },
+      }),
+      prisma.auditLog.create({
+        data: {
+          actorId: null,
+          targetType: "PayoutRequest",
+          targetId: String(id),
+          category: "payout",
+          action: "payout_verification_rejected",
+          metadata: {
+            txHash: cleanTxHash,
+            reason: result.reason,
+          },
+        },
+      }),
+    ]);
+
+    return NextResponse.json(
+      { error: result.reason },
+      { status: 400 }
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Other transitions (pending→approved, pending/approved→rejected)
+  // ─────────────────────────────────────────────────────────────────────
   const data: Record<string, unknown> = { status: newStatus };
 
   if (newStatus === "rejected") {
@@ -81,31 +236,6 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   if (newStatus === "approved") {
     data.processedAt = new Date();
-  }
-
-  if (newStatus === "paid") {
-    if (typeof txHash !== "string" || txHash.trim().length < 10) {
-      return NextResponse.json(
-        { error: "txHash required (min 10 chars)" },
-        { status: 400 }
-      );
-    }
-    data.txHash = txHash.trim().slice(0, 200);
-    data.paidAt = new Date();
-    if (!current.processedAt) {
-      data.processedAt = new Date();
-    }
-  }
-
-  // For paid transition: update challenge tracking fields in same transaction
-  if (newStatus === "paid") {
-    const now = new Date();
-    const challengeUpdates: Record<string, unknown> = { lastApprovedPayoutAt: now };
-    const [payout] = await prisma.$transaction([
-      prisma.payoutRequest.update({ where: { id }, data }),
-      prisma.challenge.update({ where: { id: current.challengeId }, data: challengeUpdates }),
-    ]);
-    return NextResponse.json(payout);
   }
 
   const payout = await prisma.payoutRequest.update({ where: { id }, data });
