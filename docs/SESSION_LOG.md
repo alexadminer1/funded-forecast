@@ -9,6 +9,78 @@
 
 ---
 
+## Session 2026-05-24 — TASK-PHILO-1 — Relax pre-trade hard rejects CLOSED
+
+### Закрыто
+- Removed pre-trade hard rejects для rules #2 (min position 2%), #3 (max aggregate 5%), #4 (max daily volume 5%) из `trade/buy/route.ts`
+- Removed associated engine helpers (`checkMinPosition`, `checkAggregatePosition`, `checkMaxDailyVolume` + USD getters) из `engine/spreads.ts`
+- Removed engine constants `MIN_POSITION_PCT`, `MAX_AGGREGATE_POSITION_PCT`, `MAX_DAILY_VOLUME_PCT`
+- Removed API fields `minPositionPercent`, `maxAggregatePositionPercent`, `maxDailyVolumeUsd` из `/api/user/me`, `/api/user/mode`, `/api/user/positions`
+- Removed TradeModal preview info-rows (Min position / Max aggregate / Daily volume) + dashboard interface fields
+- Added Product philosophy section в `BUSINESS_RULES.md`
+- Rewrote rules #2/#3/#4 как "DEPRECATED — recommendation only"
+- Excluded `tmp/` from tsconfig type-checking (collateral fix — scratch files broke build после API field removal)
+
+### Контекст
+Бизнес-модель FundedForecast основана на target pass rate 2-3%. Pre-trade hard rejects на классические fail patterns (small bets, all-in concentration, overtrading) противоречили заявленной product philosophy ("UI shows data, doesn't control behavior") и снижали revenue, искусственно защищая юзеров от лоса.
+
+Решение Session 21: rules #2/#3/#4 переходят в статус documented recommendations, не enforced server-side. Сервер enforce'ит только технические инварианты (rule #1 buy cap, rule #5 market end, rule #6 user blocked, balance, position isolation). Все остальные правила challenge — post-trade (DLL/MLL drawdown) или end-of-day/end-of-challenge cron.
+
+Структура работы: один main chat (Session 21) + один Architect executor chat (этот) + Claude Code в bypass-permissions. Три sub-blocks: B-DOCS → B-CODE → B-FINAL. Каждый sub-block выдавался Claude Code одним заданием.
+
+### Реализация
+- Branch: `feature/philo-1-relax-rejects` (9 commits от develop)
+- B-DOCS (2 commits): Product philosophy section + rules #2/#3/#4 DEPRECATED rewrite в `BUSINESS_RULES.md`
+- B-CODE (4 + 1 commits): trade/buy reject removal → engine cleanup → API field removal → frontend cleanup → tsconfig tmp/ exclude
+- B-FINAL (2 commits): SESSION_LOG + BACKLOG closure
+- Net diff: ~12 insertions, ~324 deletions across 11 files в src/ + docs
+- No schema changes, no migrations, no DB writes
+
+### Commits на ветке (от старого к новому)
+- `6ef85e2` [PHILO-1] docs: add Product philosophy section to BUSINESS_RULES.md
+- `6c10992` [PHILO-1] docs: rewrite rules #2, #3, #4 as DEPRECATED — recommendation only
+- `ea0a186` [PHILO-1] trade/buy: remove rule #2/#3/#4 pre-trade rejects
+- `b3d18b9` [PHILO-1] engine: remove constants and helpers for rules #2/#3/#4
+- `e296c2c` [PHILO-1] api: remove minPositionPercent, maxAggregatePositionPercent, maxDailyVolumeUsd fields
+- `b804635` [PHILO-1] frontend: remove TradeModal preview rows and dashboard fields for deprecated rules
+- `95962ef` [PHILO-1] tsconfig: exclude tmp/ from type-checking
+
+### Что сохранено (out of scope, не тронуто)
+- Rule #1 (buy cap $0.85) — `BuyCapExceededError`, `checkBuyCap`, `BUY_PRICE_CAP`
+- Rule #5 (market endDate) — `MarketEndedError`
+- Rule #6 (user isBlocked) — `UserBlockedError` (buy + sell)
+- Rules #7-12 (end-of-day, end-of-challenge cron) — non-trade-time
+- MLL/DLL drawdown checks (`DrawdownViolatedError`)
+- Rule #8 enforcement (`MIN_DAILY_VOLUME_PCT`, `end-of-day-check` cron) — fully active
+- Sandbox path в trade/buy (`SANDBOX_MAX_POSITION_PCT` legacy, not under PHILO-1)
+- Position isolation guards (Phase 4.B)
+- API fields `todayBuyVolume`, `minDailyVolumeUsd` (rule #8 active, UI informational)
+- `maxPositionSizePct` dead column (TECH-DEBT-5 unchanged)
+- Trade-sell route (out of scope — only buy had rules #2/#3/#4)
+
+### Interaction matrix (verified в Step A discovery)
+- **Rule #2 ↔ Rule #8:** small trades теперь accumulate to daily volume; rule #8 catches insufficient volume at end-of-day
+- **Rule #3 ↔ MLL/DLL:** all-in concentration теперь triggers immediate cash MLL breach при покупке за весь баланс (verified path: trade/buy MLL check post-trade)
+- **Rule #4 ↔ #7/#8:** overtrading bleeds spread → eventual MLL fail; rule #7/#8 не conflict с removed rule #4
+
+### Process notes
+- Architect-led discovery uncovered API contract conflict: brief original said "field names remain, semantics shift", discovery rejected как "parallel display-only state that no longer matches any server rule". Reversed to full field removal.
+- Constants cleanup decision (Q3): full deletion vs `RECOMMENDED_*` renaming. Chose deletion — re-enable path = git history. Reasoning: dead constants would create maintainer confusion, BR text + commit history sufficient as roll-back reference.
+- Rule #4 decision (option a/b/c): chose (a) remove completely. Option (b) move to end-of-day contradicts rule #7 ("trade every day") — punishment for activity contradicts target rate pass.
+- B4 правка после reviewing brief: rules #2/#3/#4 переписаны как "DEPRECATED — recommendation only" вместо полного removal. Сохраняет recommended numeric values в BR для возможного re-enable в future business model shift.
+- `tmp/` scratch directory broke tsc после B-CODE-3. Resolved через tsconfig exclude vs deleting Алексей's scratch work.
+- PHASE_KIT.md v2 process improvement: original plan был B0→B5 (6 Claude Code invocations). Reorganized в 3 super-blocks (B-DOCS, B-CODE, B-FINAL) для меньше Алексея-в-loop. Lesson: Claude Code в bypass-mode сам разбивает internal substeps.
+
+### Production release decision (отложено в основной чат)
+Алексей решает в Session 21 main chat:
+- Release TASK-PHILO-1 на prod immediately (small impact, no schema changes)
+- ИЛИ batch with Phase 5 (UI widgets) для меньше prod risk
+
+### Следующая фаза
+Phase 5 (UI widgets) — parallel или после TASK-PHILO-1, не конфликтует. Если PHILO-1 на prod уйдёт без Phase 5 — UI уже учитывает (preview rows удалены), no semantic desync.
+
+---
+
 ## Session 2026-05-22 — Gate 10 incident — schema drift fix (Session 20)
 
 ### Summary
