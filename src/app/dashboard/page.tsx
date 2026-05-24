@@ -31,9 +31,6 @@ interface Challenge {
   maxLossLimitPercent?: number;
   currentDrawdownPercent?: number;
   dailyDrawdownPercent?: number;
-  minPositionPercent?: number;
-  maxAggregatePositionPercent?: number;
-  maxDailyVolumeUsd?: number;
 
   // Plan relation — Phase 3 added it via `include` in /api/user/mode.
   plan?: { id: number; name: string; price: number } | null;
