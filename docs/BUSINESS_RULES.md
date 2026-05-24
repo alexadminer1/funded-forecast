@@ -12,6 +12,53 @@ SOURCE OF TRUTH — все задачи P0.3.X ссылаются на этот 
 
 ---
 
+## Product philosophy
+
+Бизнес-модель FundedForecast основана на том, что подавляющее большинство пользователей проигрывает challenge (target pass rate 2-3%). Это структура revenue, не баг.
+
+### Принцип: UI показывает данные, не управляет поведением
+
+Сервер enforce'ит **только технические инварианты**:
+- Buy cap $0.85 (защита от вырожденных payouts)
+- Market endDate (нельзя торговать на закрытом рынке)
+- User isBlocked (security)
+- Insufficient balance (infrastructure)
+- Position isolation (audit trail integrity)
+
+Все остальные ограничения (min position size, max aggregate position, max daily volume, DLL/MLL drawdown, profit target, consistency, resolved positions count, unique events count) — это **правила challenge**, не блокировки решений. Они применяются **по итогу действий**: через DLL/MLL post-trade или через end-of-day / end-of-challenge crons.
+
+### Что показывается в UI
+
+- Текущие значения метрик (balance, profit, days remaining, positions)
+- Условия challenge в pricing/FAQ (один раз при покупке)
+- Причина fail когда он случился
+- Цветовые индикаторы лимитов на gauges — допустимы (это данные)
+- Email confirmations (passed, failed, payout) — transactional only
+
+### Что НЕ делается
+
+- **Submit buttons НЕ disabled** на "approaching limit" — юзер сам решает
+- **Pre-trade rejects** только на технических инвариантах, не на размере trade или частоте
+- **Активирующие emails** ("trade today or fail") — нет
+- **Coaching / strategy hints** — нет
+- **Predictive warnings** ("if you continue you'll fail in N days") — нет
+- **"Resume failed challenge" CTAs** — нет (только Buy new)
+- **"Are you sure?" confirmations** — нет
+
+### Граница
+
+Server enforce'ит технические инварианты hard reject'ом. Client показывает данные. Юзер сам решает жать ли Buy.
+
+Цветовые индикаторы, recommendations и tooltips в UI — это часть данных, не активная защита от ошибок.
+
+### Источник истины
+
+Это не философия в вакууме — это бизнес-модель. Любая попытка "защитить" юзера от классических fail patterns (small bets, all-in concentration, overtrading) снижает revenue. Pass rate — управляемая метрика; искусственно снижать её через guardrails — это потеря выручки.
+
+Pre-trade rejects на основе размера/частоты trade'ов — антипаттерн в этой бизнес-модели. Юзер должен иметь свободу торговать плохо. Challenge завершается по итогу его решений, не по предсказанию что решение "плохое".
+
+---
+
 ## Параметры тиров
 
 | Параметр                    | Starter $1k | Pro $5k  | Elite $15k |
