@@ -1002,7 +1002,8 @@ Acceptance:
 - Priority: P3 — открыть когда вернёмся к prod release cycle (P0.9 / Wave 6 boundary).
 - Related: SESSION_LOG.md → Session 2026-05-22 Gate 10 entry, tech-debt §3; commit ca3ebf8.
 
-### TASK-PHILO-1 Relax pre-trade hard rejects — align with "user must be able to fail" philosophy 🟡 P1 (created Session 21, 2026-05-24)
+### TASK-PHILO-1 Relax pre-trade hard rejects — align with "user must be able to fail" philosophy ✅ CLOSED 2026-05-24 (Session 21)
+- CLOSED 2026-05-24 — branch `feature/philo-1-relax-rejects`, 9 commits (2 B-DOCS + 5 B-CODE + 2 B-FINAL), build green, smoke test pending (Алексей)
 - Source: Session 21 discussion — Алексей флагнул что текущие 3 pre-trade rejects (rules #2, #3, #4) противоречат заявленной product philosophy "UI shows data, doesn't control behavior"
 - Reason: бизнес-модель FundedForecast основана на том что подавляющее большинство юзеров проигрывает (target pass rate 2-3%). Текущие 3 hard rejects блокируют классические fail patterns (small bets, all-in, overtrading) и тем самым снижают revenue
 - Affected rules:
@@ -1032,7 +1033,6 @@ Acceptance:
   - src/app/markets/[id]/page.tsx (TradeModal: change error UX, keep informational preview)
   - docs/BUSINESS_RULES.md (rewrite rules #2, #3, #4 sections — переписать как философию vs hard limits)
   - Tests (если есть)
-- Estimated: 1 day (Architect chat discovery + Claude Code implementation + smoke test)
 - Priority: P1 — это revenue impact, не косметика. Каждый день hard reject = lost revenue.
 - Related: docs/BUSINESS_RULES.md "Product philosophy" section; SESSION_LOG entries Phase 2.A, Phase 2.B
 - Note: Phase 5 (UI widgets) можно делать параллельно или после, они не конфликтуют
