@@ -98,22 +98,35 @@ Pre-trade rejects на основе размера/частоты trade'ов —
 - Sell: cap НЕ применяется
 - Реакция: HTTP 400 + UI banner "Buy cap: price $X is at or above $0.85"
 
-#### 2. Min position size
-- Правило: `cost < 2% × startBalance` → trade rejected (hard reject)
-- Считается: per-trade на effective cost (после spread)
-- Реакция: HTTP 400 "Minimum position is $X"
-- ВАЖНО: это НЕ "не засчитывается", это REJECT
+#### 2. Min position size (DEPRECATED — recommendation only)
 
-#### 3. Max aggregate position
-- Правило: `(existing_position.costBasis + new_trade.cost) > 5% × startBalance` → trade rejected
-- Считается: per market/outcome (одна пара marketId + side)
-- Защита от обхода через дробление на мелкие покупки
-- Реакция: HTTP 400 "Position cap $X exceeded"
+Recommended minimum trade size: 2% of startBalance ($20 for $1000 Starter, $100 for $5000 Pro, $300 for $15000 Elite).
 
-#### 4. Max daily volume
-- Правило: `dailyBuyVolume + new_trade.cost > 5% × startBalance` → trade rejected
-- Считается: SUM(Trade.cost WHERE action=buy AND DATE(createdAt)=today UTC) для активного challenge
-- Реакция: HTTP 400 "Daily buy cap $X exceeded"
+Status: NOT enforced server-side as of TASK-PHILO-1 (Session 21, 2026-05-24). Users may execute trades below this threshold; small trades accumulate toward daily volume goal (Rule #8).
+
+Rationale: pre-trade size rejects contradict Product philosophy (see top section) — user must be able to fail freely. End-of-day Rule #8 catches insufficient daily volume.
+
+History: enforcement existed in Phase 2.A (Session 16, commits a0d7a01..a79542c, merged in 8faf040) and was removed in TASK-PHILO-1. Git history preserves implementation if needed for reference.
+
+#### 3. Max aggregate position (DEPRECATED — recommendation only)
+
+Recommended maximum aggregate position per market: 5% of startBalance ($50 for Starter, $250 for Pro, $750 for Elite).
+
+Status: NOT enforced server-side as of TASK-PHILO-1 (Session 21, 2026-05-24). Users may concentrate any amount in a single market outcome.
+
+Rationale: pre-trade concentration rejects contradict Product philosophy (see top section). Concentration is a valid user strategy and naturally self-limited by DLL/MLL drawdown rules (#5, #6) — large losing positions trigger drawdown fail.
+
+History: enforcement existed in Phase 2.A (Session 16, commits a0d7a01..a79542c, merged in 8faf040) and was removed in TASK-PHILO-1. Git history preserves implementation if needed for reference.
+
+#### 4. Max daily volume (DEPRECATED — recommendation only)
+
+Recommended maximum daily buy volume: 5% of startBalance per UTC day.
+
+Status: NOT enforced server-side as of TASK-PHILO-1 (Session 21, 2026-05-24). Users may trade any volume per day.
+
+Rationale: pre-trade frequency/volume rejects contradict Product philosophy (see top section). High-frequency trading is a valid user strategy and naturally self-limited by drawdown rules. End-of-day Rule #8 still catches insufficient daily volume (lower bound).
+
+History: enforcement existed in Phase 2.B (Session 17, commits 511b9c6..830a88d, merged in 7a7a7dc) and was removed in TASK-PHILO-1. Git history preserves implementation if needed for reference.
 
 ### Single-trade реактивные (fail challenge on breach)
 
