@@ -950,6 +950,58 @@ Acceptance:
 - Priority: P3 (revisit когда BR разногласие решено и есть commercial reason для differentiation).
 - Related: TECH-DEBT-5 (maxPositionSizePct cleanup) — лучше делать ОДНОВРЕМЕННО.
 
+### TECH-DEBT-10 Regenerate 0_baseline_reconciled migration from current prod DB 🟡 P1 (created Session 20)
+- Source: Session 20 (2026-05-22, Gate 10 incident — Phase 4 schema drift fix)
+- Reason: baseline migration `0_baseline_reconciled` была сгенерирована из dev DB после pre-baseline ALTERs
+  (baf7c27, 9ff36d8, ba46520). На prod baseline применялась через `migrate resolve --applied`
+  (table-exists path), поэтому CREATE TABLE никогда не выполнялся и DDL не дошёл до prod. Сейчас
+  prod синхронизирован manual ALTERs из Gate 10, но baseline SQL по-прежнему не содержит
+  `ChallengeDailyPnL_challengeId_date_key` UNIQUE и `ChallengeDailyPnL_challengeId_idx` (обе
+  созданы на dev pre-baseline и присутствуют). Fresh-DB bootstrap (staging?) повторит инцидент.
+- Action: один из вариантов:
+  (a) `prisma db pull` из prod (теперь в sync) → regenerate baseline → checksum update
+  (b) Patch existing `0_baseline_reconciled/migration.sql` руками: добавить недостающие
+      `CREATE UNIQUE INDEX` + `CREATE INDEX` для ChallengeDailyPnL
+- Scope: prisma/migrations/0_baseline_reconciled/migration.sql + checksum update в `_prisma_migrations`
+  на dev (prod не трогаем — там DDL уже выполнен через Gate 10 fix)
+- Estimated: 1-2 часа
+- Priority: P1 — закрыть ДО создания staging environment, иначе инцидент повторится.
+- Related: SESSION_LOG.md → Session 2026-05-22 Gate 10 entry, process gap #1.
+
+### TECH-DEBT-11 Update PROD_RELEASE_CHECKLIST template — catch-up manual SQL audit step 🟡 P2 (created Session 20)
+- Source: Session 20 (2026-05-22, Gate 10 incident)
+- Reason: PHASE_4_RELEASE_PLAN §4 не включал шаг audit pre-baseline manual-SQL commits.
+  Commits baf7c27 (P0.4.next), 9ff36d8 (P0.5 SEC-5), ba46520 (P0.3.a) содержали SQL в commit body
+  с инструкцией "apply manually on prod" — этот шаг был пропущен при подготовке Phase 4 release.
+  Будущие pre-baseline-style релизы (если такие будут) повторят ту же ошибку без явного step в template.
+- Action: добавить новый шаг в `docs/PROD_RELEASE_CHECKLIST.md` секцию "Pre-merge verification":
+  > **Pre-baseline manual SQL audit.** Прогнать grep по commit bodies между prod tag и develop HEAD:
+  > `git log <prod-tag>..develop --grep="ALTER TABLE\|manual SQL\|SQL to apply" -p`
+  > Любой match — записать в release plan как explicit step "apply SQL X на prod до deploy".
+- Scope: `docs/PROD_RELEASE_CHECKLIST.md` (1 новая секция ~10 строк)
+- Estimated: 30 минут
+- Priority: P2 — не блокер, но важно ДО следующего prod release.
+- Related: SESSION_LOG.md → Session 2026-05-22 Gate 10 entry, process gap #2.
+
+### TECH-DEBT-12 Decision: подключать ли prisma migrate deploy в build/deploy pipeline ⚪ P3 (created Session 20)
+- Source: Session 20 (2026-05-22, Gate 10 incident — discussion в "Tech-debt opened" §3)
+- Reason: Gate 10 incident класс багов (manual SQL forgotten on prod) полностью закрывается
+  автоматизированным `prisma migrate deploy` в pipeline. НО — historically этот hook
+  уже ломал prod через DIRECT_URL configuration mismatch (см. commit `ca3ebf8 revert directUrl,
+  fixes prod 500 errors`) и был удалён вручную во время Gate 7 recovery (Phase 4 release).
+  Решение нужно принимать осознанно с учётом trade-off.
+- Action plan:
+  (a) Research session: восстановить контекст почему directUrl revert случился (read ca3ebf8 + смежные commits)
+  (b) Decision между вариантами:
+      - Status quo: manual SQL via Coolify DB Terminal + новый audit step (TECH-DEBT-11)
+      - Coolify pre-deploy hook с правильным DIRECT_URL setup
+      - GitHub Actions workflow: `prisma migrate deploy` против prod DB перед нажатием Deploy
+  (c) Implementation выбранного варианта
+- Scope: depends on decision — либо docs only, либо Coolify config + env vars, либо `.github/workflows/`
+- Estimated: research 1 час + implementation 2-4 часа
+- Priority: P3 — открыть когда вернёмся к prod release cycle (P0.9 / Wave 6 boundary).
+- Related: SESSION_LOG.md → Session 2026-05-22 Gate 10 entry, tech-debt §3; commit ca3ebf8.
+
 ### TASK-DOC-1 Update BUSINESS_RULES.md rule #6 (MLL formula peak-based) ⚪ P3 (created Phase 3)
 - Source: Phase 3 (Step 1 helper review — formula mismatch BR vs engine inline)
 - Текущая запись в BR rule #6 (по памяти из chat): drawdown = `(initialBalance - currentBalance) / initialBalance × 100`
