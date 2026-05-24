@@ -74,9 +74,6 @@ export interface User {
     maxLossLimitPercent?: number;
     currentDrawdownPercent?: number;
     dailyDrawdownPercent?: number;
-    minPositionPercent?: number;
-    maxAggregatePositionPercent?: number;
-    maxDailyVolumeUsd?: number;
   };
 }
 

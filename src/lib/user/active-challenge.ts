@@ -1,10 +1,5 @@
 import { prisma } from "@/lib/prisma";
 import { computeConsistencyLive } from "@/lib/consistency";
-import {
-  MIN_POSITION_PCT,
-  MAX_AGGREGATE_POSITION_PCT,
-  MAX_DAILY_VOLUME_PCT,
-} from "@/lib/engine/constants";
 
 // Phase 3 — shared shape consumed by /api/user/me and /api/user/mode.
 //
@@ -15,13 +10,6 @@ import {
 // - `daysRemaining` derived from Challenge.expiresAt (set in
 //   payment/activation.ts as startedAt + plan.challengePeriodDays days).
 //   Falls back to 0 if expiresAt is null (legacy challenges).
-// - `minPositionPercent` / `maxAggregatePositionPercent` come from
-//   engine constants — currently uniform across all tiers (per-tier
-//   values pending; tracked in BACKLOG as a TECH-DEBT entry). When
-//   per-tier position limits ship, switch to plan-driven values.
-// - `maxDailyVolumeUsd` is the Phase 2.B Rule #4 cap surfaced as USD
-//   (startBalance × MAX_DAILY_VOLUME_PCT / 100). Matches the helper
-//   getMaxDailyVolumeUsd() in src/lib/engine/spreads.ts.
 // - `plan` may be null on legacy challenges (no plan attached). We
 //   surface that honestly via nullable type rather than fabricating
 //   a placeholder object.
@@ -98,9 +86,6 @@ export interface ActiveChallenge {
   maxLossLimitPercent: number;
   currentDrawdownPercent: number;
   dailyDrawdownPercent: number;
-  minPositionPercent: number;
-  maxAggregatePositionPercent: number;
-  maxDailyVolumeUsd: number;
 }
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
@@ -202,10 +187,6 @@ export async function buildActiveChallenge(
       ? round2((dailyDrawdownAmount / effectiveDayStart) * 100)
       : 0;
 
-  const maxDailyVolumeUsd = round2(
-    challenge.startBalance * (MAX_DAILY_VOLUME_PCT / 100),
-  );
-
   return {
     id: challenge.id,
     stage: challenge.stage,
@@ -232,8 +213,5 @@ export async function buildActiveChallenge(
     maxLossLimitPercent: challenge.maxTotalDdPct,
     currentDrawdownPercent,
     dailyDrawdownPercent,
-    minPositionPercent: MIN_POSITION_PCT,
-    maxAggregatePositionPercent: MAX_AGGREGATE_POSITION_PCT,
-    maxDailyVolumeUsd,
   };
 }
