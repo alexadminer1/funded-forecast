@@ -9,6 +9,66 @@
 
 ---
 
+## Session 2026-05-22 — Gate 10 incident — schema drift fix (Session 20)
+
+### Summary
+~2 часа после Phase 4 prod release `/api/user/me` начал отдавать 500. Логи показали `PrismaClientKnownRequestError P2022` — колонка `Challenge.qualifyingTradingDaysCount` отсутствует на prod. Полный column-level diff dev↔prod выявил **7 missing schema objects** в 4 таблицах. Source incident — broader schema drift, не один забытый ALTER.
+
+Серверная инфраструктура — здорова (disk 65%, mem 2.2G free, 0 restarts). Проблема чисто application-level.
+
+### Root cause
+`0_baseline_reconciled` migration была сгенерирована из dev DB после того как pre-baseline ALTERs (P0.4.next baf7c27, P0.5 SEC-5 9ff36d8, P0.3.a ba46520) были применены вручную на dev. Baseline SQL содержит full end-state в своих `CREATE TABLE` блоках — включая все эти колонки.
+
+На prod baseline применялась через "migrate resolve --applied" (table-exists path): миграция зарегистрирована как applied **без выполнения SQL** (выполнение `CREATE TABLE "Challenge"` упало бы, т.к. таблица существует). Поэтому pre-baseline колонки на prod так и не появились — manual ALTERs из commit bodies (`baf7c27`, `9ff36d8`, `ba46520`) предполагалось run Алексею вручную в Coolify DB Terminal, и этот шаг был пропущен.
+
+Migration ledger при этом синхронен (prod имеет все 2 migration files что и main) — проблема исключительно в том, что baseline по факту не выполнила свой DDL на prod.
+
+### Drift inventory — 7 objects missing on prod
+
+| Table | Object | Type | Origin commit |
+|---|---|---|---|
+| Challenge | `qualifyingTradingDaysCount` | column `INT NOT NULL DEFAULT 0` | baf7c27 (P0.4.next) |
+| ChallengeDailyPnL | **entire table** + FK + 2 indexes | new table + UNIQUE(challengeId,date) + INDEX(challengeId) | ba46520 (P0.3.a) |
+| Trade | `realizedPnl` | column `DECIMAL(20,8)` nullable | ba46520 (P0.3.a) |
+| PayoutRequest | `verificationAttempts` | column `INT NOT NULL DEFAULT 0` | 9ff36d8 (P0.5 SEC-5) |
+| PayoutRequest | `manualReview` | column `BOOLEAN NOT NULL DEFAULT false` | 9ff36d8 |
+| PayoutRequest | `lastVerifyAttemptAt` | column `TIMESTAMP(3)` | 9ff36d8 |
+| PayoutRequest | `PayoutRequest_txHash_key` | partial UNIQUE index `WHERE txHash IS NOT NULL` (UNMANAGED_DDL §3) | 9ff36d8 |
+
+Прод-симптом был только `qualifyingTradingDaysCount` (его читает `/api/user/me` на любой загрузке dashboard). Остальные 6 проявились бы при срабатывании конкретных code paths: `daily-pnl-aggregate` cron (ChallengeDailyPnL + Trade.realizedPnl), `verify-pending-payouts` cron + admin payout flow (PayoutRequest fields), txHash uniqueness guard.
+
+### Fix applied
+Идемпотентный SQL-блок выполнен через Coolify DB Terminal на `ff-sandbox-db`. `BEGIN/COMMIT` для основного блока (4 ALTER + CREATE TABLE + FK + 2 indexes), отдельным statement — `CREATE UNIQUE INDEX CONCURRENTLY` для partial idx (нельзя внутри транзакции).
+
+Pre-fix backup: `~/backups/ff-sandbox-db-pre-step4-altertable.dump` (1.7M, 2026-05-22 13:39 UTC).
+
+Backfill: ручной trigger `/api/cron/daily-pnl-aggregate` — processed: 0, skipped: 0, errors: 0 (на prod нет active challenges → backfill no-op, но cron подтвердил что ON CONFLICT работает). Cron — full-scan recompute, идемпотентен; первое active challenge получит корректный `qualifyingTradingDaysCount` автоматически при следующем 01:00 UTC.
+
+Post-fix verify: `/api/user/me` — 200 OK (UI smoke через браузер). Логи приложения post-fix не проверялись.
+
+### Diagnostic reports
+- `/tmp/gate-10-incident-step1.md` — server health (verdict: OK, не disk/mem)
+- `/tmp/gate-10-incident-step2.md` — full drift inventory (column-level diff dev↔prod)
+- `/tmp/gate-10-incident-step3.md` — pre-fix verification (4 unknowns cleared: ON CONFLICT index, UNMANAGED_DDL, no Coolify migrate hook, no manual backfill SQL)
+
+### Process gaps identified
+1. **`0_baseline_reconciled` SQL is incomplete.** Baseline не содержит `ChallengeDailyPnL_challengeId_date_key` UNIQUE и `ChallengeDailyPnL_challengeId_idx` — оба есть на dev (создавались pre-baseline). Регенерация baseline из prod (теперь in sync) или patch missing indexes.
+2. **PHASE_4_RELEASE_PLAN §4 не включал catch-up ALTERs** для pre-baseline manual-SQL commits (baf7c27, 9ff36d8, ba46520). Любой будущий релиз pre-baseline-style commits должен иметь этот шаг в плане.
+3. **Gate 9 smoke-test (post-deploy curl /api/user/me) был пропущен** — он бы поймал инцидент в первые 5 минут вместо 2 часов.
+4. **Coolify pre-deploy hook concern из Session 19 — false alarm.** Hook не существует (нет Dockerfile, нет migrate ref в package.json). Baseline применялась out-of-band вручную. Pipeline сейчас чистый — `prisma migrate deploy` нигде в deploy-process не запускается. История того как был удалён первоначальный hook — не задокументирована.
+
+### Tech-debt opened (NOT added to BACKLOG — record-only)
+- Regenerate `0_baseline_reconciled` from prod DB (теперь in sync) ИЛИ patch baseline SQL вручную чтобы добавить недостающие 2 индекса ChallengeDailyPnL. Без этого fresh-DB bootstrap (staging?) повторит тот же инцидент.
+- Update PHASE_4_RELEASE_PLAN template: add step "find pre-baseline manual-SQL commits still pending on prod" (grep commit bodies на "SQL to apply" / "ALTER TABLE" / "manual SQL").
+- Revisit decision: подключать ли `prisma migrate deploy` в build/deploy pipeline. Pro — закрывает класс этих багов навсегда. Con — historically ломал prod через DIRECT_URL (см. commit `ca3ebf8 revert directUrl, fixes prod 500 errors`). Отдельная session.
+
+### Status
+**Phase 4 release COMPLETE — Gate 10 closed at 2026-05-22 ~14:00 UTC.**
+
+48h observation period (расширен с 24h до 48h) завершён 2026-05-24 ~14:00 UTC. Site stable, UI работает, ошибок не наблюдалось.
+
+---
+
 ## Session 2026-05-22 — Phase 4 Release (Session 19) CLOSED
 
 ### Released
