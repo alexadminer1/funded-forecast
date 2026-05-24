@@ -1002,6 +1002,42 @@ Acceptance:
 - Priority: P3 — открыть когда вернёмся к prod release cycle (P0.9 / Wave 6 boundary).
 - Related: SESSION_LOG.md → Session 2026-05-22 Gate 10 entry, tech-debt §3; commit ca3ebf8.
 
+### TASK-PHILO-1 Relax pre-trade hard rejects — align with "user must be able to fail" philosophy 🟡 P1 (created Session 21, 2026-05-24)
+- Source: Session 21 discussion — Алексей флагнул что текущие 3 pre-trade rejects (rules #2, #3, #4) противоречат заявленной product philosophy "UI shows data, doesn't control behavior"
+- Reason: бизнес-модель FundedForecast основана на том что подавляющее большинство юзеров проигрывает (target pass rate 2-3%). Текущие 3 hard rejects блокируют классические fail patterns (small bets, all-in, overtrading) и тем самым снижают revenue
+- Affected rules:
+  - **Rule #2 (Min position 2% = $20 for Starter):** hard reject. Юзер хочет вложить $5 — не может. Это его выбор проиграть $5, не наша забота защищать.
+  - **Rule #3 (Max aggregate 5% = $50 per market):** hard reject. Юзер хочет all-in на одной идее — не может. All-in это lose pattern → revenue → зачем блокировать?
+  - **Rule #4 (Max daily volume 5% = $50 per UTC day):** hard reject. Юзер хочет overtrade — не может. Overtrading это lose pattern → revenue → зачем блокировать?
+- Out of scope (НЕ трогаем):
+  - Rule #1 (Buy cap $0.85) — защита от вырожденных рынков, infrastructure инвариант
+  - Rule #5 (Market endDate), Rule #6 (User isBlocked) — security/infrastructure
+  - Rules #7-12 (end-of-day, end-of-challenge cron checks) — это правила challenge по итогам, не блокировки решений
+  - Position isolation guards (Phase 4.B) — защита аудит-трейла
+- Proposed action plan:
+  (a) Удалить hard reject из trade/buy для rules #2 и #3 (MinPositionError, AggregatePositionExceededError)
+  (b) Превратить rule #4 в end-of-day check (или удалить совсем — решить в discovery)
+  (c) Trade modal preview показывает рекомендации ("recommended position $20+"), не лимиты
+  (d) /api/user/positions всё ещё возвращает min/max suggested values (для UI display)
+  (e) Server pre-trade НЕ reject на основе суммы (только на основе #1, #5, #6, balance, position isolation)
+  (f) End-of-day cron логика расширяется если нужно (rule #4 переезжает туда)
+- Expected business impact:
+  - Pass rate downstream ~10-15% lower (более точная revenue capture)
+  - User UX мягче: меньше "your trade rejected" friction
+  - Юзер свободен совершать ошибки = бизнес-модель работает правильно
+- Scope:
+  - src/app/api/trade/buy/route.ts (remove MinPositionError, AggregatePositionExceededError, daily volume check)
+  - src/app/api/cron/end-of-day-check/route.ts (возможно добавить rule #4 как end-of-day fail)
+  - src/lib/engine/spreads.ts (cleanup helpers если не нужны)
+  - src/app/markets/[id]/page.tsx (TradeModal: change error UX, keep informational preview)
+  - docs/BUSINESS_RULES.md (rewrite rules #2, #3, #4 sections — переписать как философию vs hard limits)
+  - Tests (если есть)
+- Estimated: 1 day (Architect chat discovery + Claude Code implementation + smoke test)
+- Priority: P1 — это revenue impact, не косметика. Каждый день hard reject = lost revenue.
+- Related: docs/BUSINESS_RULES.md "Product philosophy" section; SESSION_LOG entries Phase 2.A, Phase 2.B
+- Note: Phase 5 (UI widgets) можно делать параллельно или после, они не конфликтуют
+
+
 ### TASK-DOC-1 Update BUSINESS_RULES.md rule #6 (MLL formula peak-based) ⚪ P3 (created Phase 3)
 - Source: Phase 3 (Step 1 helper review — formula mismatch BR vs engine inline)
 - Текущая запись в BR rule #6 (по памяти из chat): drawdown = `(initialBalance - currentBalance) / initialBalance × 100`
