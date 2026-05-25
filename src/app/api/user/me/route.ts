@@ -181,9 +181,6 @@ export async function GET(req: NextRequest) {
                     maxLossLimitPercent: helperData.maxLossLimitPercent,
                     currentDrawdownPercent: helperData.currentDrawdownPercent,
                     dailyDrawdownPercent: helperData.dailyDrawdownPercent,
-                    minPositionPercent: helperData.minPositionPercent,
-                    maxAggregatePositionPercent: helperData.maxAggregatePositionPercent,
-                    maxDailyVolumeUsd: helperData.maxDailyVolumeUsd,
                     plan:
                       helperData.plan ??
                       (activeChallenge.plan

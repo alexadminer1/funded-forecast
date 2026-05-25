@@ -5,15 +5,10 @@ import { prisma } from "@/lib/prisma";
 import { verifyToken } from "@/lib/auth";
 import { computeEquity } from "@/lib/equity";
 import { closeOpenPositionsForChallenge } from "@/lib/closeChallengePositions";
-import { BUY_PRICE_CAP, MAX_DAILY_VOLUME_PCT } from "@/lib/engine/constants";
+import { BUY_PRICE_CAP } from "@/lib/engine/constants";
 import {
   applyBuySpread,
   checkBuyCap,
-  checkMinPosition,
-  getMinPositionUsd,
-  checkAggregatePosition,
-  getMaxAggregatePositionUsd,
-  checkMaxDailyVolume,
 } from "@/lib/engine/spreads";
 
 const MAX_SLIPPAGE = 0.02;
@@ -57,35 +52,7 @@ class BuyCapExceededError extends Error {
   }
 }
 
-// Phase 2.A — pre-trade position size rejects (BUSINESS_RULES rules #2, #3)
-// Pure HTTP 400 errors. No side effects on Challenge.status.
-// DO NOT mimic DrawdownViolatedError persistence pattern for these.
-
-class MinPositionError extends Error {
-  cost: number;
-  minRequired: number;
-  constructor(cost: number, minRequired: number) {
-    super("MIN_POSITION_BELOW_LIMIT");
-    this.cost = cost;
-    this.minRequired = minRequired;
-  }
-}
-
-class AggregatePositionExceededError extends Error {
-  existingCost: number;
-  newCost: number;
-  totalAfter: number;
-  maxAllowed: number;
-  constructor(existingCost: number, newCost: number, totalAfter: number, maxAllowed: number) {
-    super("AGGREGATE_POSITION_EXCEEDED");
-    this.existingCost = existingCost;
-    this.newCost = newCost;
-    this.totalAfter = totalAfter;
-    this.maxAllowed = maxAllowed;
-  }
-}
-
-// Phase 2.B — pre-trade security + daily-volume rejects (rules #4, #5, #6).
+// Phase 2.B — pre-trade security rejects (rules #5, #6).
 // Pure HTTP rejects. No side effects on Challenge.status.
 
 class UserBlockedError extends Error {
@@ -103,21 +70,6 @@ class MarketEndedError extends Error {
     super("Market trading period has ended");
     this.name = "MarketEndedError";
     this.endDate = endDate;
-  }
-}
-
-class DailyVolumeExceededError extends Error {
-  currentDailyVolume: number;
-  newCost: number;
-  totalAfter: number;
-  maxAllowed: number;
-  constructor(currentDailyVolume: number, newCost: number, totalAfter: number, maxAllowed: number) {
-    super("Daily buy volume cap exceeded");
-    this.name = "DailyVolumeExceededError";
-    this.currentDailyVolume = currentDailyVolume;
-    this.newCost = newCost;
-    this.totalAfter = totalAfter;
-    this.maxAllowed = maxAllowed;
   }
 }
 
@@ -272,64 +224,14 @@ export async function POST(req: NextRequest) {
 
       if (currentBalance < cost) throw new Error("INSUFFICIENT_BALANCE");
 
-      // Phase 2.A: existingPosition fetched ONCE here, reused for:
-      //   1. aggregate position cap check (rule #3)
-      //   2. upsert decision below
-      // Do NOT add a second findFirst later.
       const existingPosition = await tx.position.findFirst({
         where: { userId, marketId, side, status: "open", challengeId },
       });
 
-      // Phase 2.A: position size rules per BUSINESS_RULES.md
-      // - Challenge mode: rule #2 (min 2% startBalance) + rule #3 (max aggregate 5% startBalance per market+side)
-      // - Sandbox mode: legacy per-trade cap vs currentBalance (unchanged)
-      if (activeChallenge) {
-        // Rule #2: min position
-        if (!checkMinPosition(cost, activeChallenge.startBalance)) {
-          throw new MinPositionError(
-            cost,
-            getMinPositionUsd(activeChallenge.startBalance),
-          );
-        }
-
-        // Rule #3: max aggregate position per (marketId, side)
-        const existingCost = existingPosition?.costBasis ?? 0;
-        if (!checkAggregatePosition(existingCost, cost, activeChallenge.startBalance)) {
-          const totalAfter = parseFloat((existingCost + cost).toFixed(2));
-          throw new AggregatePositionExceededError(
-            existingCost,
-            cost,
-            totalAfter,
-            getMaxAggregatePositionUsd(activeChallenge.startBalance),
-          );
-        }
-
-        // Phase 2.B — Rule #4: max daily buy volume cap (challenge mode only).
-        // Pre-insert read inside tx — aggregate sums BUY costs for this challenge,
-        // today (UTC), excluding the new trade.
-        const now = new Date();
-        const todayUtcStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
-
-        const dailyAgg = await tx.trade.aggregate({
-          _sum: { cost: true },
-          where: {
-            challengeId: activeChallenge.id,
-            action: "buy",
-            createdAt: { gte: todayUtcStart },
-          },
-        });
-        const currentDailyVolume = dailyAgg._sum.cost ?? 0;
-
-        if (!checkMaxDailyVolume(currentDailyVolume, cost, activeChallenge.startBalance)) {
-          const maxAllowed = activeChallenge.startBalance * (MAX_DAILY_VOLUME_PCT / 100);
-          throw new DailyVolumeExceededError(
-            Math.round(currentDailyVolume * 100) / 100,
-            Math.round(cost * 100) / 100,
-            Math.round((currentDailyVolume + cost) * 100) / 100,
-            Math.round(maxAllowed * 100) / 100,
-          );
-        }
-      } else {
+      // Sandbox mode: legacy per-trade cap vs currentBalance.
+      // Challenge mode has no pre-trade size/volume rejects — see BUSINESS_RULES.md
+      // Product philosophy section and rules #2/#3/#4 (DEPRECATED, TASK-PHILO-1).
+      if (!activeChallenge) {
         const maxCost = parseFloat((currentBalance * SANDBOX_MAX_POSITION_PCT / 100).toFixed(2));
         if (cost > maxCost) throw new Error("POSITION_SIZE_EXCEEDED");
       }
@@ -512,35 +414,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Phase 2.A — pre-trade position size rejects (rules #2, #3).
-    // Pure 400, no Challenge state changes.
-    if (error instanceof MinPositionError) {
-      return NextResponse.json(
-        {
-          error: `Minimum position is $${error.minRequired.toFixed(2)}. Your trade cost: $${error.cost.toFixed(2)}.`,
-          error_code: "MIN_POSITION_BELOW_LIMIT",
-          cost: error.cost,
-          minRequired: error.minRequired,
-        },
-        { status: 400 }
-      );
-    }
-
-    if (error instanceof AggregatePositionExceededError) {
-      return NextResponse.json(
-        {
-          error: `Position cap exceeded. Existing: $${error.existingCost.toFixed(2)}, new: $${error.newCost.toFixed(2)}, total: $${error.totalAfter.toFixed(2)}, max: $${error.maxAllowed.toFixed(2)}.`,
-          error_code: "AGGREGATE_POSITION_EXCEEDED",
-          existingCost: error.existingCost,
-          newCost: error.newCost,
-          totalAfter: error.totalAfter,
-          maxAllowed: error.maxAllowed,
-        },
-        { status: 400 }
-      );
-    }
-
-    // Phase 2.B — pure 400 rejects (rules #4, #5). No Challenge state changes.
+    // Phase 2.B — pure 400 reject (rule #5). No Challenge state changes.
     // UserBlockedError is handled in its own dedicated try/catch above (pre-tx),
     // so no handler is needed here for rule #6.
     if (error instanceof MarketEndedError) {
@@ -549,20 +423,6 @@ export async function POST(req: NextRequest) {
           error: error.message,
           error_code: "MARKET_ENDED",
           endDate: error.endDate.toISOString(),
-        },
-        { status: 400 }
-      );
-    }
-
-    if (error instanceof DailyVolumeExceededError) {
-      return NextResponse.json(
-        {
-          error: `Daily volume cap reached. Spent today: $${error.currentDailyVolume.toFixed(2)}, new trade: $${error.newCost.toFixed(2)}, total: $${error.totalAfter.toFixed(2)}, max: $${error.maxAllowed.toFixed(2)}.`,
-          error_code: "DAILY_VOLUME_EXCEEDED",
-          currentDailyVolume: error.currentDailyVolume,
-          newCost: error.newCost,
-          totalAfter: error.totalAfter,
-          maxAllowed: error.maxAllowed,
         },
         { status: 400 }
       );

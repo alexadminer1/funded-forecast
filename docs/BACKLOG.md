@@ -1002,7 +1002,58 @@ Acceptance:
 - Priority: P3 — открыть когда вернёмся к prod release cycle (P0.9 / Wave 6 boundary).
 - Related: SESSION_LOG.md → Session 2026-05-22 Gate 10 entry, tech-debt §3; commit ca3ebf8.
 
-### TASK-PHILO-1 Relax pre-trade hard rejects — align with "user must be able to fail" philosophy 🟡 P1 (created Session 21, 2026-05-24)
+### TECH-DEBT-13 Rejected trades visibility in History 🟡 P2 (created Session 21, 2026-05-25)
+- Source: PHILO-1 smoke test (Session 21).
+- Problem: Rejected trades не отображаются в History UI. Trade attempt который был отвергнут pre-trade check'ом (DLL, MLL, buy cap, market end, user blocked, insufficient balance) не записывается в `Trade` table и не виден юзеру.
+- Concrete example from PHILO-1 smoke test:
+  - test8 challenge зафейлен с violation "Daily drawdown 5.83%"
+  - Triggering trade: попытка buy 63 NO @ $49.47 cost
+  - В History: только 3 executed trades, P&L −$0.36
+  - Юзер не может связать violation reason с конкретным trade attempt
+- Impact:
+  - UX confusion при challenge fail через pre-trade rejects
+  - Особенно критично для DLL/MLL fails — юзер видит violation reason без trigger context
+  - Нет аудитной цепочки между триггером и фейлом
+- Desired behavior:
+  - Rejected trades логируются в History с пометкой `rejected` + `error_code` + краткое reason
+  - НЕ влияют на P&L расчёты, НЕ изменяют balance
+  - Только для аудита
+- Не связано с PHILO-1: это pre-existing behavior. PHILO-1 ничего в Trade table или History UI не менял.
+- Out of scope: PHILO-1, Phase 5 (UI widgets).
+- Estimated: TBD — нужен design (где хранить rejected attempts, схема, retention policy).
+- Priority: P2 — UX improvement, не блокер.
+
+### TECH-DEBT-14 DLL drawdown calculation mismatch with final P&L 🟠 P1 (created Session 21, 2026-05-25)
+- Source: PHILO-1 smoke test (Session 21).
+- Problem: DLL violation reason показывает число которое не сходится с фактическим P&L. Likely pre-trade simulation использует gross buy cost cumulative (включая hypothetical new trade), а не net realized + unrealized P&L.
+- Concrete example from PHILO-1 smoke test:
+  - Challenge: test8 Starter $1000
+  - Executed trades:
+    - Buy 22 YES @ $0.0950 → cost $2.09
+    - Buy 71 YES @ $0.0950 → cost $6.75
+    - Sell 93 YES @ $0.09 → revenue +$8.48
+  - Final P&L: −$0.36 (−0.04%)
+  - Attempted trade (rejected): Buy 63 NO @ $0.7852 effective → cost $49.47
+  - DLL violation reason: "Daily drawdown 5.83% exceeded limit 5%"
+- Reconstruction:
+  - Total cumulative buy cost (incl. hypothetical): $2.09 + $6.75 + $49.47 = $58.31
+  - $58.31 / $1000 = 5.83% точно
+- Hypothesis: DLL pre-trade simulation считает gross buy cost cumulative against startBalance, не учитывая realized profits от sells и не учитывая current cash/equity state. Это объясняет mismatch с Final P&L −0.04%.
+- Investigation branches:
+  - Real bug в DLL формуле → нужно править расчёт
+  - Intentional design ("worst case scenario") → нужно update documentation чтобы юзер понимал violation reason
+  - Edge case с pre-trade simulation (rejected trade включается в расчёт) → исключить hypothetical trade из расчёта если он rejected
+- Не связано с PHILO-1: DLL logic (rule #5) не была тронута. PHILO-1 discovery (Step A §5.2) подтвердил DrawdownViolatedError + MLL/DLL checks preserved.
+- Impact:
+  - Юзер видит challenge failed по drawdown, но Final P&L показывает −0.04% — теряет доверие к системе
+  - Если #1 (bug) — недостоверный enforcement
+  - Если #2 (design) — UX clarity issue
+- Out of scope: PHILO-1, Phase 5.
+- Estimated: TBD — нужно начать с code reading DLL/MLL расчёта в `trade/buy/route.ts` lines 396-470 area + raw SQL для `daily_pnl_aggregate` если используется.
+- Priority: P1 — может affect user trust и потенциально incorrect enforcement. Нужно investigated до prod release PHILO-1.
+
+### TASK-PHILO-1 Relax pre-trade hard rejects — align with "user must be able to fail" philosophy ✅ CLOSED 2026-05-24 (Session 21)
+- CLOSED 2026-05-24 — branch `feature/philo-1-relax-rejects`, 9 commits (2 B-DOCS + 5 B-CODE + 2 B-FINAL), build green, smoke test pending (Алексей)
 - Source: Session 21 discussion — Алексей флагнул что текущие 3 pre-trade rejects (rules #2, #3, #4) противоречат заявленной product philosophy "UI shows data, doesn't control behavior"
 - Reason: бизнес-модель FundedForecast основана на том что подавляющее большинство юзеров проигрывает (target pass rate 2-3%). Текущие 3 hard rejects блокируют классические fail patterns (small bets, all-in, overtrading) и тем самым снижают revenue
 - Affected rules:
@@ -1032,7 +1083,6 @@ Acceptance:
   - src/app/markets/[id]/page.tsx (TradeModal: change error UX, keep informational preview)
   - docs/BUSINESS_RULES.md (rewrite rules #2, #3, #4 sections — переписать как философию vs hard limits)
   - Tests (если есть)
-- Estimated: 1 day (Architect chat discovery + Claude Code implementation + smoke test)
 - Priority: P1 — это revenue impact, не косметика. Каждый день hard reject = lost revenue.
 - Related: docs/BUSINESS_RULES.md "Product philosophy" section; SESSION_LOG entries Phase 2.A, Phase 2.B
 - Note: Phase 5 (UI widgets) можно делать параллельно или после, они не конфликтуют

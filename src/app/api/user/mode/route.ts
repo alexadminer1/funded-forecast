@@ -102,9 +102,6 @@ export async function GET(req: NextRequest) {
       maxLossLimitPercent?: number;
       currentDrawdownPercent?: number;
       dailyDrawdownPercent?: number;
-      minPositionPercent?: number;
-      maxAggregatePositionPercent?: number;
-      maxDailyVolumeUsd?: number;
     } | null = null;
     if (activeChallenge) {
       const todayUtcDateStr = new Date().toISOString().slice(0, 10);
@@ -137,9 +134,6 @@ export async function GET(req: NextRequest) {
               maxLossLimitPercent: helperData.maxLossLimitPercent,
               currentDrawdownPercent: helperData.currentDrawdownPercent,
               dailyDrawdownPercent: helperData.dailyDrawdownPercent,
-              minPositionPercent: helperData.minPositionPercent,
-              maxAggregatePositionPercent: helperData.maxAggregatePositionPercent,
-              maxDailyVolumeUsd: helperData.maxDailyVolumeUsd,
             }
           : {}),
       };
