@@ -1053,7 +1053,7 @@ Acceptance:
 - Priority: P1 — может affect user trust и потенциально incorrect enforcement. Нужно investigated до prod release PHILO-1.
 - INVESTIGATED: 2026-05-25. Verdict: DLL is cash-only by design, not a bug. See docs/TECH_DEBT_14_INVESTIGATION.md. Follow-up: R1 docs update for BUSINESS_RULES.md rule #5 (separate phase).
 
-### TECH-DEBT-15 marketResolve.ts does not check DLL on resolved positions 🟡 P2 (proposed by Architect, Session 22, 2026-05-25)
+### TECH-DEBT-15 marketResolve.ts does not check DLL on resolved positions 🔵 CLOSED — intentional design (proposed by Architect, Session 22, 2026-05-25)
 - Source: TECH-DEBT-14 investigation, finding R4 (see docs/TECH_DEBT_14_INVESTIGATION.md §R4)
 - Problem: src/lib/marketResolve.ts:152-195 updates realizedBalance when market resolves (winner: shares × $1, loser: 0). Checks MLL inline at lines 163-178. Does NOT check DLL.
 - Implication: if market resolves at a loss large enough to trip DLL for current UTC day, the resolve event will not fail the challenge — only MLL breach will.
@@ -1065,6 +1065,7 @@ Acceptance:
 - Estimated: 1-2 hours discovery + 30 min implementation/docs
 - Priority: P2 — design decision, not critical bug.
 - Related: docs/TECH_DEBT_14_INVESTIGATION.md §R4
+- CLOSED: 2026-05-25. Product decision: DLL is intraday brake on active cash deployment by user. Resolve events are passive (user did not initiate). Penalizing passive events via DLL would be disproportionate. MLL covers cumulative loss including resolve-triggered losses. No code change required.
 
 ### TECH-DEBT-16 Auto-close trades not visually distinguished from user sells ⚪ P3 (proposed by Architect, Session 22, 2026-05-25)
 - Source: TECH-DEBT-14 investigation, finding R5 (see docs/TECH_DEBT_14_INVESTIGATION.md §R5)
