@@ -98,6 +98,8 @@ Pre-trade rejects на основе размера/частоты trade'ов —
 - Sell: cap НЕ применяется
 - Реакция: HTTP 400 + UI banner "Buy cap: price $X is at or above $0.85"
 
+Note: cap применяется к raw Polymarket price (до platform spread). Spread (0/2/4/7% по tier'у) добавляется поверх и НЕ участвует в cap check. Effective price (raw + spread) может технически превышать $0.85 для Pro/Elite tier'ов — это intentional design, spread = revenue платформы, не нарушение invariant'а.
+
 #### 2. Min position size (DEPRECATED — recommendation only)
 
 Recommended minimum trade size: 2% of startBalance ($20 for $1000 Starter, $100 for $5000 Pro, $300 for $15000 Elite).
