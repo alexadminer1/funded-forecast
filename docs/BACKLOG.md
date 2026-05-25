@@ -1023,7 +1023,7 @@ Acceptance:
 - Estimated: TBD — нужен design (где хранить rejected attempts, схема, retention policy).
 - Priority: P2 — UX improvement, не блокер.
 
-### TECH-DEBT-14 DLL drawdown calculation mismatch with final P&L 🟠 P1 (created Session 21, 2026-05-25)
+### TECH-DEBT-14 DLL drawdown calculation mismatch with final P&L 🔵 INVESTIGATED (created Session 21, 2026-05-25)
 - Source: PHILO-1 smoke test (Session 21).
 - Problem: DLL violation reason показывает число которое не сходится с фактическим P&L. Likely pre-trade simulation использует gross buy cost cumulative (включая hypothetical new trade), а не net realized + unrealized P&L.
 - Concrete example from PHILO-1 smoke test:
@@ -1051,6 +1051,33 @@ Acceptance:
 - Out of scope: PHILO-1, Phase 5.
 - Estimated: TBD — нужно начать с code reading DLL/MLL расчёта в `trade/buy/route.ts` lines 396-470 area + raw SQL для `daily_pnl_aggregate` если используется.
 - Priority: P1 — может affect user trust и потенциально incorrect enforcement. Нужно investigated до prod release PHILO-1.
+- INVESTIGATED: 2026-05-25. Verdict: DLL is cash-only by design, not a bug. See docs/TECH_DEBT_14_INVESTIGATION.md. Follow-up: R1 docs update for BUSINESS_RULES.md rule #5 (separate phase).
+
+### TECH-DEBT-15 marketResolve.ts does not check DLL on resolved positions 🟡 P2 (proposed by Architect, Session 22, 2026-05-25)
+- Source: TECH-DEBT-14 investigation, finding R4 (see docs/TECH_DEBT_14_INVESTIGATION.md §R4)
+- Problem: src/lib/marketResolve.ts:152-195 updates realizedBalance when market resolves (winner: shares × $1, loser: 0). Checks MLL inline at lines 163-178. Does NOT check DLL.
+- Implication: if market resolves at a loss large enough to trip DLL for current UTC day, the resolve event will not fail the challenge — only MLL breach will.
+- Question: is this intentional (resolve events are not "trades", shouldn't count toward intraday brakes) or coverage gap?
+- Action: separate discovery phase to decide:
+  (a) Add DLL check to marketResolve.ts — consistency with trade routes
+  (b) Document explicit decision in BUSINESS_RULES.md rule #5: "DLL evaluated on trade events only, not on market resolution"
+- Scope: src/lib/marketResolve.ts + docs/BUSINESS_RULES.md
+- Estimated: 1-2 hours discovery + 30 min implementation/docs
+- Priority: P2 — design decision, not critical bug.
+- Related: docs/TECH_DEBT_14_INVESTIGATION.md §R4
+
+### TECH-DEBT-16 Auto-close trades not visually distinguished from user sells ⚪ P3 (proposed by Architect, Session 22, 2026-05-25)
+- Source: TECH-DEBT-14 investigation, finding R5 (see docs/TECH_DEBT_14_INVESTIGATION.md §R5)
+- Problem: closeOpenPositionsForChallenge writes Trade rows with action='auto_close_finalize'. History view, failed-challenge email, and dashboard balance trajectory do not visually distinguish these from user sells.
+- User impact: trader perceives "final trade" as own sell, reconstructs event timeline incorrectly. Example from PHILO-1 smoke test: reporter described "I bought twice, sold once, then attempted a buy" — the "sold once" was actually auto_close_finalize after DLL fail.
+- Action: add visual label ("System auto-close after challenge failure") on rows with action='auto_close_finalize' in:
+  - Dashboard history table
+  - Failed-challenge email template
+  - Any other Trade list view
+- Scope: src/app/dashboard/page.tsx + src/lib/email-templates/challenge-failed.ts + any other UI consumers
+- Estimated: 2-3 hours
+- Priority: P3 — UX confusion, not functional issue.
+- Related: docs/TECH_DEBT_14_INVESTIGATION.md §R5
 
 ### TASK-PHILO-1 Relax pre-trade hard rejects — align with "user must be able to fail" philosophy ✅ CLOSED 2026-05-24 (Session 21)
 - CLOSED 2026-05-24 — branch `feature/philo-1-relax-rejects`, 9 commits (2 B-DOCS + 5 B-CODE + 2 B-FINAL), build green, smoke test pending (Алексей)

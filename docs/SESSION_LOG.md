@@ -9,6 +9,43 @@
 
 ---
 
+## Session 2026-05-25 — TECH-DEBT-14 investigation CLOSED (Session 22)
+
+### Summary
+PHILO-1 smoke test surfaced DLL violation reason mismatch with final P&L (5.83% violation vs −0.04% final loss for test8 challenge). TECH-DEBT-14 investigation classified the issue as intentional design + UX confusion, not a bug.
+
+### Investigation outcome
+- DLL formula is mathematically correct (single source, single-variable interpolation in violation reason).
+- Root cause: DLL is **cash-only by design** — realizedBalance tracks cash only, does not include open positions value. Asymmetric with MLL which is equity-aware.
+- Reproduction case (Challenge id=51 test8) verified through DB inspection: at moment of rejected $49.47 attempt, realizedBalance was $991.16 (post buy 1+2, pre auto-close). Formula correctly yielded 5.83%.
+- Auto-close after fail (catch handler, fresh tx) raises realizedBalance post-failure, creating perception of mismatch.
+
+### Findings
+1. DLL formula: `(dayStartBalance − newRealizedBalance) / dayStartBalance × 100`, executed correctly
+2. Algebraic identity (day with no sells): `DLL% = (sum of today's buy costs) / dayStart` — explains why reporter's "$58.31/$1000" intuition was numerically correct but conceptually misleading
+3. Side findings: marketResolve.ts has no DLL check (TECH-DEBT-15 proposed); auto_close_finalize not visually distinguished (TECH-DEBT-16 proposed)
+
+### Deliverable
+- `docs/TECH_DEBT_14_INVESTIGATION.md` (347 lines, merged via PR #19, commit 1ef582c)
+- Classification: (ii) Intentional design + (iii) UX confusion
+- 5 recommendations (R1–R5) for follow-up phases
+
+### Follow-up actions
+- R1 (P1): docs update for BUSINESS_RULES.md rule #5 — next small docs phase (15–30 min)
+- R2/R3 (P2): UX improvements (violation message + UI tooltip) — defer to Phase 5
+- R4 (TECH-DEBT-15): marketResolve DLL gap — added to BACKLOG
+- R5 (TECH-DEBT-16): auto-close UI labeling — added to BACKLOG
+- Prod SQL queries: ready-to-paste in §"Affected users assessment" of investigation report. Non-blocking for PHILO-1 release.
+
+### PHILO-1 prod release status
+NOT blocked by TECH-DEBT-14. DLL logic was not touched in PHILO-1. Investigation outcome is design clarification, not bug fix.
+
+### Commits
+- `1ef582c` — investigation report (PR #19)
+- `[next commit]` — BACKLOG + SESSION_LOG bookkeeping (this entry)
+
+---
+
 ## Session 2026-05-24 — TASK-PHILO-1 — Relax pre-trade hard rejects CLOSED
 
 ### Закрыто
