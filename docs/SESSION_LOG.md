@@ -70,6 +70,7 @@
 - B4 правка после reviewing brief: rules #2/#3/#4 переписаны как "DEPRECATED — recommendation only" вместо полного removal. Сохраняет recommended numeric values в BR для возможного re-enable в future business model shift.
 - `tmp/` scratch directory broke tsc после B-CODE-3. Resolved через tsconfig exclude vs deleting Алексей's scratch work.
 - PHASE_KIT.md v2 process improvement: original plan был B0→B5 (6 Claude Code invocations). Reorganized в 3 super-blocks (B-DOCS, B-CODE, B-FINAL) для меньше Алексея-в-loop. Lesson: Claude Code в bypass-mode сам разбивает internal substeps.
+- Smoke test (Session 21 main chat, 2026-05-25) выявил 2 pre-existing findings НЕ связанных с PHILO-1 changes: (1) rejected trades отсутствуют в History → UX audit gap при challenge fail через pre-trade reject; (2) DLL расчёт показывает gross buy cost cumulative (включая rejected hypothetical trade) вместо net P&L — challenge зафейлен с violation "5.83% daily drawdown" при Final P&L −0.04%. Обе зафиксированы в BACKLOG как TECH-DEBT-13 (Rejected trades visibility) и TECH-DEBT-14 (DLL calculation mismatch). PHILO-1 main scope verified PASS — обе findings pre-existing, не блокеры phase.
 
 ### Production release decision (отложено в основной чат)
 Алексей решает в Session 21 main chat:
