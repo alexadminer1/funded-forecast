@@ -142,6 +142,7 @@ History: enforcement existed in Phase 2.B (Session 17, commits 511b9c6..830a88d,
 - **Contrast with MLL (rule #6):** MLL uses equity (`realizedBalance + open-positions value`); DLL uses `realizedBalance` only.
 - **Why this asymmetry:** DLL is an intraday brake on fresh cash deployment, not a measure of equity loss. MLL covers equity loss across the lifetime of the challenge.
 - **Worked example:** Starter $1000, DLL 5%. Trader buys $50 worth of YES shares at the start of day 1. `realizedBalance` drops from $1000 to $950 → daily drawdown 5.0% → DLL trips. Even if the YES position is still worth approximately $50, the rule has fired. To deploy more capital today the trader must first sell.
+- **DLL evaluated on trade events only.** Buy and sell trigger DLL re-evaluation. Market resolve events (passive, user-not-initiated) do not trigger DLL check — they affect realizedBalance but not the daily drawdown ratio for fail purposes. MLL (rule #6) still covers cumulative losses including those triggered by resolves.
 - **Reaction:** `Challenge.status='failed'`, `drawdownViolated=true`, `violationReason="Daily drawdown X% exceeded limit Y%"`. Open positions are auto-closed at current market prices in the same failure event; the proceeds raise `realizedBalance` post-failure but do not affect the fail decision.
 
 #### 6. MLL breach (trailing)
