@@ -55,14 +55,18 @@ Widget может показать "DLL: 85% (yellow zone)" — но Buy button 
 For Starter $1000 (DLL=5%): green up to 3.0%, yellow 3.0-4.5%, red 4.5%+
 
 #### Widget 2 — MLL buffer
-**API fields:** `currentDrawdownPercent` (current trailing drawdown), `maxLossLimitPercent` (limit), `peakBalance`, `realizedBalance` (для computation если нужно)
-**Display:** `$120 buffer` (large), caption `"to MLL limit (X%)"` где X = `maxLossLimitPercent`
-**Computation:** buffer = `(peakBalance - mllAmount) - realizedBalance` если ещё в plus, иначе показать "0" с red color
-**Color zones:**
-- buffer > 50% of mllAmount → green
-- 50-20% → yellow
-- <20% → red
-- ≤0 → red, show "0" (failed)
+**API field:** `mllBufferAmount` (computed server-side, see MLL formula reference section)
+**Display:** `$120` (large), caption `"buffer to MLL"`
+**Color zones (buffer ratio to maxLossAmount):**
+- buffer / maxLossAmount > 0.5 → green
+- 0.2-0.5 → yellow
+- <0.2 → red
+- 0 → red, show "$0" (failed or about to)
+
+For Starter $1000 (MLL 10%, maxLossAmount=$100):
+- buffer > $50 → green
+- $20-$50 → yellow
+- <$20 → red
 
 #### Widget 3 — Days remaining
 **API field:** `daysRemaining`
@@ -76,27 +80,28 @@ For Starter $1000 (DLL=5%): green up to 3.0%, yellow 3.0-4.5%, red 4.5%+
 **API field:** `resolvedPositionsCount`
 **Target:** 35 (constant, hard-coded reference)
 **Display:** `12 / 35` (large), caption `"resolved positions"`
-**Color zones:** based on pace (assume linear: position N expected by day ceil(N * 10 / 35))
-- on/ahead pace → green
-- behind by 1-3 → yellow
-- behind by 4+ → red
+**Color zones (fixed thresholds, target 35):**
+- 0-10 resolved → red
+- 11-24 → yellow
+- 25+ → green
 
 #### Widget 5 — Unique events
-**API field:** `uniqueEventsCount` (if available — verify) or computed client-side from positions
+**API field:** `uniqueEventsCount` (Phase 5 helper extension, strict distinct on polymarketEventId, null excluded)
 **Target:** 30
 **Display:** `8 / 30` (large), caption `"unique events"`
-**Color zones:** same pace logic as resolved
-
-**Architect verify:** is `uniqueEventsCount` уже в response? If not — either add to API (out of scope for Phase 5) or compute client-side from `/api/user/positions`.
+**Color zones (fixed thresholds, target 30):**
+- 0-9 unique → red
+- 10-20 → yellow
+- 21+ → green
 
 #### Widget 6 — Consistency biggest day %
 **API field:** `consistency` (доля 0-1, e.g., 0.18 = 18%)
-**Display:** `18%` (large), caption `"biggest winning day (limit 25%)"`
-**Color zones:**
+**API field:** `startBalance`, `realizedBalance` (for "no profit" detection)
+**Display:** if `realizedBalance <= startBalance` → "—", caption "no profit yet". Otherwise: `(consistency × 100).toFixed(0) + "%"` (large), caption `"biggest winning day (limit 25%)"`
+**Color zones (only when profit > 0):**
 - 0-15% → green
 - 15-22% → yellow
 - >22% → red
-- Note: only relevant if user has profit; if total profit ≤ 0, show "—" or "n/a"
 
 ## Sandbox mode
 В sandbox active challenge нет. Виджеты **не отображаются совсем** — на dashboard просто нет этого блока. Layout adapts gracefully (other dashboard content remains).
@@ -104,9 +109,15 @@ For Starter $1000 (DLL=5%): green up to 3.0%, yellow 3.0-4.5%, red 4.5%+
 ## Что входит
 
 ### File modifications
-- `src/app/dashboard/page.tsx` — add widgets section
-- Possibly new components in `src/components/widgets/` if extraction makes sense (Architect decides)
-- Tailwind classes для color zones (если нужны custom)
+- `src/lib/user/active-challenge.ts` — extend ActiveChallenge interface with 5 new fields:
+  - `startBalance: number`
+  - `mllAmount: number` (= startBalance × maxLossLimitPercent / 100)
+  - `mllBufferAmount: number` (= max(0, realizedBalance - (peakBalance - mllAmount)))
+  - `resolvedPositionsCount: number` (Prisma count where status="resolved")
+  - `uniqueEventsCount: number` (distinct polymarketEventId via JS Set, "resolved" status, strict — null eventIds excluded)
+- `src/app/dashboard/page.tsx` — REMOVE ChallengeCard function entirely, replace with `<ChallengeWidgets challenge={user.activeChallenge} />`. Switch from modeData.challenge to user.activeChallenge as data source. Top stats row, PastChallengesSection, SandboxSecondaryCard, SandboxBanner, PostChallengeBanner remain unchanged.
+- `src/components/widgets/MetricWidget.tsx` (new) — generic compact metric tile (large value + caption + colorZone prop)
+- `src/components/widgets/ChallengeWidgets.tsx` (new) — grid 3+3 layout, accepts ActiveChallenge, renders 6 MetricWidget instances
 
 ### Color tokens
 Использовать существующие Tailwind colors:
@@ -122,6 +133,7 @@ Bottom row: same.
 
 ## Что НЕ входит
 
+- ChallengeCard component is REMOVED entirely (not modified — replaced by ChallengeWidgets layout)
 - Changes to `/api/user/me` или other endpoints (API data already complete from Phase 3)
 - Changes to TradeModal (preview rows уже сделаны в PHILO-1)
 - Pricing/FAQ pages (Phase 6)
@@ -130,6 +142,20 @@ Bottom row: same.
 - Schema changes
 - Failed challenge modal/banner changes (orthogonal)
 - Animations / micro-interactions (можно потом если хочется polish)
+
+## MLL formula reference
+
+Verified in Phase 5 discovery against engine code (src/app/api/trade/buy/route.ts, sell/route.ts, src/lib/marketResolve.ts):
+
+```
+maxLossAmount = startBalance × maxTotalDdPct / 100  (initial-based dollars)
+mllFailPoint  = newPeakBalance - maxLossAmount      (trailing point)
+fail when:    realizedBalance < mllFailPoint
+```
+
+This is a HYBRID formula — fixed-dollar drawdown anchored to startBalance, applied as trailing offset from peakBalance. Not pure peak-based as the comment in active-challenge.ts (line ~32-34) suggests; that comment update is tracked separately as TASK-DOC-2.
+
+The widget 2 server-side computation uses this verified formula.
 
 ## Workflow (PHASE_KIT v3)
 
