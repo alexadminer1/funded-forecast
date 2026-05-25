@@ -132,11 +132,17 @@ History: enforcement existed in Phase 2.B (Session 17, commits 511b9c6..830a88d,
 
 ### Single-trade реактивные (fail challenge on breach)
 
-#### 5. DLL breach (fixed)
-- Правило: `(dayStartBalance - realizedBalance) > DLL% × startBalance` → instant fail
-- dayStartBalance сбрасывается lazy в начале каждого UTC дня
-- Активен только в challenge phase (не в sandbox)
-- Реакция: Challenge.status='failed', violationReason="Daily drawdown X% exceeded limit Y%"
+#### 5. DLL breach (daily, cash-only)
+
+- **Rule:** `(dayStartBalance − newRealizedBalance) / dayStartBalance × 100 >= dailyLossPct` → instant fail
+- Evaluated post-trade inside the trade transaction. `newRealizedBalance = realizedBalance − cost` (buy) or `+ proceeds` (sell). If the check breaches, the transaction rolls back; the failure is then committed in a separate transaction along with auto-close of any open positions.
+- `dayStartBalance` is a snapshot of `realizedBalance` taken at the first trade attempt of each UTC day (lazy reset). It does not move during the day.
+- Active only in challenge phase (not in sandbox).
+- **Cash-only by design.** `realizedBalance` tracks cash only — it does **not** include the market value of open positions. A buy of $X drops `realizedBalance` by $X immediately, contributing $X of drawdown for the day, even if the inventory is currently worth $X. Selling raises `realizedBalance` by the sale proceeds and pulls drawdown back down.
+- **Contrast with MLL (rule #6):** MLL uses equity (`realizedBalance + open-positions value`); DLL uses `realizedBalance` only.
+- **Why this asymmetry:** DLL is an intraday brake on fresh cash deployment, not a measure of equity loss. MLL covers equity loss across the lifetime of the challenge.
+- **Worked example:** Starter $1000, DLL 5%. Trader buys $50 worth of YES shares at the start of day 1. `realizedBalance` drops from $1000 to $950 → daily drawdown 5.0% → DLL trips. Even if the YES position is still worth approximately $50, the rule has fired. To deploy more capital today the trader must first sell.
+- **Reaction:** `Challenge.status='failed'`, `drawdownViolated=true`, `violationReason="Daily drawdown X% exceeded limit Y%"`. Open positions are auto-closed at current market prices in the same failure event; the proceeds raise `realizedBalance` post-failure but do not affect the fail decision.
 
 #### 6. MLL breach (trailing)
 - Правило: `realizedBalance < peakBalance - MLL$` → instant fail
