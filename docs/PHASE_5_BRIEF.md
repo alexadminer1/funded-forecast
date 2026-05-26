@@ -115,9 +115,11 @@ For Starter $1000 (MLL 10%, maxLossAmount=$100):
   - `mllBufferAmount: number` (= max(0, realizedBalance - (peakBalance - mllAmount)))
   - `resolvedPositionsCount: number` (Prisma count where status="resolved")
   - `uniqueEventsCount: number` (distinct polymarketEventId via JS Set, "resolved" status, strict — null eventIds excluded)
+- `src/app/api/user/me/route.ts` — forward new helper fields in response composition (currentBalance, profitTarget, profitPercent, mllAmount, mllBufferAmount, resolvedPositionsCount, uniqueEventsCount). Cherry-pick block needs ~7 new field additions; existing Phase-3 overlay pattern is followed.
+- `src/lib/types.ts` — extend User.activeChallenge shape to match the expanded ActiveChallenge. New fields added as REQUIRED. Existing Phase-3 overlay fields may remain optional for backward compat with cached responses.
 - `src/app/dashboard/page.tsx` — REMOVE ChallengeCard function entirely, replace with `<ChallengeWidgets challenge={user.activeChallenge} />`. Switch from modeData.challenge to user.activeChallenge as data source. Top stats row, PastChallengesSection, SandboxSecondaryCard, SandboxBanner, PostChallengeBanner remain unchanged.
 - `src/components/widgets/MetricWidget.tsx` (new) — generic compact metric tile (large value + caption + colorZone prop)
-- `src/components/widgets/ChallengeWidgets.tsx` (new) — grid 3+3 layout, accepts ActiveChallenge, renders 6 MetricWidget instances
+- `src/components/widgets/ChallengeWidgets.tsx` (new) — grid 3+3 layout, accepts ActiveChallenge, renders 6 MetricWidget instances. Use defensive `?? 0` defaults for numerics (protects against stale cached responses).
 
 ### Color tokens
 Использовать существующие Tailwind colors:
@@ -134,7 +136,9 @@ Bottom row: same.
 ## Что НЕ входит
 
 - ChallengeCard component is REMOVED entirely (not modified — replaced by ChallengeWidgets layout)
-- Changes to `/api/user/me` или other endpoints (API data already complete from Phase 3)
+- Schema changes (Position/Market models unchanged)
+- API endpoint changes for `/api/user/mode` (only `/api/user/me` touched — cherry-pick block extended to forward new helper fields)
+- New API endpoints
 - Changes to TradeModal (preview rows уже сделаны в PHILO-1)
 - Pricing/FAQ pages (Phase 6)
 - Email notifications (Phase 7)
@@ -156,6 +160,10 @@ fail when:    realizedBalance < mllFailPoint
 This is a HYBRID formula — fixed-dollar drawdown anchored to startBalance, applied as trailing offset from peakBalance. Not pure peak-based as the comment in active-challenge.ts (line ~32-34) suggests; that comment update is tracked separately as TASK-DOC-2.
 
 The widget 2 server-side computation uses this verified formula.
+
+### Discovery note — Phase 3 cherry-pick gap
+
+Phase 3 extended buildActiveChallenge helper to compute the full ActiveChallenge type, but /api/user/me/route.ts cherry-picks only a subset of fields into the client response. Phase 5 closes that gap by extending both the route's forward list and the User.activeChallenge type in src/lib/types.ts. This is not a retroactive fix to Phase 3 — it's Phase 5 making the full helper contract reach the client where widgets need it.
 
 ## Workflow (PHASE_KIT v3)
 
