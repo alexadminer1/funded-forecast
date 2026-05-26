@@ -34,7 +34,33 @@ export async function GET(req: NextRequest) {
     orderBy: { requestedAt: "desc" },
     select: { id: true, amount: true, netAmount: true, status: true, requestedAt: true, processedAt: true, paidAt: true, walletAddress: true, walletNetwork: true, txHash: true, currency: true, rejectionReason: true, baseAmountCents: true, finalAmountCents: true },
   });
-  return NextResponse.json({ success: true, requests });
+
+  // Per-passed-challenge withdrawal summaries.
+  // Withdrawn = payouts in any non-rejected state (rejected releases the funds).
+  const passedChallenges = await prisma.challenge.findMany({
+    where: { userId, status: "passed" },
+    select: { id: true, startBalance: true, realizedBalance: true, profitSharePct: true },
+  });
+  const committedPayouts = await prisma.payoutRequest.findMany({
+    where: { userId, status: { in: ["pending", "approved", "pending_verification", "paid"] } },
+    select: { challengeId: true, netAmount: true },
+  });
+  const withdrawnByChallenge = new Map<number, number>();
+  for (const p of committedPayouts) {
+    withdrawnByChallenge.set(p.challengeId, (withdrawnByChallenge.get(p.challengeId) ?? 0) + p.netAmount);
+  }
+  const summaries = passedChallenges
+    .map((c) => {
+      const totalProfit = round2(c.realizedBalance - c.startBalance);
+      const share = c.profitSharePct ?? 80;
+      const userShare = round2(totalProfit * share / 100);
+      const alreadyWithdrawn = round2(withdrawnByChallenge.get(c.id) ?? 0);
+      const availableNow = round2(Math.max(0, userShare - alreadyWithdrawn));
+      return { challengeId: c.id, profitSharePct: share, totalProfit, userShare, alreadyWithdrawn, availableNow };
+    })
+    .sort((a, b) => b.challengeId - a.challengeId);
+
+  return NextResponse.json({ success: true, requests, summaries });
 }
 
 export async function POST(req: NextRequest) {
