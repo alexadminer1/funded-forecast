@@ -9,6 +9,70 @@
 
 ---
 
+## Session 2026-05-26 — Phase 5: Dashboard widgets for challenge data (Session 23)
+
+Status: CLOSED — implemented + smoke-tested + verified on dev
+
+### Scope delivered
+- Extended `buildActiveChallenge` helper with 5 new fields:
+  `startBalance`, `mllAmount`, `mllBufferAmount`, `resolvedPositionsCount`,
+  `uniqueEventsCount`. MLL formula uses verified engine logic (hybrid:
+  initial-dollar drawdown anchored to startBalance, trailed from peakBalance).
+- New components: `src/components/widgets/MetricWidget.tsx` (generic tile)
+  and `src/components/widgets/ChallengeWidgets.tsx` (3+3 grid + section
+  header "<Plan> Challenge · ACTIVE · N days left").
+- Dashboard rewire: removed `ChallengeCard` from `dashboard/page.tsx`,
+  swapped to `<ChallengeWidgets challenge={user.activeChallenge} />`.
+- Phase 3 cherry-pick gap closed: `/api/user/me/route.ts` and
+  `src/lib/types.ts` extended to forward and type 7 new fields
+  (currentBalance, profitTarget, profitPercent + the 5 Phase-5 fields,
+  minus startBalance which was already forwarded). Defensive `?? 0`
+  in widgets for stale-cache safety.
+
+### Commits in develop
+- `40505c0` — Phase 5 main: widgets + helper + API/type plumbing
+- `fc25832` — Phase 5 hotfix: section header for widgets
+- `838a94f` — Brief correction (Phase 3 cherry-pick gap)
+- `ce02819` — Brief discovery updates (MLL formula + threshold fixes)
+- `107687d` — Brief initial
+
+### Smoke test results (dev.tradepredictions.online)
+- Active challenge (alexadminer with Pro tier $5000):
+  * 6 widgets render correctly in 3+3 grid under top stats row
+  * Header "Pro Challenge · ACTIVE · 10 days left" displays correctly
+  * Math verified across all widgets after 4 position buys:
+    - Daily P&L 3.9% red (97.5% of 4% DLL limit) — math: 195.34/5000
+    - MLL buffer $205 green (51% of $400 maxLoss) — math: 4804.66 - 4600
+    - Days remaining 10 green
+    - Resolved 0/35 red, Unique events 0/30 red (fixed threshold per brief)
+    - Consistency "—" + "no profit yet" (currentBalance ≤ startBalance)
+- Sandbox/post-challenge state: widgets correctly NOT rendered
+- Mobile responsive (375px): widgets stack vertical, no overflow
+- Defensive `?? 0` defaults verified — no runtime crashes
+
+### Out of scope (verified separately)
+- PHILO-1 (Session 21) deprecation of rules #2/#3/#4 confirmed in
+  effect: 4 positions ranging $10-$82 cost basis successfully bought
+  without hard reject. This is intentional product design — user must
+  be able to fail freely.
+
+### Tech-debt flagged for BACKLOG
+- TECH-DEBT-17: `realizedBalance` + `currentBalance` dual-forwarding in
+  /api/user/me response (Option 1 from Step 2 decision — additive,
+  zero-breakage). Consolidation tracked separately.
+- TASK-DOC-2: Comment in `src/lib/user/active-challenge.ts` lines
+  32-34 says "Peak-based drawdown" but engine code is hybrid
+  (initial-dollar trailed from peak). Update comment.
+- UI-BUG-1: "Portfolio Value" in top stats row uses `.toFixed(2)`
+  without `.toLocaleString` — shows "$5000.00" instead of "$5,000.00".
+  Existing bug, not Phase 5 scope.
+
+### Open decision
+Phase 5 closed. Next phase per docs/PHASE_5_BRIEF.md "Decision pending":
+A (Phase 6 Pricing/FAQ) / B (Phase 7 Emails) / C (mid-prod release) / D (rest).
+
+---
+
 ## Session 2026-05-25 — TECH-DEBT-14 investigation CLOSED (Session 22)
 
 ### Summary

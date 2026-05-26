@@ -1162,3 +1162,46 @@ Acceptance:
 - Estimated: 30 минут
 - Не блокер: cosmetic. Local compute работает корректно.
 - Priority: P3.
+
+### Phase 5 — Dashboard widgets for challenge data ✓ CLOSED (Session 23, 2026-05-26)
+- Scope: 6-widget challenge dashboard grid (3+3) + section header, helper
+  extension (5 new ActiveChallenge fields), /api/user/me + types plumbing
+  (Phase 3 cherry-pick gap closed), ChallengeCard removed from dashboard.
+- Develop commits: `40505c0` (main: widgets + helper + API/type plumbing)
+  + `fc25832` (hotfix: section header). Brief: `838a94f`, `ce02819`, `107687d`.
+- Smoke-tested + 4-position buy math verified on dev.tradepredictions.online
+  (Pro tier $5000). Sandbox state: widgets correctly not rendered. Full record:
+  SESSION_LOG 2026-05-26 (Session 23).
+- Spawned tech-debt: TECH-DEBT-17, TASK-DOC-2, UI-BUG-1 (below).
+
+### TECH-DEBT-17 realizedBalance / currentBalance dual-forwarding in /api/user/me ⚪ P3 (created Phase 5, Session 23, 2026-05-26)
+- Source: Phase 5 Step 2 decision (Option 1 — additive resolution).
+- `/api/user/me` now forwards BOTH `realizedBalance` (legacy) and `currentBalance`
+  (new canonical name for widgets), carrying the same value. Additive, zero-breakage.
+- Consolidate to a single canonical field after all consumers migrated.
+- Consumers of `realizedBalance` today: src/app/account/page.tsx (profit progress +
+  drawdown calc), src/app/api/user/me/route.ts:96 (header balance fallback).
+- Files: src/app/api/user/me/route.ts, src/lib/types.ts.
+- Не блокер: cosmetic API redundancy, no runtime impact.
+- Priority: P3.
+
+### TASK-DOC-2 Update comment in active-challenge.ts (drawdown is hybrid, not peak-based) ⚪ P3 (created Phase 5, Session 23, 2026-05-26)
+- Source: Phase 5 Step 1 discovery (formula verified against engine code).
+- Comment in `src/lib/user/active-challenge.ts` lines ~32-34 says "Peak-based
+  drawdown (matches engine MLL logic)". Actual engine formula is HYBRID:
+  initial-dollar drawdown (`startBalance × maxTotalDdPct / 100`) trailed from
+  `peakBalance`. Verified against trade/buy, trade/sell, marketResolve routes.
+- Action: update the comment to describe the hybrid formula accurately.
+- Scope: docs comment only, ~3 lines. Engine behaviour unchanged.
+- Не блокер: docs accuracy. Distinct from TASK-DOC-1 (BUSINESS_RULES.md rule #6).
+- Priority: P3.
+
+### UI-BUG-1 Portfolio Value missing locale formatting in dashboard top stats ⚪ P3 (created Phase 5, Session 23, 2026-05-26)
+- Source: Phase 5 smoke test observation (existing bug, not Phase 5 scope).
+- `src/app/dashboard/page.tsx` top stats row "Portfolio Value" uses `.toFixed(2)`
+  without locale grouping — shows "$5000.00" instead of "$5,000.00". Inconsistent
+  with "Available Balance" which uses `.toLocaleString("en-US", { minimumFractionDigits: 2 })`.
+- Action: switch Portfolio Value to the same `.toLocaleString` formatting.
+- Scope: 1 line in dashboard/page.tsx.
+- Не блокер: cosmetic display inconsistency.
+- Priority: P3.
