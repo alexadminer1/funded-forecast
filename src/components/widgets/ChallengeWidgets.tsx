@@ -19,6 +19,7 @@ interface WidgetChallenge {
   mllBufferAmount?: number;
   resolvedPositionsCount?: number;
   uniqueEventsCount?: number;
+  plan?: { id?: number; name?: string; price?: number } | null;
 }
 
 const RESOLVED_TARGET = 35;
@@ -84,12 +85,61 @@ export function ChallengeWidgets({ challenge: c }: ChallengeWidgetsProps) {
   const currentBalance    = c.currentBalance ?? 0;
   const startBalance      = c.startBalance ?? 0;
   const consistencyRatio  = c.consistency ?? 0;
+  const planName          = c.plan?.name ?? "Active";
 
   const hasProfit = currentBalance > startBalance && startBalance > 0;
   const consistencyPctDisplay = consistencyRatio * 100;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <div>
+      {/* Section header — matches "Past Challenges" / "Open Positions" pattern */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          marginBottom: 14,
+          flexWrap: "wrap",
+        }}
+      >
+        <h2
+          style={{
+            fontSize: 16,
+            fontWeight: 700,
+            letterSpacing: "-0.02em",
+            color: "var(--text-primary)",
+            margin: 0,
+          }}
+        >
+          {planName} Challenge
+        </h2>
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: "0.07em",
+            color: "#22C55E",
+            background: "rgba(34,197,94,0.1)",
+            border: "1px solid rgba(34,197,94,0.25)",
+            borderRadius: 4,
+            padding: "3px 9px",
+          }}
+        >
+          ACTIVE
+        </span>
+        <span
+          style={{
+            fontSize: 12,
+            color: "var(--text-muted)",
+            fontWeight: 500,
+          }}
+        >
+          · {daysRemaining} {daysRemaining === 1 ? "day" : "days"} left
+        </span>
+      </div>
+
+      {/* Widgets grid (existing — unchanged) */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Top row — 3 large widgets */}
       <div
         style={{
@@ -154,6 +204,7 @@ export function ChallengeWidgets({ challenge: c }: ChallengeWidgetsProps) {
           zone={hasProfit ? consistencyZone(consistencyPctDisplay) : "neutral"}
           size="small"
         />
+      </div>
       </div>
     </div>
   );
