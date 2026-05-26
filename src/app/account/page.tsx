@@ -43,6 +43,11 @@ export default function AccountPage() {
       const normalizedNet = rawNet.toUpperCase().replace(/^USDC\s+/i, "").trim() || "ERC20";
       const validNet = ["ERC20", "POLYGON"].includes(normalizedNet) ? normalizedNet : "ERC20";
       setForm({ username: p.user.username ?? "", firstName: p.user.firstName ?? "", lastName: p.user.lastName ?? "", walletAddress: p.user.walletAddress ?? "", walletNetwork: validNet });
+      // Pre-fill the payout form's wallet/network from the saved profile so the
+      // user doesn't re-type them. Only when a wallet is saved; never blanks out.
+      if (p.user.walletAddress) {
+        setPayoutForm((prev) => ({ ...prev, walletAddress: p.user.walletAddress, walletNetwork: validNet }));
+      }
     }
     if (s.success) {
       setStats(s.stats);
@@ -93,7 +98,7 @@ export default function AccountPage() {
     });
     setPayoutMsg(res.success ? "Payout requested successfully" : res.error ?? "Error");
     if (res.success) {
-      setPayoutForm({ challengeId: "", amount: "", walletAddress: "", walletNetwork: "ERC20" });
+      setPayoutForm((prev) => ({ ...prev, challengeId: "", amount: "" }));
       load();
     }
   }
