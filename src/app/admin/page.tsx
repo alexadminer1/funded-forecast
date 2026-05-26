@@ -1362,6 +1362,7 @@ function PayoutsSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestIn
   const [editing, setEditing] = useState<number | null>(null);
   const [txHash, setTxHash] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
+  const [copiedWalletId, setCopiedWalletId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     const data = await apiFetch(`/api/admin/payouts?status=${filter}`);
@@ -1446,7 +1447,21 @@ function PayoutsSection({ apiFetch }: { apiFetch: (url: string, opts?: RequestIn
                   <span>Base: <span style={{ color: "#22C55E", fontWeight: 700 }}>${item.baseAmountCents != null ? (item.baseAmountCents / 100).toFixed(2) : item.amount}</span></span>
                   <span>Final: <span style={{ color: "#F1F5F9", fontWeight: 700 }}>${item.finalAmountCents != null ? (item.finalAmountCents / 100).toFixed(2) : item.netAmount}</span></span>
                   <span>Network: <span style={{ color: "#94A3B8" }}>{item.walletNetwork}</span></span>
-                  <span>Wallet: <span style={{ color: "#94A3B8", fontFamily: "monospace" }}>{item.walletAddress?.slice(0, 12)}...</span></span>
+                  <span>Wallet: {item.walletAddress ? (
+                    <>
+                      <span style={{ color: "#94A3B8", fontFamily: "monospace" }}>{item.walletAddress.slice(0, 6)}...{item.walletAddress.slice(-4)}</span>
+                      <button
+                        onClick={async () => {
+                          await navigator.clipboard.writeText(item.walletAddress);
+                          setCopiedWalletId(item.id);
+                          setTimeout(() => setCopiedWalletId(null), 1500);
+                        }}
+                        style={{ marginLeft: 8, padding: "2px 8px", fontSize: 11, background: "transparent", border: "1px solid #334155", color: "#94A3B8", borderRadius: 4, cursor: "pointer" }}
+                      >
+                        {copiedWalletId === item.id ? "Copied!" : "Copy"}
+                      </button>
+                    </>
+                  ) : <span style={{ color: "#94A3B8" }}>—</span>}</span>
                   <span>Requested: {new Date(item.requestedAt).toLocaleDateString()}</span>
                 </div>
                 {item.txHash && <div style={{ fontSize: 11, color: "#22C55E", marginTop: 4, fontFamily: "monospace" }}>TX: {item.txHash}</div>}

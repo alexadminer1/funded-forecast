@@ -25,6 +25,7 @@ export default function AccountPage() {
 
   const [activeChallenge, setActiveChallenge] = useState<any>(null);
   const [payouts, setPayouts] = useState<any[]>([]);
+  const [summaries, setSummaries] = useState<any[]>([]);
   const [passedChallenges, setPassedChallenges] = useState<any[]>([]);
   const [payoutForm, setPayoutForm] = useState({ challengeId: "", amount: "", walletAddress: "", walletNetwork: "ERC20" });
   const [payoutMsg, setPayoutMsg] = useState("");
@@ -51,7 +52,10 @@ export default function AccountPage() {
       setActiveChallenge(active ?? null);
     }
     const po = await apiFetch<any>("/api/user/payout");
-    if (po.success) setPayouts(po.requests);
+    if (po.success) {
+      setPayouts(po.requests);
+      setSummaries(po.summaries ?? []);
+    }
     setLoading(false);
   }, [router]);
 
@@ -93,6 +97,10 @@ export default function AccountPage() {
       load();
     }
   }
+
+  const selectedSummary = payoutForm.challengeId
+    ? summaries.find((s) => s.challengeId === parseInt(payoutForm.challengeId))
+    : null;
 
   if (loading) return <div style={{ minHeight: "100vh", background: "#080c14", display: "flex", alignItems: "center", justifyContent: "center", color: "#475569" }}>Loading...</div>;
 
@@ -310,9 +318,47 @@ export default function AccountPage() {
                   ))}
                 </select>
               </div>
+              {selectedSummary && (
+                <div style={{ marginBottom: 16, padding: 14, background: "rgba(34,197,94,0.04)", border: "1px solid rgba(34,197,94,0.12)", borderRadius: 8 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#22C55E", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>Available to withdraw</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ color: "#94A3B8" }}>Challenge profit</span>
+                      <span style={{ color: "#F1F5F9", fontFamily: "monospace" }}>+${selectedSummary.totalProfit.toFixed(2)}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ color: "#94A3B8" }}>Your profit share ({selectedSummary.profitSharePct}%)</span>
+                      <span style={{ color: "#F1F5F9", fontFamily: "monospace" }}>${selectedSummary.userShare.toFixed(2)}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ color: "#94A3B8" }}>Already requested / paid</span>
+                      <span style={{ color: "#F1F5F9", fontFamily: "monospace" }}>−${selectedSummary.alreadyWithdrawn.toFixed(2)}</span>
+                    </div>
+                    <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "4px 0" }} />
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ color: "#F1F5F9", fontWeight: 700 }}>Available now</span>
+                      <span style={{ color: "#22C55E", fontWeight: 700, fontFamily: "monospace", fontSize: 14 }}>${selectedSummary.availableNow.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: "#475569", marginTop: 10, lineHeight: 1.5 }}>
+                    You keep {selectedSummary.profitSharePct}% of your challenge profit. The remaining {100 - selectedSummary.profitSharePct}% is the platform&apos;s share, set per challenge plan.
+                  </div>
+                </div>
+              )}
               <div style={{ marginBottom: 10 }}>
                 <div style={label}>Amount (USD)</div>
-                <input type="number" style={inputStyle} placeholder="Enter amount" value={payoutForm.amount} onChange={e => setPayoutForm({ ...payoutForm, amount: e.target.value })} />
+                <input
+                  type="number"
+                  style={inputStyle}
+                  placeholder={selectedSummary ? `Max $${selectedSummary.availableNow.toFixed(2)}` : "Enter amount"}
+                  value={payoutForm.amount}
+                  onChange={e => setPayoutForm({ ...payoutForm, amount: e.target.value })}
+                />
+                {selectedSummary && payoutForm.amount && parseFloat(payoutForm.amount) > selectedSummary.availableNow && (
+                  <div style={{ fontSize: 11, color: "#EF4444", marginTop: 6 }}>
+                    Amount exceeds available (${selectedSummary.availableNow.toFixed(2)})
+                  </div>
+                )}
               </div>
               <div style={{ marginBottom: 10 }}>
                 <div style={label}>Network</div>
@@ -325,7 +371,6 @@ export default function AccountPage() {
                 <div style={label}>Wallet Address</div>
                 <input style={inputStyle} placeholder="Your wallet address" value={payoutForm.walletAddress} onChange={e => setPayoutForm({ ...payoutForm, walletAddress: e.target.value })} />
               </div>
-              <div style={{ fontSize: 12, color: "#475569", marginBottom: 16 }}>Platform fee: 20% · You receive 80% of requested amount</div>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <button style={btn} onClick={requestPayout}>Request Payout</button>
                 {payoutMsg && <span style={{ fontSize: 13, color: payoutMsg.includes("success") ? "#22C55E" : "#EF4444" }}>{payoutMsg}</span>}
@@ -342,7 +387,7 @@ export default function AccountPage() {
             <div>
               <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>History</div>
               {payouts.map((p: any) => {
-                const statusColor: Record<string, string> = { pending: "#F59E0B", approved: "#3B82F6", paid: "#22C55E", rejected: "#EF4444" };
+                const statusColor: Record<string, string> = { pending: "#F59E0B", approved: "#3B82F6", pending_verification: "#A855F7", paid: "#22C55E", rejected: "#EF4444" };
                 return (
                   <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
                     <div>
@@ -351,7 +396,7 @@ export default function AccountPage() {
                       {p.txHash && <div style={{ fontSize: 11, color: "#22C55E", fontFamily: "monospace" }}>TX: {p.txHash.slice(0, 20)}...</div>}
                       {p.rejectionReason && <div style={{ fontSize: 11, color: "#EF4444" }}>{p.rejectionReason}</div>}
                     </div>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 4, background: `${statusColor[p.status]}18`, color: statusColor[p.status] }}>{p.status.toUpperCase()}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 4, background: `${statusColor[p.status] ?? "#475569"}18`, color: statusColor[p.status] ?? "#475569" }}>{p.status.toUpperCase()}</span>
                   </div>
                 );
               })}
