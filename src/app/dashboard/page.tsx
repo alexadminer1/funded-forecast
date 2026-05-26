@@ -4,37 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, getToken } from "@/lib/api";
 import { User, Position } from "@/lib/types";
-
-interface Challenge {
-  id: number;
-  stage: string;
-  status: string;
-  startBalance: number;
-  realizedBalance: number;
-  peakBalance: number;
-  profitTargetPct: number;
-  maxTotalDdPct: number;
-  minTradingDays: number;
-  tradingDaysCount: number;
-  qualifyingTradingDaysCount: number;
-  todayBuyVolume: number;
-  minDailyVolumeUsd: number;
-  profitTargetMet: boolean;
-  drawdownViolated: boolean;
-
-  // Phase 3 dashboard overlay — optional so older cached responses still type-check.
-  isPassed?: boolean;
-  consistency?: number;
-  daysRemaining?: number;
-  daysTraded?: number;
-  dailyLossLimitPercent?: number;
-  maxLossLimitPercent?: number;
-  currentDrawdownPercent?: number;
-  dailyDrawdownPercent?: number;
-
-  // Plan relation — Phase 3 added it via `include` in /api/user/mode.
-  plan?: { id: number; name: string; price: number } | null;
-}
+import { ChallengeWidgets } from "@/components/widgets/ChallengeWidgets";
 
 interface LastChallenge {
   id: number;
@@ -47,7 +17,7 @@ interface LastChallenge {
 interface ModeData {
   mode: "sandbox" | "challenge";
   currentBalance: number;
-  challenge: Challenge | null;
+  challenge: unknown | null;
   lastChallenge: LastChallenge | null;
   sandboxBalance: number | null;
   sandboxPositionsCount: number | null;
@@ -117,8 +87,8 @@ export default function DashboardPage() {
 
   const totalUnrealized = positions.reduce((sum, p) => sum + p.unrealizedPnl, 0);
 
-  const activeBalance = modeData?.mode === "challenge" && modeData.challenge
-    ? modeData.challenge.realizedBalance
+  const activeBalance = modeData?.mode === "challenge" && user.activeChallenge
+    ? user.activeChallenge.realizedBalance
     : user.balance;
 
   const portfolioValue = activeBalance + positions.reduce((s, p) => s + p.currentValue, 0);
@@ -182,8 +152,8 @@ export default function DashboardPage() {
               ) : (
                 <SandboxBanner />
               )
-            ) : modeData.challenge ? (
-              <ChallengeCard challenge={modeData.challenge} />
+            ) : user.activeChallenge ? (
+              <ChallengeWidgets challenge={user.activeChallenge} />
             ) : null}
           </div>
         )}
@@ -228,108 +198,6 @@ export default function DashboardPage() {
           </div>
         )}
       </main>
-    </div>
-  );
-}
-
-function ChallengeCard({ challenge: c }: { challenge: Challenge }) {
-  const target = parseFloat((c.startBalance * (1 + c.profitTargetPct / 100)).toFixed(2));
-  const progress = Math.max(0, Math.min(100,
-    parseFloat((((c.realizedBalance - c.startBalance) / (target - c.startBalance)) * 100).toFixed(1))
-  ));
-  const violated = c.drawdownViolated;
-
-  return (
-    <div style={{
-      background: "#1E293B",
-      border: "1px solid #334155",
-      borderRadius: 12,
-      padding: 24,
-    }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 8, height: 8, borderRadius: "50%", background: violated ? "#EF4444" : "#22C55E", boxShadow: violated ? "0 0 8px rgba(239,68,68,0.6)" : "0 0 8px rgba(34,197,94,0.6)" }} />
-          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.01em" }}>
-            Evaluation Challenge
-          </span>
-        </div>
-        <span style={{
-          fontSize: 10, fontWeight: 700, letterSpacing: "0.07em",
-          color: violated ? "#EF4444" : "#22C55E",
-          background: violated ? "rgba(239,68,68,0.1)" : "rgba(34,197,94,0.1)",
-          border: `1px solid ${violated ? "rgba(239,68,68,0.25)" : "rgba(34,197,94,0.25)"}`,
-          borderRadius: 4, padding: "3px 9px",
-        }}>
-          {violated ? "VIOLATED" : "ACTIVE"}
-        </span>
-      </div>
-
-      {/* Metrics grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 16, marginBottom: 20 }}>
-        {[
-          { label: "Current Balance", value: `$${c.realizedBalance.toFixed(2)}` },
-          { label: "Target", value: `$${target.toFixed(2)}` },
-          { label: "Max Drawdown", value: `${c.maxTotalDdPct}%` },
-          { label: "Trading Days", value: `${c.tradingDaysCount} / ${c.minTradingDays}` },
-          { label: "Qualifying Days", value: `${c.qualifyingTradingDaysCount ?? 0} / ${c.minTradingDays}` },
-          {
-            label: "Daily Volume",
-            value: `$${(c.todayBuyVolume ?? 0).toFixed(2)} / $${(c.minDailyVolumeUsd ?? 0).toFixed(2)}`,
-          },
-        ].map(({ label, value }) => (
-          <div key={label}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5 }}>{label}</div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)" }}>{value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Profit progress */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 7 }}>
-          <span style={{ fontSize: 11, color: "#475569", fontWeight: 600 }}>Profit progress</span>
-          <span style={{ fontSize: 11, color: progress >= 100 ? "#22C55E" : "#94A3B8", fontWeight: 700 }}>{progress.toFixed(1)}% of {c.profitTargetPct}% target</span>
-        </div>
-        <div style={{ height: 8, background: "#334155", borderRadius: 4, overflow: "hidden" }}>
-          <div style={{
-            height: "100%", width: `${Math.min(100, progress)}%`,
-            background: progress >= 100 ? "#22C55E" : "linear-gradient(90deg, #16A34A, #22C55E)",
-            borderRadius: 4, transition: "width 0.4s ease",
-          }} />
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5 }}>
-          <span style={{ fontSize: 10, color: "#334155" }}>${c.startBalance.toLocaleString()}</span>
-          <span style={{ fontSize: 10, color: "#334155" }}>${target.toLocaleString()}</span>
-        </div>
-      </div>
-
-      {/* Drawdown meter */}
-      {(() => {
-        const maxLoss = c.startBalance * (c.maxTotalDdPct / 100);
-        const currentLoss = Math.max(0, c.startBalance - c.realizedBalance);
-        const ddUsed = Math.min(100, (currentLoss / maxLoss) * 100);
-        const ddColor = ddUsed >= 80 ? "#EF4444" : ddUsed >= 50 ? "#F59E0B" : "#22C55E";
-        return (
-          <div>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 7 }}>
-              <span style={{ fontSize: 11, color: "#475569", fontWeight: 600 }}>Drawdown used</span>
-              <span style={{ fontSize: 11, color: ddColor, fontWeight: 700 }}>{ddUsed.toFixed(1)}% of {c.maxTotalDdPct}% limit</span>
-            </div>
-            <div style={{ height: 8, background: "#334155", borderRadius: 4, overflow: "hidden" }}>
-              <div style={{
-                height: "100%", width: `${ddUsed}%`,
-                background: ddUsed >= 80 ? "#EF4444" : ddUsed >= 50 ? "#F59E0B" : "#22C55E",
-                borderRadius: 4, transition: "width 0.4s ease",
-              }} />
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5 }}>
-              <span style={{ fontSize: 10, color: "#334155" }}>$0 lost</span>
-              <span style={{ fontSize: 10, color: "#334155" }}>max -${maxLoss.toFixed(0)}</span>
-            </div>
-          </div>
-        );
-      })()}
     </div>
   );
 }

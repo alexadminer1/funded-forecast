@@ -143,7 +143,6 @@ Bottom row: same.
 - Pricing/FAQ pages (Phase 6)
 - Email notifications (Phase 7)
 - Backend changes
-- Schema changes
 - Failed challenge modal/banner changes (orthogonal)
 - Animations / micro-interactions (можно потом если хочется polish)
 

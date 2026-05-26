@@ -74,6 +74,17 @@ export interface User {
     maxLossLimitPercent?: number;
     currentDrawdownPercent?: number;
     dailyDrawdownPercent?: number;
+
+    // Phase 5 — widget metrics (REQUIRED). `currentBalance` is the canonical
+    // name for widget consumers; `realizedBalance` above is retained for
+    // backward compat with existing consumers.
+    currentBalance: number;
+    profitTarget: number;
+    profitPercent: number;
+    mllAmount: number;
+    mllBufferAmount: number;
+    resolvedPositionsCount: number;
+    uniqueEventsCount: number;
   };
 }
 

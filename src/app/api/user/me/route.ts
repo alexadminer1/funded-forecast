@@ -181,6 +181,17 @@ export async function GET(req: NextRequest) {
                     maxLossLimitPercent: helperData.maxLossLimitPercent,
                     currentDrawdownPercent: helperData.currentDrawdownPercent,
                     dailyDrawdownPercent: helperData.dailyDrawdownPercent,
+
+                    // Phase 5 — `currentBalance` is canonical naming for widget consumers;
+                    // `realizedBalance` retained above for backward compat (account/page.tsx,
+                    // header balance fallback). Consolidation tracked separately.
+                    currentBalance: helperData.currentBalance,
+                    profitTarget: helperData.profitTarget,
+                    profitPercent: helperData.profitPercent,
+                    mllAmount: helperData.mllAmount,
+                    mllBufferAmount: helperData.mllBufferAmount,
+                    resolvedPositionsCount: helperData.resolvedPositionsCount,
+                    uniqueEventsCount: helperData.uniqueEventsCount,
                     plan:
                       helperData.plan ??
                       (activeChallenge.plan
