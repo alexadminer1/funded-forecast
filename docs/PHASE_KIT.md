@@ -36,7 +36,7 @@ Major changes in v2:
 
 ### Claude Code (исполнитель в терминале)
 - Bypass permissions ON
-- Работает на feature-ветке
+- Работает прямо на `develop` (см. Workflow v3)
 - Получает целые sub-фазы одним блоком
 - Сам делает автономные тесты (см. ниже)
 - НЕ пушит / не мержит / не применяет SQL без явной команды
@@ -64,7 +64,7 @@ Major changes in v2:
 
 ### Claude Code не == Алексей
 - Команды для Claude Code — это сложные многошаговые задания (целая sub-фаза)
-- Команды для Алексея — это минимум: backup, push, merge через UI, smoke test глазами
+- Команды для Алексея — это минимум: backup, push, smoke test глазами
 
 ---
 
@@ -134,7 +134,7 @@ git pull origin develop
 - Запускать `npx tsc --noEmit`, `npm run build`
 - Запускать `npx prisma generate`
 - Создавать миграции через `npx prisma migrate dev --create-only` (БЕЗ применения)
-- Локальные коммиты в feature-ветке
+- Локальные коммиты прямо в `develop` (см. Workflow v3)
 
 **Autonomous testing (НОВОЕ в v2):**
 - Read-only SQL через `dev-psql -c "SELECT ..."` (SELECT only)
@@ -169,7 +169,7 @@ git pull origin develop
 ### Что делает Алексей сам
 - Применение SQL к dev/prod (через `dev-psql -f` или психически)
 - Применение миграций (`prisma migrate deploy`)
-- `git push`, PR creation, merge через GitHub UI
+- `git push origin develop` после ACK; main snapshot вручную при необходимости (см. Workflow v3)
 - UI smoke test (то что нужно увидеть глазами)
 - Backup перед опасными операциями
 - Решения по prod release (через PROD_RELEASE_CHECKLIST.md)
@@ -218,30 +218,49 @@ Sub-фаза — это logical unit работы. Примеры:
    - SQL для prod (если требуется)
    - Smoke test чеклист для Алексея (только то что нельзя проверить автономно)
 2. Алексей выполняет smoke test
-3. Если OK — Алексей пушит ветку, создаёт PR, мержит через GitHub UI
+3. Если OK — Алексей пушит develop (`git push origin develop`); main snapshot отдельно при необходимости
 4. Архитектор обновляет SESSION_LOG.md и BACKLOG.md в финальном коммите
 5. Алексей возвращается в основной чат: "Phase N closed, last commit X"
 
 ---
 
-## Ветки и коммиты
+## Workflow v3 — Single-branch development (Session 22+, 2026-05-25)
 
-### Naming
-- Ветка фазы: `feature/p0-3-<phase-id>-<short-name>`
-- Каждый logical commit внутри ветки: `[P0.3.X] краткое описание`
-- Sub-фаза = один или несколько связанных коммитов
+**Reason:** до launch у проекта 0 реальных юзеров. Полный feature-branch + PR workflow создавал overhead без proportional benefit и привёл к accidental PR на main 2026-05-25. Упрощаем.
 
-### Process
-1. От develop → создать feature/p0-3-X
-2. Sub-фазы фазы — коммиты в эту ветку
-3. После smoke test → Алексей PR через GitHub UI
-4. **Merge strategy: merge commit (--no-ff)** — сохраняет историю коммитов sub-фаз
-5. После merge — ветка удаляется
+### Branches
 
-### Prod release
-- НЕ после каждой фазы
-- Накапливаем логические пакеты
-- Следует PROD_RELEASE_CHECKLIST.md строго
+- **develop** — основная и единственная рабочая ветка
+- **main** — manual snapshot for prod, обновляется ТОЛЬКО по явной команде Алексея
+
+### Workflow
+
+1. Architect пишет brief в чате
+2. Алексей запускает Claude Code
+3. Claude Code делает изменения **прямо в develop**
+4. Алексей: `git add && git commit && git push origin develop`
+5. Coolify авто-деплой на dev.tradepredictions.online
+6. Smoke test
+7. Если ОК — продолжаем следующую фазу
+8. Если хочется на prod (sandbox): Алексей в ручную делает `git checkout main && git merge develop && git push origin main`
+
+### НЕ делаем
+
+- Feature branches (за исключением emergency hotfix, если develop сломан и нужен parallel branch для investigation)
+- Pull Requests через GitHub UI
+- Merge ritual
+
+### Сохраняется
+
+- Git history (commits видны, чёткие commit messages)
+- Возможность revert (`git revert <hash>` или `git reset`)
+- Code review через Architect brief + plan ACK (как раньше, до commit)
+- Smoke test cycle (после деплоя на dev)
+- Branch cleanup не нужен (нет feature branches)
+
+### При появлении юзеров
+
+Возвращаемся к feature-branch + PR workflow без миграции history. Включается как additional safety layer.
 
 ---
 
@@ -274,7 +293,7 @@ Partial indexes, soft FKs — задокументированы в `docs/UNMANA
 ```
 # TASK: <PHASE_ID> — <SUB-PHASE NAME>
 # MODE: CODE-ONLY | SCHEMA | READ-ONLY
-# BRANCH: feature/p0-3-<phase>
+# BRANCH: develop (по умолчанию — Workflow v3)
 # SCOPE: <конкретные файлы или директории>
 # 
 # NO PUSH, NO DB WRITES, NO MIGRATE APPLY
@@ -350,7 +369,7 @@ Partial indexes, soft FKs — задокументированы в `docs/UNMANA
 ## Что делать если что-то пошло не так
 
 ### Claude Code сломал dev
-1. Откат: `git reset --hard origin/develop` в feature-ветке
+1. Откат: `git revert <hash>` или `git reset --hard <good-hash>` прямо в develop (если push уже состоялся — `git push -f origin develop` только при отсутствии параллельной работы; иначе предпочесть revert)
 2. Если БД испорчена → restore из backup (фаза должна делать backup перед опасными операциями)
 3. Откатить sub-фазу в Архитекторе, переформулировать
 

@@ -12,6 +12,53 @@ SOURCE OF TRUTH — все задачи P0.3.X ссылаются на этот 
 
 ---
 
+## Product philosophy
+
+Бизнес-модель FundedForecast основана на том, что подавляющее большинство пользователей проигрывает challenge (target pass rate 2-3%). Это структура revenue, не баг.
+
+### Принцип: UI показывает данные, не управляет поведением
+
+Сервер enforce'ит **только технические инварианты**:
+- Buy cap $0.85 (защита от вырожденных payouts)
+- Market endDate (нельзя торговать на закрытом рынке)
+- User isBlocked (security)
+- Insufficient balance (infrastructure)
+- Position isolation (audit trail integrity)
+
+Все остальные ограничения (min position size, max aggregate position, max daily volume, DLL/MLL drawdown, profit target, consistency, resolved positions count, unique events count) — это **правила challenge**, не блокировки решений. Они применяются **по итогу действий**: через DLL/MLL post-trade или через end-of-day / end-of-challenge crons.
+
+### Что показывается в UI
+
+- Текущие значения метрик (balance, profit, days remaining, positions)
+- Условия challenge в pricing/FAQ (один раз при покупке)
+- Причина fail когда он случился
+- Цветовые индикаторы лимитов на gauges — допустимы (это данные)
+- Email confirmations (passed, failed, payout) — transactional only
+
+### Что НЕ делается
+
+- **Submit buttons НЕ disabled** на "approaching limit" — юзер сам решает
+- **Pre-trade rejects** только на технических инвариантах, не на размере trade или частоте
+- **Активирующие emails** ("trade today or fail") — нет
+- **Coaching / strategy hints** — нет
+- **Predictive warnings** ("if you continue you'll fail in N days") — нет
+- **"Resume failed challenge" CTAs** — нет (только Buy new)
+- **"Are you sure?" confirmations** — нет
+
+### Граница
+
+Server enforce'ит технические инварианты hard reject'ом. Client показывает данные. Юзер сам решает жать ли Buy.
+
+Цветовые индикаторы, recommendations и tooltips в UI — это часть данных, не активная защита от ошибок.
+
+### Источник истины
+
+Это не философия в вакууме — это бизнес-модель. Любая попытка "защитить" юзера от классических fail patterns (small bets, all-in concentration, overtrading) снижает revenue. Pass rate — управляемая метрика; искусственно снижать её через guardrails — это потеря выручки.
+
+Pre-trade rejects на основе размера/частоты trade'ов — антипаттерн в этой бизнес-модели. Юзер должен иметь свободу торговать плохо. Challenge завершается по итогу его решений, не по предсказанию что решение "плохое".
+
+---
+
 ## Параметры тиров
 
 | Параметр                    | Starter $1k | Pro $5k  | Elite $15k |
@@ -51,30 +98,52 @@ SOURCE OF TRUTH — все задачи P0.3.X ссылаются на этот 
 - Sell: cap НЕ применяется
 - Реакция: HTTP 400 + UI banner "Buy cap: price $X is at or above $0.85"
 
-#### 2. Min position size
-- Правило: `cost < 2% × startBalance` → trade rejected (hard reject)
-- Считается: per-trade на effective cost (после spread)
-- Реакция: HTTP 400 "Minimum position is $X"
-- ВАЖНО: это НЕ "не засчитывается", это REJECT
+Note: cap применяется к raw Polymarket price (до platform spread). Spread (0/2/4/7% по tier'у) добавляется поверх и НЕ участвует в cap check. Effective price (raw + spread) может технически превышать $0.85 для Pro/Elite tier'ов — это intentional design, spread = revenue платформы, не нарушение invariant'а.
 
-#### 3. Max aggregate position
-- Правило: `(existing_position.costBasis + new_trade.cost) > 5% × startBalance` → trade rejected
-- Считается: per market/outcome (одна пара marketId + side)
-- Защита от обхода через дробление на мелкие покупки
-- Реакция: HTTP 400 "Position cap $X exceeded"
+#### 2. Min position size (DEPRECATED — recommendation only)
 
-#### 4. Max daily volume
-- Правило: `dailyBuyVolume + new_trade.cost > 5% × startBalance` → trade rejected
-- Считается: SUM(Trade.cost WHERE action=buy AND DATE(createdAt)=today UTC) для активного challenge
-- Реакция: HTTP 400 "Daily buy cap $X exceeded"
+Recommended minimum trade size: 2% of startBalance ($20 for $1000 Starter, $100 for $5000 Pro, $300 for $15000 Elite).
+
+Status: NOT enforced server-side as of TASK-PHILO-1 (Session 21, 2026-05-24). Users may execute trades below this threshold; small trades accumulate toward daily volume goal (Rule #8).
+
+Rationale: pre-trade size rejects contradict Product philosophy (see top section) — user must be able to fail freely. End-of-day Rule #8 catches insufficient daily volume.
+
+History: enforcement existed in Phase 2.A (Session 16, commits a0d7a01..a79542c, merged in 8faf040) and was removed in TASK-PHILO-1. Git history preserves implementation if needed for reference.
+
+#### 3. Max aggregate position (DEPRECATED — recommendation only)
+
+Recommended maximum aggregate position per market: 5% of startBalance ($50 for Starter, $250 for Pro, $750 for Elite).
+
+Status: NOT enforced server-side as of TASK-PHILO-1 (Session 21, 2026-05-24). Users may concentrate any amount in a single market outcome.
+
+Rationale: pre-trade concentration rejects contradict Product philosophy (see top section). Concentration is a valid user strategy and naturally self-limited by DLL/MLL drawdown rules (#5, #6) — large losing positions trigger drawdown fail.
+
+History: enforcement existed in Phase 2.A (Session 16, commits a0d7a01..a79542c, merged in 8faf040) and was removed in TASK-PHILO-1. Git history preserves implementation if needed for reference.
+
+#### 4. Max daily volume (DEPRECATED — recommendation only)
+
+Recommended maximum daily buy volume: 5% of startBalance per UTC day.
+
+Status: NOT enforced server-side as of TASK-PHILO-1 (Session 21, 2026-05-24). Users may trade any volume per day.
+
+Rationale: pre-trade frequency/volume rejects contradict Product philosophy (see top section). High-frequency trading is a valid user strategy and naturally self-limited by drawdown rules. End-of-day Rule #8 still catches insufficient daily volume (lower bound).
+
+History: enforcement existed in Phase 2.B (Session 17, commits 511b9c6..830a88d, merged in 7a7a7dc) and was removed in TASK-PHILO-1. Git history preserves implementation if needed for reference.
 
 ### Single-trade реактивные (fail challenge on breach)
 
-#### 5. DLL breach (fixed)
-- Правило: `(dayStartBalance - realizedBalance) > DLL% × startBalance` → instant fail
-- dayStartBalance сбрасывается lazy в начале каждого UTC дня
-- Активен только в challenge phase (не в sandbox)
-- Реакция: Challenge.status='failed', violationReason="Daily drawdown X% exceeded limit Y%"
+#### 5. DLL breach (daily, cash-only)
+
+- **Rule:** `(dayStartBalance − newRealizedBalance) / dayStartBalance × 100 >= dailyLossPct` → instant fail
+- Evaluated post-trade inside the trade transaction. `newRealizedBalance = realizedBalance − cost` (buy) or `+ proceeds` (sell). If the check breaches, the transaction rolls back; the failure is then committed in a separate transaction along with auto-close of any open positions.
+- `dayStartBalance` is a snapshot of `realizedBalance` taken at the first trade attempt of each UTC day (lazy reset). It does not move during the day.
+- Active only in challenge phase (not in sandbox).
+- **Cash-only by design.** `realizedBalance` tracks cash only — it does **not** include the market value of open positions. A buy of $X drops `realizedBalance` by $X immediately, contributing $X of drawdown for the day, even if the inventory is currently worth $X. Selling raises `realizedBalance` by the sale proceeds and pulls drawdown back down.
+- **Contrast with MLL (rule #6):** MLL uses equity (`realizedBalance + open-positions value`); DLL uses `realizedBalance` only.
+- **Why this asymmetry:** DLL is an intraday brake on fresh cash deployment, not a measure of equity loss. MLL covers equity loss across the lifetime of the challenge.
+- **Worked example:** Starter $1000, DLL 5%. Trader buys $50 worth of YES shares at the start of day 1. `realizedBalance` drops from $1000 to $950 → daily drawdown 5.0% → DLL trips. Even if the YES position is still worth approximately $50, the rule has fired. To deploy more capital today the trader must first sell.
+- **DLL evaluated on trade events only.** Buy and sell trigger DLL re-evaluation. Market resolve events (passive, user-not-initiated) do not trigger DLL check — they affect realizedBalance but not the daily drawdown ratio for fail purposes. MLL (rule #6) still covers cumulative losses including those triggered by resolves.
+- **Reaction:** `Challenge.status='failed'`, `drawdownViolated=true`, `violationReason="Daily drawdown X% exceeded limit Y%"`. Open positions are auto-closed at current market prices in the same failure event; the proceeds raise `realizedBalance` post-failure but do not affect the fail decision.
 
 #### 6. MLL breach (trailing)
 - Правило: `realizedBalance < peakBalance - MLL$` → instant fail

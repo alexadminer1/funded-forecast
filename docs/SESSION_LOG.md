@@ -9,6 +9,303 @@
 
 ---
 
+## Session 2026-05-26 — Phase 5: Dashboard widgets for challenge data (Session 23)
+
+Status: CLOSED — implemented + smoke-tested + verified on dev
+
+### Scope delivered
+- Extended `buildActiveChallenge` helper with 5 new fields:
+  `startBalance`, `mllAmount`, `mllBufferAmount`, `resolvedPositionsCount`,
+  `uniqueEventsCount`. MLL formula uses verified engine logic (hybrid:
+  initial-dollar drawdown anchored to startBalance, trailed from peakBalance).
+- New components: `src/components/widgets/MetricWidget.tsx` (generic tile)
+  and `src/components/widgets/ChallengeWidgets.tsx` (3+3 grid + section
+  header "<Plan> Challenge · ACTIVE · N days left").
+- Dashboard rewire: removed `ChallengeCard` from `dashboard/page.tsx`,
+  swapped to `<ChallengeWidgets challenge={user.activeChallenge} />`.
+- Phase 3 cherry-pick gap closed: `/api/user/me/route.ts` and
+  `src/lib/types.ts` extended to forward and type 7 new fields
+  (currentBalance, profitTarget, profitPercent + the 5 Phase-5 fields,
+  minus startBalance which was already forwarded). Defensive `?? 0`
+  in widgets for stale-cache safety.
+
+### Commits in develop
+- `40505c0` — Phase 5 main: widgets + helper + API/type plumbing
+- `fc25832` — Phase 5 hotfix: section header for widgets
+- `838a94f` — Brief correction (Phase 3 cherry-pick gap)
+- `ce02819` — Brief discovery updates (MLL formula + threshold fixes)
+- `107687d` — Brief initial
+
+### Smoke test results (dev.tradepredictions.online)
+- Active challenge (alexadminer with Pro tier $5000):
+  * 6 widgets render correctly in 3+3 grid under top stats row
+  * Header "Pro Challenge · ACTIVE · 10 days left" displays correctly
+  * Math verified across all widgets after 4 position buys:
+    - Daily P&L 3.9% red (97.5% of 4% DLL limit) — math: 195.34/5000
+    - MLL buffer $205 green (51% of $400 maxLoss) — math: 4804.66 - 4600
+    - Days remaining 10 green
+    - Resolved 0/35 red, Unique events 0/30 red (fixed threshold per brief)
+    - Consistency "—" + "no profit yet" (currentBalance ≤ startBalance)
+- Sandbox/post-challenge state: widgets correctly NOT rendered
+- Mobile responsive (375px): widgets stack vertical, no overflow
+- Defensive `?? 0` defaults verified — no runtime crashes
+
+### Out of scope (verified separately)
+- PHILO-1 (Session 21) deprecation of rules #2/#3/#4 confirmed in
+  effect: 4 positions ranging $10-$82 cost basis successfully bought
+  without hard reject. This is intentional product design — user must
+  be able to fail freely.
+
+### Tech-debt flagged for BACKLOG
+- TECH-DEBT-17: `realizedBalance` + `currentBalance` dual-forwarding in
+  /api/user/me response (Option 1 from Step 2 decision — additive,
+  zero-breakage). Consolidation tracked separately.
+- TASK-DOC-2: Comment in `src/lib/user/active-challenge.ts` lines
+  32-34 says "Peak-based drawdown" but engine code is hybrid
+  (initial-dollar trailed from peak). Update comment.
+- UI-BUG-1: "Portfolio Value" in top stats row uses `.toFixed(2)`
+  without `.toLocaleString` — shows "$5000.00" instead of "$5,000.00".
+  Existing bug, not Phase 5 scope.
+
+### Open decision
+Phase 5 closed. Next phase per docs/PHASE_5_BRIEF.md "Decision pending":
+A (Phase 6 Pricing/FAQ) / B (Phase 7 Emails) / C (mid-prod release) / D (rest).
+
+---
+
+## Session 2026-05-25 — TECH-DEBT-14 investigation CLOSED (Session 22)
+
+### Summary
+PHILO-1 smoke test surfaced DLL violation reason mismatch with final P&L (5.83% violation vs −0.04% final loss for test8 challenge). TECH-DEBT-14 investigation classified the issue as intentional design + UX confusion, not a bug.
+
+### Investigation outcome
+- DLL formula is mathematically correct (single source, single-variable interpolation in violation reason).
+- Root cause: DLL is **cash-only by design** — realizedBalance tracks cash only, does not include open positions value. Asymmetric with MLL which is equity-aware.
+- Reproduction case (Challenge id=51 test8) verified through DB inspection: at moment of rejected $49.47 attempt, realizedBalance was $991.16 (post buy 1+2, pre auto-close). Formula correctly yielded 5.83%.
+- Auto-close after fail (catch handler, fresh tx) raises realizedBalance post-failure, creating perception of mismatch.
+
+### Findings
+1. DLL formula: `(dayStartBalance − newRealizedBalance) / dayStartBalance × 100`, executed correctly
+2. Algebraic identity (day with no sells): `DLL% = (sum of today's buy costs) / dayStart` — explains why reporter's "$58.31/$1000" intuition was numerically correct but conceptually misleading
+3. Side findings: marketResolve.ts has no DLL check (TECH-DEBT-15 proposed); auto_close_finalize not visually distinguished (TECH-DEBT-16 proposed)
+
+### Deliverable
+- `docs/TECH_DEBT_14_INVESTIGATION.md` (347 lines, merged via PR #19, commit 1ef582c)
+- Classification: (ii) Intentional design + (iii) UX confusion
+- 5 recommendations (R1–R5) for follow-up phases
+
+### Follow-up actions
+- R1 (P1): docs update for BUSINESS_RULES.md rule #5 — next small docs phase (15–30 min)
+- R2/R3 (P2): UX improvements (violation message + UI tooltip) — defer to Phase 5
+- R4 (TECH-DEBT-15): marketResolve DLL gap — added to BACKLOG
+- R5 (TECH-DEBT-16): auto-close UI labeling — added to BACKLOG
+- Prod SQL queries: ready-to-paste in §"Affected users assessment" of investigation report. Non-blocking for PHILO-1 release.
+
+### PHILO-1 prod release status
+NOT blocked by TECH-DEBT-14. DLL logic was not touched in PHILO-1. Investigation outcome is design clarification, not bug fix.
+
+### Commits
+- `1ef582c` — investigation report (PR #19)
+- `[next commit]` — BACKLOG + SESSION_LOG bookkeeping (this entry)
+
+---
+
+## Session 2026-05-24 — TASK-PHILO-1 — Relax pre-trade hard rejects CLOSED
+
+### Закрыто
+- Removed pre-trade hard rejects для rules #2 (min position 2%), #3 (max aggregate 5%), #4 (max daily volume 5%) из `trade/buy/route.ts`
+- Removed associated engine helpers (`checkMinPosition`, `checkAggregatePosition`, `checkMaxDailyVolume` + USD getters) из `engine/spreads.ts`
+- Removed engine constants `MIN_POSITION_PCT`, `MAX_AGGREGATE_POSITION_PCT`, `MAX_DAILY_VOLUME_PCT`
+- Removed API fields `minPositionPercent`, `maxAggregatePositionPercent`, `maxDailyVolumeUsd` из `/api/user/me`, `/api/user/mode`, `/api/user/positions`
+- Removed TradeModal preview info-rows (Min position / Max aggregate / Daily volume) + dashboard interface fields
+- Added Product philosophy section в `BUSINESS_RULES.md`
+- Rewrote rules #2/#3/#4 как "DEPRECATED — recommendation only"
+- Excluded `tmp/` from tsconfig type-checking (collateral fix — scratch files broke build после API field removal)
+
+### Контекст
+Бизнес-модель FundedForecast основана на target pass rate 2-3%. Pre-trade hard rejects на классические fail patterns (small bets, all-in concentration, overtrading) противоречили заявленной product philosophy ("UI shows data, doesn't control behavior") и снижали revenue, искусственно защищая юзеров от лоса.
+
+Решение Session 21: rules #2/#3/#4 переходят в статус documented recommendations, не enforced server-side. Сервер enforce'ит только технические инварианты (rule #1 buy cap, rule #5 market end, rule #6 user blocked, balance, position isolation). Все остальные правила challenge — post-trade (DLL/MLL drawdown) или end-of-day/end-of-challenge cron.
+
+Структура работы: один main chat (Session 21) + один Architect executor chat (этот) + Claude Code в bypass-permissions. Три sub-blocks: B-DOCS → B-CODE → B-FINAL. Каждый sub-block выдавался Claude Code одним заданием.
+
+### Реализация
+- Branch: `feature/philo-1-relax-rejects` (9 commits от develop)
+- B-DOCS (2 commits): Product philosophy section + rules #2/#3/#4 DEPRECATED rewrite в `BUSINESS_RULES.md`
+- B-CODE (4 + 1 commits): trade/buy reject removal → engine cleanup → API field removal → frontend cleanup → tsconfig tmp/ exclude
+- B-FINAL (2 commits): SESSION_LOG + BACKLOG closure
+- Net diff: ~12 insertions, ~324 deletions across 11 files в src/ + docs
+- No schema changes, no migrations, no DB writes
+
+### Commits на ветке (от старого к новому)
+- `6ef85e2` [PHILO-1] docs: add Product philosophy section to BUSINESS_RULES.md
+- `6c10992` [PHILO-1] docs: rewrite rules #2, #3, #4 as DEPRECATED — recommendation only
+- `ea0a186` [PHILO-1] trade/buy: remove rule #2/#3/#4 pre-trade rejects
+- `b3d18b9` [PHILO-1] engine: remove constants and helpers for rules #2/#3/#4
+- `e296c2c` [PHILO-1] api: remove minPositionPercent, maxAggregatePositionPercent, maxDailyVolumeUsd fields
+- `b804635` [PHILO-1] frontend: remove TradeModal preview rows and dashboard fields for deprecated rules
+- `95962ef` [PHILO-1] tsconfig: exclude tmp/ from type-checking
+
+### Что сохранено (out of scope, не тронуто)
+- Rule #1 (buy cap $0.85) — `BuyCapExceededError`, `checkBuyCap`, `BUY_PRICE_CAP`
+- Rule #5 (market endDate) — `MarketEndedError`
+- Rule #6 (user isBlocked) — `UserBlockedError` (buy + sell)
+- Rules #7-12 (end-of-day, end-of-challenge cron) — non-trade-time
+- MLL/DLL drawdown checks (`DrawdownViolatedError`)
+- Rule #8 enforcement (`MIN_DAILY_VOLUME_PCT`, `end-of-day-check` cron) — fully active
+- Sandbox path в trade/buy (`SANDBOX_MAX_POSITION_PCT` legacy, not under PHILO-1)
+- Position isolation guards (Phase 4.B)
+- API fields `todayBuyVolume`, `minDailyVolumeUsd` (rule #8 active, UI informational)
+- `maxPositionSizePct` dead column (TECH-DEBT-5 unchanged)
+- Trade-sell route (out of scope — only buy had rules #2/#3/#4)
+
+### Interaction matrix (verified в Step A discovery)
+- **Rule #2 ↔ Rule #8:** small trades теперь accumulate to daily volume; rule #8 catches insufficient volume at end-of-day
+- **Rule #3 ↔ MLL/DLL:** all-in concentration теперь triggers immediate cash MLL breach при покупке за весь баланс (verified path: trade/buy MLL check post-trade)
+- **Rule #4 ↔ #7/#8:** overtrading bleeds spread → eventual MLL fail; rule #7/#8 не conflict с removed rule #4
+
+### Process notes
+- Architect-led discovery uncovered API contract conflict: brief original said "field names remain, semantics shift", discovery rejected как "parallel display-only state that no longer matches any server rule". Reversed to full field removal.
+- Constants cleanup decision (Q3): full deletion vs `RECOMMENDED_*` renaming. Chose deletion — re-enable path = git history. Reasoning: dead constants would create maintainer confusion, BR text + commit history sufficient as roll-back reference.
+- Rule #4 decision (option a/b/c): chose (a) remove completely. Option (b) move to end-of-day contradicts rule #7 ("trade every day") — punishment for activity contradicts target rate pass.
+- B4 правка после reviewing brief: rules #2/#3/#4 переписаны как "DEPRECATED — recommendation only" вместо полного removal. Сохраняет recommended numeric values в BR для возможного re-enable в future business model shift.
+- `tmp/` scratch directory broke tsc после B-CODE-3. Resolved через tsconfig exclude vs deleting Алексей's scratch work.
+- PHASE_KIT.md v2 process improvement: original plan был B0→B5 (6 Claude Code invocations). Reorganized в 3 super-blocks (B-DOCS, B-CODE, B-FINAL) для меньше Алексея-в-loop. Lesson: Claude Code в bypass-mode сам разбивает internal substeps.
+- Smoke test (Session 21 main chat, 2026-05-25) выявил 2 pre-existing findings НЕ связанных с PHILO-1 changes: (1) rejected trades отсутствуют в History → UX audit gap при challenge fail через pre-trade reject; (2) DLL расчёт показывает gross buy cost cumulative (включая rejected hypothetical trade) вместо net P&L — challenge зафейлен с violation "5.83% daily drawdown" при Final P&L −0.04%. Обе зафиксированы в BACKLOG как TECH-DEBT-13 (Rejected trades visibility) и TECH-DEBT-14 (DLL calculation mismatch). PHILO-1 main scope verified PASS — обе findings pre-existing, не блокеры phase.
+
+### Production release decision (отложено в основной чат)
+Алексей решает в Session 21 main chat:
+- Release TASK-PHILO-1 на prod immediately (small impact, no schema changes)
+- ИЛИ batch with Phase 5 (UI widgets) для меньше prod risk
+
+### Следующая фаза
+Phase 5 (UI widgets) — parallel или после TASK-PHILO-1, не конфликтует. Если PHILO-1 на prod уйдёт без Phase 5 — UI уже учитывает (preview rows удалены), no semantic desync.
+
+---
+
+## Session 2026-05-22 — Gate 10 incident — schema drift fix (Session 20)
+
+### Summary
+~2 часа после Phase 4 prod release `/api/user/me` начал отдавать 500. Логи показали `PrismaClientKnownRequestError P2022` — колонка `Challenge.qualifyingTradingDaysCount` отсутствует на prod. Полный column-level diff dev↔prod выявил **7 missing schema objects** в 4 таблицах. Source incident — broader schema drift, не один забытый ALTER.
+
+Серверная инфраструктура — здорова (disk 65%, mem 2.2G free, 0 restarts). Проблема чисто application-level.
+
+### Root cause
+`0_baseline_reconciled` migration была сгенерирована из dev DB после того как pre-baseline ALTERs (P0.4.next baf7c27, P0.5 SEC-5 9ff36d8, P0.3.a ba46520) были применены вручную на dev. Baseline SQL содержит full end-state в своих `CREATE TABLE` блоках — включая все эти колонки.
+
+На prod baseline применялась через "migrate resolve --applied" (table-exists path): миграция зарегистрирована как applied **без выполнения SQL** (выполнение `CREATE TABLE "Challenge"` упало бы, т.к. таблица существует). Поэтому pre-baseline колонки на prod так и не появились — manual ALTERs из commit bodies (`baf7c27`, `9ff36d8`, `ba46520`) предполагалось run Алексею вручную в Coolify DB Terminal, и этот шаг был пропущен.
+
+Migration ledger при этом синхронен (prod имеет все 2 migration files что и main) — проблема исключительно в том, что baseline по факту не выполнила свой DDL на prod.
+
+### Drift inventory — 7 objects missing on prod
+
+| Table | Object | Type | Origin commit |
+|---|---|---|---|
+| Challenge | `qualifyingTradingDaysCount` | column `INT NOT NULL DEFAULT 0` | baf7c27 (P0.4.next) |
+| ChallengeDailyPnL | **entire table** + FK + 2 indexes | new table + UNIQUE(challengeId,date) + INDEX(challengeId) | ba46520 (P0.3.a) |
+| Trade | `realizedPnl` | column `DECIMAL(20,8)` nullable | ba46520 (P0.3.a) |
+| PayoutRequest | `verificationAttempts` | column `INT NOT NULL DEFAULT 0` | 9ff36d8 (P0.5 SEC-5) |
+| PayoutRequest | `manualReview` | column `BOOLEAN NOT NULL DEFAULT false` | 9ff36d8 |
+| PayoutRequest | `lastVerifyAttemptAt` | column `TIMESTAMP(3)` | 9ff36d8 |
+| PayoutRequest | `PayoutRequest_txHash_key` | partial UNIQUE index `WHERE txHash IS NOT NULL` (UNMANAGED_DDL §3) | 9ff36d8 |
+
+Прод-симптом был только `qualifyingTradingDaysCount` (его читает `/api/user/me` на любой загрузке dashboard). Остальные 6 проявились бы при срабатывании конкретных code paths: `daily-pnl-aggregate` cron (ChallengeDailyPnL + Trade.realizedPnl), `verify-pending-payouts` cron + admin payout flow (PayoutRequest fields), txHash uniqueness guard.
+
+### Fix applied
+Идемпотентный SQL-блок выполнен через Coolify DB Terminal на `ff-sandbox-db`. `BEGIN/COMMIT` для основного блока (4 ALTER + CREATE TABLE + FK + 2 indexes), отдельным statement — `CREATE UNIQUE INDEX CONCURRENTLY` для partial idx (нельзя внутри транзакции).
+
+Pre-fix backup: `~/backups/ff-sandbox-db-pre-step4-altertable.dump` (1.7M, 2026-05-22 13:39 UTC).
+
+Backfill: ручной trigger `/api/cron/daily-pnl-aggregate` — processed: 0, skipped: 0, errors: 0 (на prod нет active challenges → backfill no-op, но cron подтвердил что ON CONFLICT работает). Cron — full-scan recompute, идемпотентен; первое active challenge получит корректный `qualifyingTradingDaysCount` автоматически при следующем 01:00 UTC.
+
+Post-fix verify: `/api/user/me` — 200 OK (UI smoke через браузер). Логи приложения post-fix не проверялись.
+
+### Diagnostic reports
+- `/tmp/gate-10-incident-step1.md` — server health (verdict: OK, не disk/mem)
+- `/tmp/gate-10-incident-step2.md` — full drift inventory (column-level diff dev↔prod)
+- `/tmp/gate-10-incident-step3.md` — pre-fix verification (4 unknowns cleared: ON CONFLICT index, UNMANAGED_DDL, no Coolify migrate hook, no manual backfill SQL)
+
+### Process gaps identified
+1. **`0_baseline_reconciled` SQL is incomplete.** Baseline не содержит `ChallengeDailyPnL_challengeId_date_key` UNIQUE и `ChallengeDailyPnL_challengeId_idx` — оба есть на dev (создавались pre-baseline). Регенерация baseline из prod (теперь in sync) или patch missing indexes.
+2. **PHASE_4_RELEASE_PLAN §4 не включал catch-up ALTERs** для pre-baseline manual-SQL commits (baf7c27, 9ff36d8, ba46520). Любой будущий релиз pre-baseline-style commits должен иметь этот шаг в плане.
+3. **Gate 9 smoke-test (post-deploy curl /api/user/me) был пропущен** — он бы поймал инцидент в первые 5 минут вместо 2 часов.
+4. **Coolify pre-deploy hook concern из Session 19 — false alarm.** Hook не существует (нет Dockerfile, нет migrate ref в package.json). Baseline применялась out-of-band вручную. Pipeline сейчас чистый — `prisma migrate deploy` нигде в deploy-process не запускается. История того как был удалён первоначальный hook — не задокументирована.
+
+### Tech-debt opened (NOT added to BACKLOG — record-only)
+- Regenerate `0_baseline_reconciled` from prod DB (теперь in sync) ИЛИ patch baseline SQL вручную чтобы добавить недостающие 2 индекса ChallengeDailyPnL. Без этого fresh-DB bootstrap (staging?) повторит тот же инцидент.
+- Update PHASE_4_RELEASE_PLAN template: add step "find pre-baseline manual-SQL commits still pending on prod" (grep commit bodies на "SQL to apply" / "ALTER TABLE" / "manual SQL").
+- Revisit decision: подключать ли `prisma migrate deploy` в build/deploy pipeline. Pro — закрывает класс этих багов навсегда. Con — historically ломал prod через DIRECT_URL (см. commit `ca3ebf8 revert directUrl, fixes prod 500 errors`). Отдельная session.
+
+### Status
+**Phase 4 release COMPLETE — Gate 10 closed at 2026-05-22 ~14:00 UTC.**
+
+48h observation period (расширен с 24h до 48h) завершён 2026-05-24 ~14:00 UTC. Site stable, UI работает, ошибок не наблюдалось.
+
+---
+
+## Session 2026-05-22 — Phase 4 Release (Session 19) CLOSED
+
+### Released
+- develop → main merge commit: a039f74
+- Range: de6bf39..a039f74 (75 commits, 15 phases accumulated)
+
+### Phases included
+- P1.infra.* (Session 12-13) — dev env setup, PROD_RELEASE_CHECKLIST, CLAUDE.md, GitHub Actions
+- P0.3.a — consistency rule (src/lib/consistency.ts)
+- SEC-5 — on-chain txHash verification for admin payouts
+- P0.4 — Position mechanics (spreads, cap, min position, full-sell-only)
+- P0.4.bis — Pre-trade challenge-failure UX modal
+- P0.4.next — min daily volume rule
+- Phase 0.5 — schema reconciliation (prisma-managed migrations, UNMANAGED_DDL.md)
+- P0.9 — dev infra (wipe scripts, backup, CRON_SCHEDULE.md)
+- Phase 1 — ChallengePlan business model (challengePeriodDays 30→10, minTradingDays 15→10)
+- P0.3.B Phase 2.A — trade position guards (min 2%, aggregate 5%)
+- P0.3.B Phase 2.B — trade volume + security guards (daily volume, user-blocked, market-ended)
+- Phase 3 — dashboard API extension (/api/user/me + /mode, 12 fields)
+- Phase 4.A — cron lifecycle (end-of-day-check replacing inactivity-check, daily-pnl-aggregate, verify-pending-payouts)
+- Phase 4.0 — position isolation audit (READ-ONLY, docs/PHASE_4_0_AUDIT.md, 13 findings)
+- Phase 4.A.2 — CRITICAL hot-fix marketResolve.ts (findings #1, #2)
+- Phase 4.B — auto-close-at-finalize + sell guard (findings #3, #4, #5, #6)
+
+### Release gates executed
+1. Pre-flight check: ENV vars OK, dev observation crons OK
+2. Backup prod БД: pg-dump-fundedforecast-1779447625.dmp (1.64 MB, 11:00 UTC)
+3. Corruption baseline captured (prod БД):
+   - chain_leak: 8 rows / 4 users
+   - audit_corruption: 0 / 0
+   - ghost_positions: 4 (status=failed)
+4. Prisma baseline marker (manual INSERT into _prisma_migrations, checksum 0ed1f071...)
+5. ChallengePlan verified on dev
+6. PR #17 merged into main (a039f74)
+7. Deploy initially failed: legacy migration 20260426111052_init triggered on old container before redeploy. Recovery: removed pre-deployment command "npx prisma migrate deploy" from Coolify ff-sandbox-app Configuration, redeployed successfully. Failed migration marked rolled-back via prisma migrate resolve --rolled-back. Phase 1 migration applied successfully (challengePeriodDays=10 on all 3 plans).
+8. Coolify Scheduled Tasks reconciled:
+   - DELETED: inactivity-check
+   - ADDED: end-of-day-check (55 23 * * *)
+   - ADDED: verify-pending-payouts (*/10 * * * *)
+   - ADDED: daily-pnl-aggregate (0 1 * * *)
+   - Total: 10 active tasks
+9. Post-deploy smoke: site loads OK; corruption metrics stable (no growth post-deploy)
+10. 24h observation: PENDING (next morning check)
+
+### Tech debt opened by this release
+- Coolify pre-deploy hook fix: npx prisma migrate deploy is still wired somewhere in build pipeline, triggered legacy migration on old container during Gate 7 retry. Needs investigation into Dockerfile/package.json/Coolify config.
+- 4 ghost positions on prod (failed challenges with status=open positions, pre-Phase-4.B legacy). Cleanup via admin endpoint or one-off script using closeOpenPositionsForChallenge helper.
+- docs/CRON_SCHEDULE.md is missing rows for verify-pending-payouts and daily-pnl-aggregate. Update needed.
+- Prisma version update available 5.22.0 → 7.8.0 (major).
+
+### Audit findings status
+Closed:
+- 2 CRITICAL (#1 marketResolve audit trail corruption, #2 balance chain leak)
+- 4 HIGH (#3 sell guard, #4 cron finalize, #5 ghost positions, #6 non-tx status flips)
+
+Remaining as TECH-DEBT:
+- #7 Market.status update + resolveMarketPositions not in single tx
+- #8 DB unique on active Challenge per user
+- #10 Status fields as bare String (no enum)
+- #11 JS clock for all time checks (no DB NOW())
+- #12 /api/user/positions no historical
+- #13 walletId TODO
+
 ## Session 2026-05-17 — Phase 4.A — End-of-day cron + remove inactivity-check CLOSED
 
 ### Закрыто

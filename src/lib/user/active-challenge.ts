@@ -1,10 +1,5 @@
 import { prisma } from "@/lib/prisma";
 import { computeConsistencyLive } from "@/lib/consistency";
-import {
-  MIN_POSITION_PCT,
-  MAX_AGGREGATE_POSITION_PCT,
-  MAX_DAILY_VOLUME_PCT,
-} from "@/lib/engine/constants";
 
 // Phase 3 — shared shape consumed by /api/user/me and /api/user/mode.
 //
@@ -15,13 +10,6 @@ import {
 // - `daysRemaining` derived from Challenge.expiresAt (set in
 //   payment/activation.ts as startedAt + plan.challengePeriodDays days).
 //   Falls back to 0 if expiresAt is null (legacy challenges).
-// - `minPositionPercent` / `maxAggregatePositionPercent` come from
-//   engine constants — currently uniform across all tiers (per-tier
-//   values pending; tracked in BACKLOG as a TECH-DEBT entry). When
-//   per-tier position limits ship, switch to plan-driven values.
-// - `maxDailyVolumeUsd` is the Phase 2.B Rule #4 cap surfaced as USD
-//   (startBalance × MAX_DAILY_VOLUME_PCT / 100). Matches the helper
-//   getMaxDailyVolumeUsd() in src/lib/engine/spreads.ts.
 // - `plan` may be null on legacy challenges (no plan attached). We
 //   surface that honestly via nullable type rather than fabricating
 //   a placeholder object.
@@ -98,9 +86,13 @@ export interface ActiveChallenge {
   maxLossLimitPercent: number;
   currentDrawdownPercent: number;
   dailyDrawdownPercent: number;
-  minPositionPercent: number;
-  maxAggregatePositionPercent: number;
-  maxDailyVolumeUsd: number;
+
+  // Phase 5 — widget metrics
+  startBalance: number;
+  mllAmount: number;
+  mllBufferAmount: number;
+  resolvedPositionsCount: number;
+  uniqueEventsCount: number;
 }
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
@@ -147,6 +139,37 @@ export async function buildActiveChallenge(
   if (!challenge) return null;
 
   const consistencyResult = await computeConsistencyLive(challenge.id);
+
+  // Phase 5 — MLL buffer (hybrid formula per docs/PHASE_5_BRIEF.md
+  // MLL formula reference section; verified against engine code in
+  // src/app/api/trade/{buy,sell}/route.ts and src/lib/marketResolve.ts):
+  // dollar drawdown anchored to startBalance, trailing offset from peak.
+  const maxLossAmount = round2(
+    challenge.startBalance * (challenge.maxTotalDdPct / 100),
+  );
+  const mllFailPoint = challenge.peakBalance - maxLossAmount;
+  const mllBufferAmount = round2(
+    Math.max(0, challenge.realizedBalance - mllFailPoint),
+  );
+
+  // Phase 5 — resolved positions counter (market-resolved only,
+  // NOT manually closed via full-sell which sets status="closed").
+  const resolvedPositionsCount = await prisma.position.count({
+    where: { challengeId: challenge.id, status: "resolved" },
+  });
+
+  // Phase 5 — unique events counter. Distinct over polymarketEventId
+  // via JS Set (Prisma `distinct` doesn't support relation fields).
+  // Strict: null eventIds excluded (no fallback to marketId).
+  const resolvedWithEvent = await prisma.position.findMany({
+    where: { challengeId: challenge.id, status: "resolved" },
+    select: { market: { select: { polymarketEventId: true } } },
+  });
+  const uniqueEventsCount = new Set(
+    resolvedWithEvent
+      .map((p) => p.market.polymarketEventId)
+      .filter((x): x is string => x !== null),
+  ).size;
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -202,10 +225,6 @@ export async function buildActiveChallenge(
       ? round2((dailyDrawdownAmount / effectiveDayStart) * 100)
       : 0;
 
-  const maxDailyVolumeUsd = round2(
-    challenge.startBalance * (MAX_DAILY_VOLUME_PCT / 100),
-  );
-
   return {
     id: challenge.id,
     stage: challenge.stage,
@@ -232,8 +251,11 @@ export async function buildActiveChallenge(
     maxLossLimitPercent: challenge.maxTotalDdPct,
     currentDrawdownPercent,
     dailyDrawdownPercent,
-    minPositionPercent: MIN_POSITION_PCT,
-    maxAggregatePositionPercent: MAX_AGGREGATE_POSITION_PCT,
-    maxDailyVolumeUsd,
+
+    startBalance: challenge.startBalance,
+    mllAmount: maxLossAmount,
+    mllBufferAmount,
+    resolvedPositionsCount,
+    uniqueEventsCount,
   };
 }

@@ -2,9 +2,6 @@ import {
   BUY_SPREAD_TIERS,
   BUY_PRICE_CAP,
   SELL_SPREAD_PCT,
-  MIN_POSITION_PCT,
-  MAX_AGGREGATE_POSITION_PCT,
-  MAX_DAILY_VOLUME_PCT,
 } from "./constants";
 
 function round6(n: number): number {
@@ -43,65 +40,4 @@ export function applySellSpread(
 /** Returns true if rawPrice is allowed for buy (< BUY_PRICE_CAP). */
 export function checkBuyCap(rawPrice: number): boolean {
   return rawPrice < BUY_PRICE_CAP;
-}
-
-/**
- * Phase 2.A — Minimum allowed position cost (USD), rounded to 2 decimals.
- * Sandbox callers should skip this check; min position is challenge-only.
- * See docs/BUSINESS_RULES.md rule #2.
- */
-export function getMinPositionUsd(startBalance: number): number {
-  return Math.round(startBalance * (MIN_POSITION_PCT / 100) * 100) / 100;
-}
-
-/** Phase 2.A — Returns true if cost meets the 2%-of-startBalance minimum. */
-export function checkMinPosition(cost: number, startBalance: number): boolean {
-  return cost >= getMinPositionUsd(startBalance);
-}
-
-/**
- * Phase 2.A — Maximum allowed aggregate position cost (USD), rounded to 2 decimals.
- * Aggregate = existing open position costBasis + new trade cost, per (marketId, side).
- * Sandbox callers should skip this check; aggregate cap is challenge-only.
- * See docs/BUSINESS_RULES.md rule #3.
- */
-export function getMaxAggregatePositionUsd(startBalance: number): number {
-  return Math.round(startBalance * (MAX_AGGREGATE_POSITION_PCT / 100) * 100) / 100;
-}
-
-/**
- * Phase 2.A — Returns true if (existingCost + newCost) fits within the 5%
- * aggregate position cap of startBalance.
- */
-export function checkAggregatePosition(
-  existingCost: number,
-  newCost: number,
-  startBalance: number,
-): boolean {
-  return existingCost + newCost <= getMaxAggregatePositionUsd(startBalance);
-}
-
-/**
- * Phase 2.B — Returns max allowed cumulative buy volume per UTC day
- * for a Challenge with the given startBalance.
- * Rounded to cents (2 decimal places).
- */
-export function getMaxDailyVolumeUsd(startBalance: number): number {
-  return Math.round(startBalance * (MAX_DAILY_VOLUME_PCT / 100) * 100) / 100;
-}
-
-/**
- * Phase 2.B — Returns true if the new trade's cost can be added to the
- * day's existing buy volume without breaching the per-Challenge daily cap.
- *
- * @param currentDailyVolume  SUM(Trade.cost WHERE action='buy', today UTC, this challenge) — pre-insert state
- * @param newCost             cost of the trade being attempted
- * @param startBalance        Challenge.startBalance
- */
-export function checkMaxDailyVolume(
-  currentDailyVolume: number,
-  newCost: number,
-  startBalance: number,
-): boolean {
-  return currentDailyVolume + newCost <= getMaxDailyVolumeUsd(startBalance);
 }

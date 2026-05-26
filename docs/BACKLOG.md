@@ -950,6 +950,172 @@ Acceptance:
 - Priority: P3 (revisit когда BR разногласие решено и есть commercial reason для differentiation).
 - Related: TECH-DEBT-5 (maxPositionSizePct cleanup) — лучше делать ОДНОВРЕМЕННО.
 
+### TECH-DEBT-10 Regenerate 0_baseline_reconciled migration from current prod DB 🟡 P1 (created Session 20)
+- Source: Session 20 (2026-05-22, Gate 10 incident — Phase 4 schema drift fix)
+- Reason: baseline migration `0_baseline_reconciled` была сгенерирована из dev DB после pre-baseline ALTERs
+  (baf7c27, 9ff36d8, ba46520). На prod baseline применялась через `migrate resolve --applied`
+  (table-exists path), поэтому CREATE TABLE никогда не выполнялся и DDL не дошёл до prod. Сейчас
+  prod синхронизирован manual ALTERs из Gate 10, но baseline SQL по-прежнему не содержит
+  `ChallengeDailyPnL_challengeId_date_key` UNIQUE и `ChallengeDailyPnL_challengeId_idx` (обе
+  созданы на dev pre-baseline и присутствуют). Fresh-DB bootstrap (staging?) повторит инцидент.
+- Action: один из вариантов:
+  (a) `prisma db pull` из prod (теперь в sync) → regenerate baseline → checksum update
+  (b) Patch existing `0_baseline_reconciled/migration.sql` руками: добавить недостающие
+      `CREATE UNIQUE INDEX` + `CREATE INDEX` для ChallengeDailyPnL
+- Scope: prisma/migrations/0_baseline_reconciled/migration.sql + checksum update в `_prisma_migrations`
+  на dev (prod не трогаем — там DDL уже выполнен через Gate 10 fix)
+- Estimated: 1-2 часа
+- Priority: P1 — закрыть ДО создания staging environment, иначе инцидент повторится.
+- Related: SESSION_LOG.md → Session 2026-05-22 Gate 10 entry, process gap #1.
+
+### TECH-DEBT-11 Update PROD_RELEASE_CHECKLIST template — catch-up manual SQL audit step 🟡 P2 (created Session 20)
+- Source: Session 20 (2026-05-22, Gate 10 incident)
+- Reason: PHASE_4_RELEASE_PLAN §4 не включал шаг audit pre-baseline manual-SQL commits.
+  Commits baf7c27 (P0.4.next), 9ff36d8 (P0.5 SEC-5), ba46520 (P0.3.a) содержали SQL в commit body
+  с инструкцией "apply manually on prod" — этот шаг был пропущен при подготовке Phase 4 release.
+  Будущие pre-baseline-style релизы (если такие будут) повторят ту же ошибку без явного step в template.
+- Action: добавить новый шаг в `docs/PROD_RELEASE_CHECKLIST.md` секцию "Pre-merge verification":
+  > **Pre-baseline manual SQL audit.** Прогнать grep по commit bodies между prod tag и develop HEAD:
+  > `git log <prod-tag>..develop --grep="ALTER TABLE\|manual SQL\|SQL to apply" -p`
+  > Любой match — записать в release plan как explicit step "apply SQL X на prod до deploy".
+- Scope: `docs/PROD_RELEASE_CHECKLIST.md` (1 новая секция ~10 строк)
+- Estimated: 30 минут
+- Priority: P2 — не блокер, но важно ДО следующего prod release.
+- Related: SESSION_LOG.md → Session 2026-05-22 Gate 10 entry, process gap #2.
+
+### TECH-DEBT-12 Decision: подключать ли prisma migrate deploy в build/deploy pipeline ⚪ P3 (created Session 20)
+- Source: Session 20 (2026-05-22, Gate 10 incident — discussion в "Tech-debt opened" §3)
+- Reason: Gate 10 incident класс багов (manual SQL forgotten on prod) полностью закрывается
+  автоматизированным `prisma migrate deploy` в pipeline. НО — historically этот hook
+  уже ломал prod через DIRECT_URL configuration mismatch (см. commit `ca3ebf8 revert directUrl,
+  fixes prod 500 errors`) и был удалён вручную во время Gate 7 recovery (Phase 4 release).
+  Решение нужно принимать осознанно с учётом trade-off.
+- Action plan:
+  (a) Research session: восстановить контекст почему directUrl revert случился (read ca3ebf8 + смежные commits)
+  (b) Decision между вариантами:
+      - Status quo: manual SQL via Coolify DB Terminal + новый audit step (TECH-DEBT-11)
+      - Coolify pre-deploy hook с правильным DIRECT_URL setup
+      - GitHub Actions workflow: `prisma migrate deploy` против prod DB перед нажатием Deploy
+  (c) Implementation выбранного варианта
+- Scope: depends on decision — либо docs only, либо Coolify config + env vars, либо `.github/workflows/`
+- Estimated: research 1 час + implementation 2-4 часа
+- Priority: P3 — открыть когда вернёмся к prod release cycle (P0.9 / Wave 6 boundary).
+- Related: SESSION_LOG.md → Session 2026-05-22 Gate 10 entry, tech-debt §3; commit ca3ebf8.
+
+### TECH-DEBT-13 Rejected trades visibility in History 🟡 P2 (created Session 21, 2026-05-25)
+- Source: PHILO-1 smoke test (Session 21).
+- Problem: Rejected trades не отображаются в History UI. Trade attempt который был отвергнут pre-trade check'ом (DLL, MLL, buy cap, market end, user blocked, insufficient balance) не записывается в `Trade` table и не виден юзеру.
+- Concrete example from PHILO-1 smoke test:
+  - test8 challenge зафейлен с violation "Daily drawdown 5.83%"
+  - Triggering trade: попытка buy 63 NO @ $49.47 cost
+  - В History: только 3 executed trades, P&L −$0.36
+  - Юзер не может связать violation reason с конкретным trade attempt
+- Impact:
+  - UX confusion при challenge fail через pre-trade rejects
+  - Особенно критично для DLL/MLL fails — юзер видит violation reason без trigger context
+  - Нет аудитной цепочки между триггером и фейлом
+- Desired behavior:
+  - Rejected trades логируются в History с пометкой `rejected` + `error_code` + краткое reason
+  - НЕ влияют на P&L расчёты, НЕ изменяют balance
+  - Только для аудита
+- Не связано с PHILO-1: это pre-existing behavior. PHILO-1 ничего в Trade table или History UI не менял.
+- Out of scope: PHILO-1, Phase 5 (UI widgets).
+- Estimated: TBD — нужен design (где хранить rejected attempts, схема, retention policy).
+- Priority: P2 — UX improvement, не блокер.
+
+### TECH-DEBT-14 DLL drawdown calculation mismatch with final P&L 🔵 INVESTIGATED (created Session 21, 2026-05-25)
+- Source: PHILO-1 smoke test (Session 21).
+- Problem: DLL violation reason показывает число которое не сходится с фактическим P&L. Likely pre-trade simulation использует gross buy cost cumulative (включая hypothetical new trade), а не net realized + unrealized P&L.
+- Concrete example from PHILO-1 smoke test:
+  - Challenge: test8 Starter $1000
+  - Executed trades:
+    - Buy 22 YES @ $0.0950 → cost $2.09
+    - Buy 71 YES @ $0.0950 → cost $6.75
+    - Sell 93 YES @ $0.09 → revenue +$8.48
+  - Final P&L: −$0.36 (−0.04%)
+  - Attempted trade (rejected): Buy 63 NO @ $0.7852 effective → cost $49.47
+  - DLL violation reason: "Daily drawdown 5.83% exceeded limit 5%"
+- Reconstruction:
+  - Total cumulative buy cost (incl. hypothetical): $2.09 + $6.75 + $49.47 = $58.31
+  - $58.31 / $1000 = 5.83% точно
+- Hypothesis: DLL pre-trade simulation считает gross buy cost cumulative against startBalance, не учитывая realized profits от sells и не учитывая current cash/equity state. Это объясняет mismatch с Final P&L −0.04%.
+- Investigation branches:
+  - Real bug в DLL формуле → нужно править расчёт
+  - Intentional design ("worst case scenario") → нужно update documentation чтобы юзер понимал violation reason
+  - Edge case с pre-trade simulation (rejected trade включается в расчёт) → исключить hypothetical trade из расчёта если он rejected
+- Не связано с PHILO-1: DLL logic (rule #5) не была тронута. PHILO-1 discovery (Step A §5.2) подтвердил DrawdownViolatedError + MLL/DLL checks preserved.
+- Impact:
+  - Юзер видит challenge failed по drawdown, но Final P&L показывает −0.04% — теряет доверие к системе
+  - Если #1 (bug) — недостоверный enforcement
+  - Если #2 (design) — UX clarity issue
+- Out of scope: PHILO-1, Phase 5.
+- Estimated: TBD — нужно начать с code reading DLL/MLL расчёта в `trade/buy/route.ts` lines 396-470 area + raw SQL для `daily_pnl_aggregate` если используется.
+- Priority: P1 — может affect user trust и потенциально incorrect enforcement. Нужно investigated до prod release PHILO-1.
+- INVESTIGATED: 2026-05-25. Verdict: DLL is cash-only by design, not a bug. See docs/TECH_DEBT_14_INVESTIGATION.md. Follow-up: R1 docs update for BUSINESS_RULES.md rule #5 (separate phase).
+
+### TECH-DEBT-15 marketResolve.ts does not check DLL on resolved positions 🔵 CLOSED — intentional design (proposed by Architect, Session 22, 2026-05-25)
+- Source: TECH-DEBT-14 investigation, finding R4 (see docs/TECH_DEBT_14_INVESTIGATION.md §R4)
+- Problem: src/lib/marketResolve.ts:152-195 updates realizedBalance when market resolves (winner: shares × $1, loser: 0). Checks MLL inline at lines 163-178. Does NOT check DLL.
+- Implication: if market resolves at a loss large enough to trip DLL for current UTC day, the resolve event will not fail the challenge — only MLL breach will.
+- Question: is this intentional (resolve events are not "trades", shouldn't count toward intraday brakes) or coverage gap?
+- Action: separate discovery phase to decide:
+  (a) Add DLL check to marketResolve.ts — consistency with trade routes
+  (b) Document explicit decision in BUSINESS_RULES.md rule #5: "DLL evaluated on trade events only, not on market resolution"
+- Scope: src/lib/marketResolve.ts + docs/BUSINESS_RULES.md
+- Estimated: 1-2 hours discovery + 30 min implementation/docs
+- Priority: P2 — design decision, not critical bug.
+- Related: docs/TECH_DEBT_14_INVESTIGATION.md §R4
+- CLOSED: 2026-05-25. Product decision: DLL is intraday brake on active cash deployment by user. Resolve events are passive (user did not initiate). Penalizing passive events via DLL would be disproportionate. MLL covers cumulative loss including resolve-triggered losses. No code change required.
+
+### TECH-DEBT-16 Auto-close trades not visually distinguished from user sells ⚪ P3 (proposed by Architect, Session 22, 2026-05-25)
+- Source: TECH-DEBT-14 investigation, finding R5 (see docs/TECH_DEBT_14_INVESTIGATION.md §R5)
+- Problem: closeOpenPositionsForChallenge writes Trade rows with action='auto_close_finalize'. History view, failed-challenge email, and dashboard balance trajectory do not visually distinguish these from user sells.
+- User impact: trader perceives "final trade" as own sell, reconstructs event timeline incorrectly. Example from PHILO-1 smoke test: reporter described "I bought twice, sold once, then attempted a buy" — the "sold once" was actually auto_close_finalize after DLL fail.
+- Action: add visual label ("System auto-close after challenge failure") on rows with action='auto_close_finalize' in:
+  - Dashboard history table
+  - Failed-challenge email template
+  - Any other Trade list view
+- Scope: src/app/dashboard/page.tsx + src/lib/email-templates/challenge-failed.ts + any other UI consumers
+- Estimated: 2-3 hours
+- Priority: P3 — UX confusion, not functional issue.
+- Related: docs/TECH_DEBT_14_INVESTIGATION.md §R5
+
+### TASK-PHILO-1 Relax pre-trade hard rejects — align with "user must be able to fail" philosophy ✅ CLOSED 2026-05-24 (Session 21)
+- CLOSED 2026-05-24 — branch `feature/philo-1-relax-rejects`, 9 commits (2 B-DOCS + 5 B-CODE + 2 B-FINAL), build green, smoke test pending (Алексей)
+- Source: Session 21 discussion — Алексей флагнул что текущие 3 pre-trade rejects (rules #2, #3, #4) противоречат заявленной product philosophy "UI shows data, doesn't control behavior"
+- Reason: бизнес-модель FundedForecast основана на том что подавляющее большинство юзеров проигрывает (target pass rate 2-3%). Текущие 3 hard rejects блокируют классические fail patterns (small bets, all-in, overtrading) и тем самым снижают revenue
+- Affected rules:
+  - **Rule #2 (Min position 2% = $20 for Starter):** hard reject. Юзер хочет вложить $5 — не может. Это его выбор проиграть $5, не наша забота защищать.
+  - **Rule #3 (Max aggregate 5% = $50 per market):** hard reject. Юзер хочет all-in на одной идее — не может. All-in это lose pattern → revenue → зачем блокировать?
+  - **Rule #4 (Max daily volume 5% = $50 per UTC day):** hard reject. Юзер хочет overtrade — не может. Overtrading это lose pattern → revenue → зачем блокировать?
+- Out of scope (НЕ трогаем):
+  - Rule #1 (Buy cap $0.85) — защита от вырожденных рынков, infrastructure инвариант
+  - Rule #5 (Market endDate), Rule #6 (User isBlocked) — security/infrastructure
+  - Rules #7-12 (end-of-day, end-of-challenge cron checks) — это правила challenge по итогам, не блокировки решений
+  - Position isolation guards (Phase 4.B) — защита аудит-трейла
+- Proposed action plan:
+  (a) Удалить hard reject из trade/buy для rules #2 и #3 (MinPositionError, AggregatePositionExceededError)
+  (b) Превратить rule #4 в end-of-day check (или удалить совсем — решить в discovery)
+  (c) Trade modal preview показывает рекомендации ("recommended position $20+"), не лимиты
+  (d) /api/user/positions всё ещё возвращает min/max suggested values (для UI display)
+  (e) Server pre-trade НЕ reject на основе суммы (только на основе #1, #5, #6, balance, position isolation)
+  (f) End-of-day cron логика расширяется если нужно (rule #4 переезжает туда)
+- Expected business impact:
+  - Pass rate downstream ~10-15% lower (более точная revenue capture)
+  - User UX мягче: меньше "your trade rejected" friction
+  - Юзер свободен совершать ошибки = бизнес-модель работает правильно
+- Scope:
+  - src/app/api/trade/buy/route.ts (remove MinPositionError, AggregatePositionExceededError, daily volume check)
+  - src/app/api/cron/end-of-day-check/route.ts (возможно добавить rule #4 как end-of-day fail)
+  - src/lib/engine/spreads.ts (cleanup helpers если не нужны)
+  - src/app/markets/[id]/page.tsx (TradeModal: change error UX, keep informational preview)
+  - docs/BUSINESS_RULES.md (rewrite rules #2, #3, #4 sections — переписать как философию vs hard limits)
+  - Tests (если есть)
+- Priority: P1 — это revenue impact, не косметика. Каждый день hard reject = lost revenue.
+- Related: docs/BUSINESS_RULES.md "Product philosophy" section; SESSION_LOG entries Phase 2.A, Phase 2.B
+- Note: Phase 5 (UI widgets) можно делать параллельно или после, они не конфликтуют
+
+
 ### TASK-DOC-1 Update BUSINESS_RULES.md rule #6 (MLL formula peak-based) ⚪ P3 (created Phase 3)
 - Source: Phase 3 (Step 1 helper review — formula mismatch BR vs engine inline)
 - Текущая запись в BR rule #6 (по памяти из chat): drawdown = `(initialBalance - currentBalance) / initialBalance × 100`
@@ -995,4 +1161,47 @@ Acceptance:
 - Scope: 2 файла, ~5 строк изменений
 - Estimated: 30 минут
 - Не блокер: cosmetic. Local compute работает корректно.
+- Priority: P3.
+
+### Phase 5 — Dashboard widgets for challenge data ✓ CLOSED (Session 23, 2026-05-26)
+- Scope: 6-widget challenge dashboard grid (3+3) + section header, helper
+  extension (5 new ActiveChallenge fields), /api/user/me + types plumbing
+  (Phase 3 cherry-pick gap closed), ChallengeCard removed from dashboard.
+- Develop commits: `40505c0` (main: widgets + helper + API/type plumbing)
+  + `fc25832` (hotfix: section header). Brief: `838a94f`, `ce02819`, `107687d`.
+- Smoke-tested + 4-position buy math verified on dev.tradepredictions.online
+  (Pro tier $5000). Sandbox state: widgets correctly not rendered. Full record:
+  SESSION_LOG 2026-05-26 (Session 23).
+- Spawned tech-debt: TECH-DEBT-17, TASK-DOC-2, UI-BUG-1 (below).
+
+### TECH-DEBT-17 realizedBalance / currentBalance dual-forwarding in /api/user/me ⚪ P3 (created Phase 5, Session 23, 2026-05-26)
+- Source: Phase 5 Step 2 decision (Option 1 — additive resolution).
+- `/api/user/me` now forwards BOTH `realizedBalance` (legacy) and `currentBalance`
+  (new canonical name for widgets), carrying the same value. Additive, zero-breakage.
+- Consolidate to a single canonical field after all consumers migrated.
+- Consumers of `realizedBalance` today: src/app/account/page.tsx (profit progress +
+  drawdown calc), src/app/api/user/me/route.ts:96 (header balance fallback).
+- Files: src/app/api/user/me/route.ts, src/lib/types.ts.
+- Не блокер: cosmetic API redundancy, no runtime impact.
+- Priority: P3.
+
+### TASK-DOC-2 Update comment in active-challenge.ts (drawdown is hybrid, not peak-based) ⚪ P3 (created Phase 5, Session 23, 2026-05-26)
+- Source: Phase 5 Step 1 discovery (formula verified against engine code).
+- Comment in `src/lib/user/active-challenge.ts` lines ~32-34 says "Peak-based
+  drawdown (matches engine MLL logic)". Actual engine formula is HYBRID:
+  initial-dollar drawdown (`startBalance × maxTotalDdPct / 100`) trailed from
+  `peakBalance`. Verified against trade/buy, trade/sell, marketResolve routes.
+- Action: update the comment to describe the hybrid formula accurately.
+- Scope: docs comment only, ~3 lines. Engine behaviour unchanged.
+- Не блокер: docs accuracy. Distinct from TASK-DOC-1 (BUSINESS_RULES.md rule #6).
+- Priority: P3.
+
+### UI-BUG-1 Portfolio Value missing locale formatting in dashboard top stats ⚪ P3 (created Phase 5, Session 23, 2026-05-26)
+- Source: Phase 5 smoke test observation (existing bug, not Phase 5 scope).
+- `src/app/dashboard/page.tsx` top stats row "Portfolio Value" uses `.toFixed(2)`
+  without locale grouping — shows "$5000.00" instead of "$5,000.00". Inconsistent
+  with "Available Balance" which uses `.toLocaleString("en-US", { minimumFractionDigits: 2 })`.
+- Action: switch Portfolio Value to the same `.toLocaleString` formatting.
+- Scope: 1 line in dashboard/page.tsx.
+- Не блокер: cosmetic display inconsistency.
 - Priority: P3.
