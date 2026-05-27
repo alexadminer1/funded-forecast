@@ -1,6 +1,7 @@
 "use client";
 
 import { MetricWidget, ZoneColor } from "./MetricWidget";
+import { TOOLTIP_TEXTS } from "@/lib/tooltipTexts";
 
 // Local mirror of src/lib/user/active-challenge.ts ActiveChallenge.
 // Numerics are optional here to defend against stale cached /api/user/me
@@ -154,6 +155,7 @@ export function ChallengeWidgets({ challenge: c }: ChallengeWidgetsProps) {
           caption={`Daily DD (limit ${dailyDdLimit}%)`}
           zone={dailyDdZone(dailyDdPct, dailyDdLimit)}
           size="large"
+          info={TOOLTIP_TEXTS.dailyPnl}
         />
         <MetricWidget
           label="MLL buffer"
@@ -161,6 +163,7 @@ export function ChallengeWidgets({ challenge: c }: ChallengeWidgetsProps) {
           caption={`to MLL limit (${maxLossLimitPct}%)`}
           zone={mllBufferZone(mllBuffer, mllAmount)}
           size="large"
+          info={TOOLTIP_TEXTS.mllBuffer}
         />
         <MetricWidget
           label="Days remaining"
@@ -168,6 +171,7 @@ export function ChallengeWidgets({ challenge: c }: ChallengeWidgetsProps) {
           caption="days left of 10"
           zone={daysRemainingZone(daysRemaining)}
           size="large"
+          info={TOOLTIP_TEXTS.daysRemaining}
         />
       </div>
 
@@ -185,6 +189,7 @@ export function ChallengeWidgets({ challenge: c }: ChallengeWidgetsProps) {
           caption="resolved positions"
           zone={resolvedPositionsZone(resolvedCount)}
           size="small"
+          info={TOOLTIP_TEXTS.resolvedPositions}
         />
         <MetricWidget
           label="Unique events"
@@ -192,6 +197,7 @@ export function ChallengeWidgets({ challenge: c }: ChallengeWidgetsProps) {
           caption="unique events"
           zone={uniqueEventsZone(uniqueEventsCount)}
           size="small"
+          info={TOOLTIP_TEXTS.uniqueEvents}
         />
         <MetricWidget
           label="Consistency"
@@ -203,6 +209,7 @@ export function ChallengeWidgets({ challenge: c }: ChallengeWidgetsProps) {
           }
           zone={hasProfit ? consistencyZone(consistencyPctDisplay) : "neutral"}
           size="small"
+          info={TOOLTIP_TEXTS.consistency}
         />
       </div>
       </div>

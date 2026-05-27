@@ -2,6 +2,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, getToken } from "@/lib/api";
+import { InfoTooltip } from "@/components/InfoTooltip";
+import { TOOLTIP_TEXTS } from "@/lib/tooltipTexts";
 
 const card: React.CSSProperties = { background: "#0d1117", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, padding: "24px 28px", marginBottom: 16 };
 const label: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 };
@@ -325,7 +327,10 @@ export default function AccountPage() {
               </div>
               {selectedSummary && (
                 <div style={{ marginBottom: 16, padding: 14, background: "rgba(34,197,94,0.04)", border: "1px solid rgba(34,197,94,0.12)", borderRadius: 8 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#22C55E", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>Available to withdraw</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#22C55E", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10, display: "flex", alignItems: "center" }}>
+                    <span>Available to withdraw</span>
+                    <InfoTooltip text={TOOLTIP_TEXTS.availableToWithdraw} label="Available to withdraw" />
+                  </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span style={{ color: "#94A3B8" }}>Challenge profit</span>

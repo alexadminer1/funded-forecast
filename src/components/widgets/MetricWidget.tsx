@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode } from "react";
+import { InfoTooltip } from "@/components/InfoTooltip";
 
 export type ZoneColor = "green" | "yellow" | "red" | "neutral";
 
@@ -17,6 +18,7 @@ interface MetricWidgetProps {
   caption: string;
   zone?: ZoneColor;
   size?: "large" | "small";
+  info?: string;
 }
 
 export function MetricWidget({
@@ -25,6 +27,7 @@ export function MetricWidget({
   caption,
   zone = "neutral",
   size = "large",
+  info,
 }: MetricWidgetProps) {
   const valueColor = ZONE_COLOR_MAP[zone];
   const valueFontSize = size === "large" ? 28 : 22;
@@ -47,9 +50,12 @@ export function MetricWidget({
           textTransform: "uppercase",
           letterSpacing: "0.07em",
           fontWeight: 600,
+          display: "flex",
+          alignItems: "center",
         }}
       >
-        {label}
+        <span>{label}</span>
+        {info && <InfoTooltip text={info} label={label} />}
       </div>
       <div
         style={{

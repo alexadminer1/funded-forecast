@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { apiFetch, getToken } from "@/lib/api";
 import { User, Position } from "@/lib/types";
 import { ChallengeWidgets } from "@/components/widgets/ChallengeWidgets";
+import { InfoTooltip } from "@/components/InfoTooltip";
+import { TOOLTIP_TEXTS } from "@/lib/tooltipTexts";
 
 interface LastChallenge {
   id: number;
@@ -152,10 +154,10 @@ export default function DashboardPage() {
 
   const portfolioValue = activeBalance + positions.reduce((s, p) => s + p.currentValue, 0);
 
-  const stats = [
-    { label: "Available Balance", value: `$${activeBalance.toLocaleString("en-US", { minimumFractionDigits: 2 })}`, color: "#22C55E", sub: modeData?.mode === "challenge" ? "challenge balance" : "paper capital" },
+  const stats: Array<{ label: string; value: string; color: string; sub: string; info?: string }> = [
+    { label: "Available Balance", value: `$${activeBalance.toLocaleString("en-US", { minimumFractionDigits: 2 })}`, color: "#22C55E", sub: modeData?.mode === "challenge" ? "challenge balance" : "paper capital", info: TOOLTIP_TEXTS.availableBalance },
     { label: "Open Positions", value: String(user.openPositionsCount), color: "#3B82F6", sub: "active trades" },
-    { label: "Unrealized PnL", value: `${totalUnrealized >= 0 ? "+" : ""}$${totalUnrealized.toFixed(2)}`, color: totalUnrealized >= 0 ? "#22C55E" : "#EF4444", sub: anyStale ? "⚠ prices may be slightly delayed" : "open positions" },
+    { label: "Unrealized PnL", value: `${totalUnrealized >= 0 ? "+" : ""}$${totalUnrealized.toFixed(2)}`, color: totalUnrealized >= 0 ? "#22C55E" : "#EF4444", sub: anyStale ? "⚠ prices may be slightly delayed" : "open positions", info: TOOLTIP_TEXTS.unrealizedPnl },
     { label: "Portfolio Value", value: `$${portfolioValue.toFixed(2)}`, color: "#F59E0B", sub: "balance + positions" },
   ];
 
@@ -187,7 +189,7 @@ export default function DashboardPage() {
 
         {/* Stats */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12, marginBottom: 32 }}>
-          {stats.map(({ label, value, color, sub }) => (
+          {stats.map(({ label, value, color, sub, info }) => (
             <div key={label} style={{
               background: "linear-gradient(160deg, var(--bg-surface) 0%, var(--bg-page) 100%)",
               borderRadius: "var(--radius-card)",
@@ -195,7 +197,10 @@ export default function DashboardPage() {
               border: "1px solid var(--border)",
               boxShadow: "var(--shadow-card), inset 0 1px 0 rgba(255,255,255,0.03)",
             }}>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>{label}</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, display: "flex", alignItems: "center" }}>
+                <span>{label}</span>
+                {info && <InfoTooltip text={info} label={label} />}
+              </div>
               <div style={{ fontSize: 24, fontWeight: 800, color, letterSpacing: "-0.03em", marginBottom: 4 }}>{value}</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{sub}</div>
             </div>
