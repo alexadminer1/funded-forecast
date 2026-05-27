@@ -226,6 +226,43 @@ History: enforcement existed in Phase 2.B (Session 17, commits 511b9c6..830a88d,
 
 ---
 
+## Live Pricing Architecture (added 2026-05-27)
+
+The platform protects against arbitrage between Polymarket (live prices) and our platform by
+performing a live fetch from the Polymarket gamma API before every trade.
+
+**Trade execution flow:**
+1. User submits trade with displayed `clientPrice`
+2. Backend fetches live price from gamma `/markets/{id}` (3s timeout)
+3. Slippage check: `|clientPrice - livePrice| <= MAX_SLIPPAGE (0.02 = 2¢)`
+4. If exceeded: trade rejected with "Price moved beyond slippage tolerance"
+5. If within: cost calculated with live price + spread + cap, transaction proceeds
+
+**Fail-closed behavior:**
+- If the Polymarket fetch times out or returns invalid data: trade rejected
+- A 20-second cooldown is set per user/market via Redis key `live:cooldown:{userId}:{marketId}`
+- During cooldown, all trade attempts on that market return 503
+
+**Background sync (live unrealized PnL):**
+- Coolify cron `live-price-sync` runs every minute
+- Internal 6-tick loop fetches Polymarket prices for markets with open positions
+- Updates Redis hash `live:prices` with TTL 15s
+- Dashboard polls `/api/user/positions/live` every 10s to display fresh PnL
+
+**Rate limiting:**
+- `/api/markets/[id]/refresh-price`: 1 request per 5 seconds per user/market
+- Trade endpoints: standard auth rate limit
+- 429 responses are handled gracefully on the frontend (fallback to cached price)
+
+**Frontend protections:**
+- Market page auto-refreshes price every 10s when active
+- Trade modal has its own 10s refresh cycle with countdown UI
+- Pre-submit check: frontend fetches a fresh price before POST
+- Significant change threshold: `max(5%, 2¢)` triggers a confirmation dialog
+- All auto-refresh pauses on hidden tab / >30s idle to reduce load
+
+---
+
 ## Wallet model
 
 **Полностью описан в WALLET_MODEL.md (APPROVED 2026-05-11).**
