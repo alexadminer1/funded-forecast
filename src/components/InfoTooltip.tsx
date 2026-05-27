@@ -2,33 +2,19 @@
 
 import { useState, useRef, useEffect, useId, useCallback } from "react";
 
-// Lightweight info tooltip (no library). Hover on desktop, tap on touch.
+// Lightweight info tooltip (no library). Click to open; click outside or Escape to close.
 export function InfoTooltip({ text, label }: { text: string; label: string }) {
   const [open, setOpen] = useState(false);
   const [placement, setPlacement] = useState<"top" | "bottom">("bottom");
   const wrapperRef = useRef<HTMLSpanElement>(null);
-  const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const popoverId = useId();
 
-  // Detect hover/pointer capability once (client-only; SSR → false → touch behavior).
-  const [isHoverCapable] = useState(
-    () => typeof window !== "undefined"
-      && window.matchMedia("(hover: hover) and (pointer: fine)").matches,
-  );
-
-  const openTip = useCallback(() => {
-    if (blurTimerRef.current) { clearTimeout(blurTimerRef.current); blurTimerRef.current = null; }
+  // Click-only toggle. Compute placement (flip up near the viewport bottom) on open.
+  const onIconClick = useCallback(() => {
     const rect = wrapperRef.current?.getBoundingClientRect();
-    if (rect && rect.bottom + 100 > window.innerHeight) {
-      setPlacement("top");
-    } else {
-      setPlacement("bottom");
-    }
-    setOpen(true);
+    setPlacement(rect && rect.bottom + 100 > window.innerHeight ? "top" : "bottom");
+    setOpen((o) => !o);
   }, []);
-
-  const closeTip = useCallback(() => setOpen(false), []);
-  const toggle = useCallback(() => { setOpen((o) => !o); }, []);
 
   // Outside-click (pointerdown covers mouse + touch) + Escape, only while open.
   useEffect(() => {
@@ -49,25 +35,17 @@ export function InfoTooltip({ text, label }: { text: string; label: string }) {
     };
   }, [open]);
 
-  useEffect(() => () => {
-    if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
-  }, []);
-
   return (
     <span
       ref={wrapperRef}
       style={{ position: "relative", display: "inline-flex", alignItems: "center" }}
-      onMouseLeave={isHoverCapable ? closeTip : undefined}
     >
       <button
         type="button"
         aria-label={`Information about ${label}`}
         aria-expanded={open}
         aria-describedby={open ? popoverId : undefined}
-        onClick={toggle}
-        onMouseEnter={isHoverCapable ? openTip : undefined}
-        onFocus={openTip}
-        onBlur={() => { blurTimerRef.current = setTimeout(closeTip, 120); }}
+        onClick={onIconClick}
         style={{
           background: "transparent",
           border: "none",
@@ -106,7 +84,7 @@ export function InfoTooltip({ text, label }: { text: string; label: string }) {
             borderRadius: "8px",
             boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
             color: "var(--text-primary)",
-            fontSize: "12.5px",
+            fontSize: "10px",
             lineHeight: 1.5,
             whiteSpace: "pre-line",
             textTransform: "none",
