@@ -5,6 +5,25 @@
 
 ---
 
+## Current state — 2026-05-26 (evening, Session 24)
+
+- **prod** `main @ 924b1ee` · **develop** `@ dc9b1bd` (1 commit ahead of main).
+- **Local repo:** `~/funded-app` (GitHub repo name is `funded-forecast`; the local clone
+  directory is `funded-app` — same repo, different folder name).
+- **Payout UX (new):** /account has an "Available to withdraw" breakdown block,
+  auto-populated wallet/network fields, and the false "Platform fee: 20%" line removed.
+  Admin payouts UI has a wallet-address Copy button.
+- **Backend:** `GET /api/user/payout` now returns a `summaries` array
+  (per-challenge `totalProfit` / `userShare` / `alreadyWithdrawn` / `availableNow`).
+- **Remaining payout work:** see TECH-DEBT-18 (platform fee model) and
+  TECH-DEBT-19 (E2E payout test) in `docs/BACKLOG.md`.
+
+### Where we are in task
+- **Demo readiness:** ✅ payout UX complete for demo.
+- **Outstanding:** E2E payout test (TECH-DEBT-19), platform fee implementation (TECH-DEBT-18).
+
+---
+
 ## 1. Работа с пользователем
 
 - **Алексей** (alexadminer) — владелец процесса, не программист.
@@ -333,4 +352,4 @@ Unmanaged DDL (partial indexes, soft FKs) задокументирован в `d
 
 ---
 
-Last updated: 2026-05-13 (Session 13 — bash helpers + branch protection + auto-deploy off)
+Last updated: 2026-05-26 (Session 24 — payout UX overhaul, network fix, autofill; Current state section added)

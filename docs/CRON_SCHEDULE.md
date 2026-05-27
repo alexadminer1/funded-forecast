@@ -20,6 +20,7 @@ When schedule changes in Coolify — update this file manually in the same PR.
 | 6 | cleanup-stale-markets  | POST /api/admin/cleanup-stale-markets                | `0 * * * *`     | Auto-resolve markets closed on Polymarket (P0.2.e, commit ff54927)   |
 | 7 | end-of-day-check       | GET /api/cron/end-of-day-check                       | `55 23 * * *`   | Daily activity check — fail challenges per rules #7, #8 (Phase 4.A)  |
 | 8 | affiliate-hold         | POST /api/admin/affiliate-hold (verify path)         | `0 3 * * *`     | Daily affiliate ledger hold/release transitions                       |
+| 9 | live-price-sync        | GET /api/cron/live-price-sync                        | `* * * * *`     | Background sync of Polymarket prices for markets with open positions (6 internal ticks/min ≈ 10s freshness) |
 
 Notes:
 - `cleanup-stale-markets` schedule confirmed working (Session 10, 128 markets resolved).

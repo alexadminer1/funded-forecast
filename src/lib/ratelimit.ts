@@ -15,6 +15,7 @@ export const limiters = {
   walletUpdate: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(5, "1 h"), prefix: "rl:affiliate-wallet" }),
   payoutRequest: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(1, "1 d"), prefix: "rl:affiliate-payout" }),
   paymentCreate: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(5, "1 m"), prefix: "rl:payment-create" }),
+  refresh: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(1, "5 s"), prefix: "rl:refresh" }),
   webhook: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(100, "1 m"), prefix: "rl:webhook" }),
   admin: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(20, "1 m"), prefix: "rl:admin" }),
   default: new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(60, "1 m"), prefix: "rl:default" }),

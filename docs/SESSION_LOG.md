@@ -9,6 +9,68 @@
 
 ---
 
+## Session 2026-05-26 (afternoon/evening) — Payout fixes: network mismatch + UX overhaul + autofill (Session 24)
+
+Status: CLOSED — 3 деплоя в prod, все протестированы
+
+### Контекст
+Продолжение дня после Phase 5 (Session 23). Три последовательных деплоя в prod
+по payout-флоу + серия аудитов перед демо.
+
+### Deploy 1 — Payout network mismatch fix (main @ 1611173)
+- Симптом: POST /api/user/payout → 400 "Network must be one of: TRC20, ERC20, BEP20, POLYGON".
+- Root cause: `<option>` элементы в форме выплаты не имели атрибута `value=` →
+  отправлялся текст метки "USDC ERC20" вместо канонического кода "ERC20".
+- Fix (Option A из аудита): явные `value="ERC20"`/`value="POLYGON"` в `<option>`,
+  default state "ERC20". Плюс нормализация в `load()` для легаси-значений "USDC ERC20" из БД.
+- Файл: src/app/account/page.tsx
+- Аудит: /tmp/payout-network-mismatch-audit.md
+
+### Deploy 2 — Payout UX overhaul (develop 701895d → main 924b1ee)
+Три изменения одним деплоем:
+1. Новый блок "Available to withdraw" на /account — показывает Challenge profit,
+   Your profit share (X%), Already requested/paid, Available now + строку
+   "You keep X% of profit, remaining Y% is platform's share".
+2. Удалён вводящий в заблуждение текст "Platform fee: 20% · You receive 80%"
+   (в коде feePct=0 — это была неправда).
+3. Admin payouts UI: адрес кошелька теперь truncated (6+4) + кнопка Copy.
+- Backend: GET /api/user/payout расширен — возвращает `summaries` array
+  с per-challenge {totalProfit, userShare, alreadyWithdrawn, availableNow}.
+- Bonus: `pending_verification` добавлен в statusColor map (#A855F7).
+- Файлы: src/app/account/page.tsx, src/app/admin/page.tsx, src/app/api/user/payout/route.ts
+- Discovery: /tmp/payout-ux-discovery.md · Implementation: /tmp/phase-payout-ux.md
+
+### Deploy 3 — Auto-populate payout form (develop dc9b1bd)
+- Wallet/network пре-заполняются в форме выплаты из сохранённого профиля.
+- После успешной выплаты: сбрасываются только challengeId/amount, wallet/network остаются.
+- Файл: src/app/account/page.tsx (~7 строк). Implementation: /tmp/phase-payout-autofill.md
+
+### Аудиты прогнаны сегодня
+- /tmp/payout-network-mismatch-audit.md — network value mismatch (root cause + fix options)
+- /tmp/payout-amount-math-audit.md — вскрыл zero-fee модель + ложь в UI hint (feePct=0)
+- /tmp/payout-ux-discovery.md — API gaps (поля, нужные UI, отсутствовали в endpoints)
+
+### E2E payout test — статус
+- PayoutRequest id=1 (adminer, Challenge #12) создан на prod, статус `approved`
+  (Алексей approve вручную).
+- Застрял на `approved` — on-chain перевода не было.
+- Открытое решение: self-transfer (admin wallet → тот же admin wallet, adminer = тот же
+  человек) vs отдельный test-user wallet для полного E2E. Решение отложено, фокус на демо.
+- → TECH-DEBT-19.
+
+### Key learnings
+- Form `<option>` without `value=` submits the label text — explicit value attribute is essential.
+- Schema defaults (`feePct @default(20)`) can be orphans from a previous design — verify they're actually applied in code.
+- When discovery finds API gaps (missing fields needed by UI), server-side aggregate is cleaner than duplicating business logic client-side.
+- Mismatch between user-visible UI copy and actual code behavior is more damaging than missing features.
+
+### Spawned tech-debt (BACKLOG)
+- TECH-DEBT-18: Platform fee model — needs business decision + implementation (P1)
+- TECH-DEBT-19: Complete E2E payout test on testnet (P2)
+- TECH-DEBT-20: Min payout threshold review (P3)
+
+---
+
 ## Session 2026-05-26 — Phase 5: Dashboard widgets for challenge data (Session 23)
 
 Status: CLOSED — implemented + smoke-tested + verified on dev

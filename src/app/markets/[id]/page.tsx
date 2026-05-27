@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { apiFetch, getToken } from "@/lib/api";
 import { MarketDetail } from "@/lib/types";
@@ -14,6 +14,9 @@ import {
   ChallengeFailedInfo,
   ChallengeFailedReason,
 } from "@/components/ChallengeFailedModal";
+
+type LivePriceData = { yesPrice: number; noPrice: number; updatedAt: number };
+type PriceState = "idle" | "loading" | "fresh" | "stale" | "error";
 
 type UserPositionsResp = {
   success: boolean;
@@ -41,11 +44,115 @@ export default function MarketDetailPage() {
   const [tradeModal, setTradeModal] = useState(false);
   const [challengeFailed, setChallengeFailed] = useState<ChallengeFailedInfo | null>(null);
 
+  const [livePrice, setLivePrice] = useState<LivePriceData | null>(null);
+  const [priceState, setPriceState] = useState<PriceState>("idle");
+  const [errorCountdown, setErrorCountdown] = useState(0);
+
+  const livePriceRef = useRef<LivePriceData | null>(null);
+  const priceStateRef = useRef<PriceState>("idle");
+  const lastActivityRef = useRef<number>(Date.now());
+  const inflightRef = useRef(false);
+  const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const setPrice = useCallback((v: LivePriceData | null) => { livePriceRef.current = v; setLivePrice(v); }, []);
+  const setPState = useCallback((v: PriceState) => { priceStateRef.current = v; setPriceState(v); }, []);
+
+  const stopErrorCountdown = useCallback(() => {
+    if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
+    setErrorCountdown(0);
+  }, []);
+
+  const startErrorCountdown = useCallback(() => {
+    setPState("error");
+    setErrorCountdown(20);
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    countdownRef.current = setInterval(() => {
+      setErrorCountdown((c) => {
+        if (c <= 1) {
+          if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
+          setPState("stale"); // user must manually refresh after the cooldown
+          return 0;
+        }
+        return c - 1;
+      });
+    }, 1000);
+  }, [setPState]);
+
+  const refresh = useCallback(async () => {
+    if (inflightRef.current) return;
+    inflightRef.current = true;
+    loadingTimerRef.current = setTimeout(() => setPState("loading"), 300);
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/markets/${id}/refresh-price`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (loadingTimerRef.current) { clearTimeout(loadingTimerRef.current); loadingTimerRef.current = null; }
+      if (res.status === 429) return; // rate limited — keep current state, no error
+      if (!res.ok) { startErrorCountdown(); return; } // 503 etc → error + 20s countdown
+      const data = await res.json();
+      if (data?.success) {
+        stopErrorCountdown();
+        setPrice({ yesPrice: data.yesPrice, noPrice: data.noPrice, updatedAt: data.updatedAt });
+        setPState("fresh");
+      } else {
+        startErrorCountdown();
+      }
+    } catch {
+      if (loadingTimerRef.current) { clearTimeout(loadingTimerRef.current); loadingTimerRef.current = null; }
+      startErrorCountdown();
+    } finally {
+      inflightRef.current = false;
+    }
+  }, [id, setPrice, setPState, startErrorCountdown, stopErrorCountdown]);
+
+  // Initial market load (metadata + first-paint prices).
   useEffect(() => {
     apiFetch<{ success: boolean; market: MarketDetail }>(`/api/markets/${id}`)
       .then((data) => { if (data.success) setMarket(data.market); })
       .finally(() => setLoading(false));
   }, [id]);
+
+  // Live price: initial fetch + 10s auto-refresh (paused when inactive >30s or tab hidden),
+  // activity/visibility listeners, immediate refresh on resume. Cleans up on unmount.
+  useEffect(() => {
+    refresh();
+
+    const markActivity = () => { lastActivityRef.current = Date.now(); };
+    window.addEventListener("mousemove", markActivity, { passive: true });
+    window.addEventListener("scroll", markActivity, { passive: true });
+    window.addEventListener("keydown", markActivity);
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        lastActivityRef.current = Date.now();
+        refresh();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    refreshIntervalRef.current = setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      if (Date.now() - lastActivityRef.current > 30_000) return;
+      const lp = livePriceRef.current;
+      if (lp && Date.now() - lp.updatedAt > 10_000 && priceStateRef.current === "fresh") {
+        setPState("stale");
+      }
+      refresh();
+    }, 10_000);
+
+    return () => {
+      if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current);
+      if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
+      if (countdownRef.current) clearInterval(countdownRef.current);
+      window.removeEventListener("mousemove", markActivity);
+      window.removeEventListener("scroll", markActivity);
+      window.removeEventListener("keydown", markActivity);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [refresh, setPState]);
 
   if (loading) return (
     <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}>
@@ -61,6 +168,19 @@ export default function MarketDetailPage() {
 
   const endDate = new Date(market.endDate).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
   const volume = market.volume24h >= 1000 ? `$${(market.volume24h / 1000).toFixed(1)}k` : `$${market.volume24h.toFixed(0)}`;
+
+  // Displayed prices prefer the live value; fall back to the first-paint DB price.
+  const displayYes = livePrice?.yesPrice ?? market.yesPrice;
+  const displayNo = livePrice?.noPrice ?? market.noPrice;
+
+  // Primary action button driven by the price state machine.
+  const tradeBtn = (() => {
+    if (priceState === "error") return { label: `Market temporarily unavailable, retry in ${errorCountdown}s`, disabled: true, onClick: () => {} };
+    if (priceState === "loading") return { label: "Refreshing...", disabled: true, onClick: () => {} };
+    if (priceState === "stale") return { label: "Refresh prices", disabled: false, onClick: () => { refresh(); } };
+    if (!livePrice) return { label: "Loading price...", disabled: true, onClick: () => {} };
+    return { label: "Place Paper Trade", disabled: false, onClick: () => { if (!getToken()) { router.push("/login"); return; } setTradeModal(true); } };
+  })();
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg-page)" }}>
@@ -100,8 +220,8 @@ export default function MarketDetailPage() {
         {/* Prices */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
           {[
-            { label: "YES", price: market.yesPrice, color: "#22C55E", bg: "rgba(34,197,94,0.06)", border: "rgba(34,197,94,0.2)" },
-            { label: "NO", price: market.noPrice, color: "#EF4444", bg: "rgba(239,68,68,0.06)", border: "rgba(239,68,68,0.2)" },
+            { label: "YES", price: displayYes, color: "#22C55E", bg: "rgba(34,197,94,0.06)", border: "rgba(34,197,94,0.2)" },
+            { label: "NO", price: displayNo, color: "#EF4444", bg: "rgba(239,68,68,0.06)", border: "rgba(239,68,68,0.2)" },
           ].map(({ label, price, color, bg, border }) => (
             <div key={label} style={{
               background: bg,
@@ -121,28 +241,35 @@ export default function MarketDetailPage() {
           ))}
         </div>
 
-        {/* Trade button */}
+        {/* Price freshness indicator */}
+        <div style={{ fontSize: 11, color: priceState === "stale" || priceState === "error" ? "#F59E0B" : "var(--text-muted)", marginBottom: 10, textAlign: "center", minHeight: 14 }}>
+          {priceState === "loading" && "Refreshing prices..."}
+          {priceState === "fresh" && "Live price · auto-refreshes every 10s"}
+          {priceState === "stale" && "Prices may be delayed — refresh to trade"}
+          {priceState === "error" && "Polymarket unavailable"}
+        </div>
+
+        {/* Trade button (price state machine) */}
         <button
-          onClick={() => { if (!getToken()) { router.push("/login"); return; } setTradeModal(true); }}
+          onClick={tradeBtn.onClick}
+          disabled={tradeBtn.disabled}
           style={{
             width: "100%",
             padding: "15px",
-            background: "#22C55E",
-            color: "#071A0E",
+            background: tradeBtn.disabled ? "var(--bg-elevated)" : "#22C55E",
+            color: tradeBtn.disabled ? "var(--text-muted)" : "#071A0E",
             border: "none",
             borderRadius: 12,
             fontSize: 15,
             fontWeight: 700,
-            cursor: "pointer",
+            cursor: tradeBtn.disabled ? "not-allowed" : "pointer",
             marginBottom: 32,
             letterSpacing: "-0.01em",
-            boxShadow: "0 0 24px rgba(34,197,94,0.25)",
+            boxShadow: tradeBtn.disabled ? "none" : "0 0 24px rgba(34,197,94,0.25)",
             transition: "box-shadow 0.15s",
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "0 0 36px rgba(34,197,94,0.4)")}
-          onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "0 0 24px rgba(34,197,94,0.25)")}
         >
-          Place Paper Trade
+          {tradeBtn.label}
         </button>
 
         {/* Description */}
@@ -167,6 +294,7 @@ export default function MarketDetailPage() {
       {tradeModal && (
         <TradeModal
           market={market}
+          livePrice={livePrice}
           onClose={() => setTradeModal(false)}
           onChallengeFailed={(info) => {
             setTradeModal(false);
@@ -189,10 +317,12 @@ export default function MarketDetailPage() {
 
 function TradeModal({
   market,
+  livePrice,
   onClose,
   onChallengeFailed,
 }: {
   market: MarketDetail;
+  livePrice: LivePriceData | null;
   onClose: () => void;
   onChallengeFailed: (info: ChallengeFailedInfo) => void;
 }) {
@@ -227,8 +357,10 @@ function TradeModal({
     }
   }, [sellLockable, sellPosition?.shares, side]);
 
-  // P0.4: raw + effective price computation.
-  const rawPrice = side === "yes" ? market.yesPrice : market.noPrice;
+  // P0.4: raw + effective price computation. Prefer the live price (fallback DB).
+  const mYes = livePrice?.yesPrice ?? market.yesPrice;
+  const mNo = livePrice?.noPrice ?? market.noPrice;
+  const rawPrice = side === "yes" ? mYes : mNo;
 
   const capExceeded = action === "buy" && rawPrice >= BUY_PRICE_CAP;
 
@@ -263,7 +395,8 @@ function TradeModal({
     try {
       const endpoint = action === "buy" ? "/api/trade/buy" : "/api/trade/sell";
       const token = getToken();
-      // clientPrice stays RAW — slippage is checked against market.yesPrice/noPrice.
+      // clientPrice is the live raw price the user saw; the server re-fetches the
+      // live price and checks slippage against it (closes the stale-price arbitrage).
       const res = await fetch(endpoint, {
         method: "POST",
         headers: {
@@ -362,7 +495,7 @@ function TradeModal({
                 color: active ? color : "var(--text-muted)", fontWeight: 700, fontSize: 15, cursor: "pointer",
                 transition: "all 0.15s",
               }}>
-                {s.toUpperCase()} <span style={{ fontWeight: 400, fontSize: 13 }}>{((s === "yes" ? market.yesPrice : market.noPrice) * 100).toFixed(0)}¢</span>
+                {s.toUpperCase()} <span style={{ fontWeight: 400, fontSize: 13 }}>{((s === "yes" ? mYes : mNo) * 100).toFixed(0)}¢</span>
               </button>
             );
           })}

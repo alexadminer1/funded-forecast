@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, getToken } from "@/lib/api";
 import { User, Position } from "@/lib/types";
@@ -52,6 +52,10 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [pastChallenges, setPastChallenges] = useState<PastChallenge[]>([]);
   const [selectedChallenge, setSelectedChallenge] = useState<PastChallenge | null>(null);
+  const [anyStale, setAnyStale] = useState(false);
+
+  const lastActivityRef = useRef<number>(Date.now());
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadData = useCallback(() => {
     if (!getToken()) { router.push("/login"); return; }
@@ -78,6 +82,61 @@ export default function DashboardPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // Live unrealized-PnL polling (every 10s). Merges live prices into open
+  // positions without a full reload. Pauses when tab hidden or user idle >30s.
+  const pollLive = useCallback(async () => {
+    if (!getToken()) return;
+    try {
+      const data = await apiFetch<{
+        success: boolean;
+        positions: { id: number; unrealizedPnl: number; currentValue: number; currentPrice: number }[];
+        anyStale: boolean;
+      }>("/api/user/positions/live");
+      if (!data?.success) return;
+      const liveById = new Map(data.positions.map((p) => [p.id, p]));
+      setPositions((prev) =>
+        prev.map((p) => {
+          const live = liveById.get(p.id);
+          return live
+            ? { ...p, unrealizedPnl: live.unrealizedPnl, currentValue: live.currentValue, currentPrice: live.currentPrice }
+            : p;
+        }),
+      );
+      setAnyStale(Boolean(data.anyStale));
+    } catch {
+      /* transient — keep last values */
+    }
+  }, []);
+
+  useEffect(() => {
+    const markActivity = () => { lastActivityRef.current = Date.now(); };
+    window.addEventListener("mousemove", markActivity, { passive: true });
+    window.addEventListener("scroll", markActivity, { passive: true });
+    window.addEventListener("keydown", markActivity);
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        lastActivityRef.current = Date.now();
+        pollLive();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    pollRef.current = setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      if (Date.now() - lastActivityRef.current > 30_000) return;
+      pollLive();
+    }, 10_000);
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      window.removeEventListener("mousemove", markActivity);
+      window.removeEventListener("scroll", markActivity);
+      window.removeEventListener("keydown", markActivity);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [pollLive]);
+
   if (loading) return (
     <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}>
       Loading...
@@ -96,7 +155,7 @@ export default function DashboardPage() {
   const stats = [
     { label: "Available Balance", value: `$${activeBalance.toLocaleString("en-US", { minimumFractionDigits: 2 })}`, color: "#22C55E", sub: modeData?.mode === "challenge" ? "challenge balance" : "paper capital" },
     { label: "Open Positions", value: String(user.openPositionsCount), color: "#3B82F6", sub: "active trades" },
-    { label: "Unrealized PnL", value: `${totalUnrealized >= 0 ? "+" : ""}$${totalUnrealized.toFixed(2)}`, color: totalUnrealized >= 0 ? "#22C55E" : "#EF4444", sub: "open positions" },
+    { label: "Unrealized PnL", value: `${totalUnrealized >= 0 ? "+" : ""}$${totalUnrealized.toFixed(2)}`, color: totalUnrealized >= 0 ? "#22C55E" : "#EF4444", sub: anyStale ? "⚠ prices may be slightly delayed" : "open positions" },
     { label: "Portfolio Value", value: `$${portfolioValue.toFixed(2)}`, color: "#F59E0B", sub: "balance + positions" },
   ];
 

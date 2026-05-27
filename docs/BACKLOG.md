@@ -1204,4 +1204,47 @@ Acceptance:
 - Action: switch Portfolio Value to the same `.toLocaleString` formatting.
 - Scope: 1 line in dashboard/page.tsx.
 - Не блокер: cosmetic display inconsistency.
+
+### TECH-DEBT-18 Platform fee model — needs business decision + implementation 🟡 P1 (created Session 24, 2026-05-26)
+- Source: payout amount math audit (/tmp/payout-amount-math-audit.md), Session 24.
+- Current state: ZERO-FEE. POST /api/user/payout hardcodes `feePct=0`, `platformFee=0`,
+  `netAmount=amount`. Schema has `PayoutRequest.feePct @default(20)` as an ORPHAN from a
+  previous fee-bearing design — the 20% default is never applied in code.
+- Owner request: admin-configurable platform fee % (e.g. settings panel) that drives:
+  - User-facing UI hint dynamically ("Platform fee: X% · You receive (100−X)%")
+  - POST /api/user/payout calculation (`netAmount = amount × (100−X)/100`)
+  - Live preview "You will receive: $Y" under the amount field
+  - Admin view sees breakdown (base / fee / net)
+- Blockers / open design questions:
+  - Schema design — Settings table? Per-plan field? Global env var?
+  - Interaction with `profitSharePct` — currently the share % is a CAP on the request
+    (max = profit × share%), NOT a deduction. The fee model must define how the two compose
+    (fee on top of share cap? fee deducted from net? both?).
+- Scope (preliminary): prisma/schema.prisma, src/app/api/user/payout/route.ts (POST),
+  src/app/account/page.tsx, admin payouts UI (src/app/admin/page.tsx).
+- Priority: P1 — deferred 2026-05-26 to focus on demo UX. Revenue-affecting.
+- Related: SESSION_LOG 2026-05-26 (Session 24); /tmp/payout-amount-math-audit.md.
+
+### TECH-DEBT-19 Complete E2E payout test on testnet ⚪ P2 (created Session 24, 2026-05-26)
+- Source: Session 24 E2E payout test attempt.
+- State: PayoutRequest id=1 (adminer, Challenge #12) stuck at `approved` on prod — no on-chain
+  transfer happened.
+- Need: pick path (self-transfer vs new test-user wallet) → transfer USDC on Base Sepolia →
+  paste txHash in admin Mark Paid → verify-pending-payouts cron (or sync verify) confirms →
+  status=`paid`.
+- Blockers to check before transfer: confirm `CHAIN_ID` (84532 testnet) + `USDC_CONTRACT_ADDRESS`
+  + `RECEIVER_ADDRESS` in prod env vars; admin wallet holds testnet USDC; expectedAmountCents
+  must match the exact transfer ($50.00 for id=1 — verifier tolerance ±$0.01).
+- Priority: P2 — test-pipeline validation, not user-facing.
+- Related: SESSION_LOG 2026-05-26 (Session 24); src/lib/onchain-verify.ts;
+  src/app/api/cron/verify-pending-payouts/route.ts.
+
+### TECH-DEBT-20 Min payout threshold review ⚪ P3 (created Session 24, 2026-05-26)
+- Source: Session 24 payout UX work.
+- Current: `minPayoutCents=5000` ($50) per challenge (Challenge.minPayoutCents / plan default).
+- Question: is the $50 minimum user-friendly given the example — $159 profit yields only a
+  $111 share cap at 70% — and a user with small profit may be unable to withdraw at all until
+  the threshold is met?
+- Priority: P3 — review after the platform fee decision (TECH-DEBT-18).
+- Related: SESSION_LOG 2026-05-26 (Session 24).
 - Priority: P3.
