@@ -1248,3 +1248,29 @@ Acceptance:
 - Priority: P3 — review after the platform fee decision (TECH-DEBT-18).
 - Related: SESSION_LOG 2026-05-26 (Session 24).
 - Priority: P3.
+
+### TECH-DEBT-21 Branch-per-environment split before public launch 🟡 P1 (created Session 25, 2026-05-27; corrected 2026-05-27)
+- Current state (confirmed via Coolify UI): SINGLE working branch `develop`; TWO Coolify apps both on
+  `develop` — `app-dev` (dev.tradepredictions.online, auto-deploy ON) and `ff-sandbox-app`
+  (tradepredictions.online, auto-deploy OFF / manual Deploy gate). `main` is unused for deploys.
+- This is intentional pre-launch: prod is protected by the manual deploy click, so a stray `develop`
+  push only updates dev. (Earlier Session-25 note wrongly said "develop auto-deploys to prod" — corrected.)
+- Goal (before public launch / first real users): separate branches —
+  - `develop` → `app-dev` only (auto-deploy)
+  - `main` → `ff-sandbox-app` only (manual deploy)
+  - re-point Coolify `ff-sandbox-app` source from `develop` to `main`; introduce PR develop→main flow.
+- Estimated effort: ~1h Coolify reconfiguration + workflow docs update.
+- Trigger: before public launch / first real users.
+- Files: CLAUDE.md §3, §4 document the current dual-app reality post-correction.
+- Related: TECH-DEBT-22 (cosmetic rename); SESSION_LOG 2026-05-27 (Session 25).
+
+### TECH-DEBT-22 Rename `ff-sandbox-*` → `ff-prod-*` (cosmetic) ⚪ P3 (created Session 25, 2026-05-27; repurposed 2026-05-27)
+- Original entry ("separate dev environment") was based on wrong info — a dev environment ALREADY
+  exists (`app-dev` / `postgres-dev` → dev.tradepredictions.online). Repurposed.
+- Problem: the prod app/db are named `ff-sandbox-app` / `ff-sandbox-db` — "sandbox" is historical and
+  misleading; these are the real production app and database.
+- Task: rename to `ff-prod-app` / `ff-prod-db` (Coolify resource rename) to remove the foot-gun, and
+  update references in CLAUDE.md §3/§5, scripts, and any hardcoded container names.
+- Estimated effort: ~30-60 min; coordinate with the §5 write-whitelist labels (`coolify.resourceName`).
+- Priority: P3 — cosmetic/safety clarity, not functional. Discussed by Alexey.
+- Related: TECH-DEBT-21; SESSION_LOG 2026-05-27 (Session 25).

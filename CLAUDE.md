@@ -5,22 +5,24 @@
 
 ---
 
-## Current state — 2026-05-26 (evening, Session 24)
+## Current state — 2026-05-27 (Session 25)
 
-- **prod** `main @ 924b1ee` · **develop** `@ dc9b1bd` (1 commit ahead of main).
-- **Local repo:** `~/funded-app` (GitHub repo name is `funded-forecast`; the local clone
-  directory is `funded-app` — same repo, different folder name).
-- **Payout UX (new):** /account has an "Available to withdraw" breakdown block,
-  auto-populated wallet/network fields, and the false "Platform fee: 20%" line removed.
-  Admin payouts UI has a wallet-address Copy button.
-- **Backend:** `GET /api/user/payout` now returns a `summaries` array
-  (per-challenge `totalProfit` / `userShare` / `alreadyWithdrawn` / `availableNow`).
-- **Remaining payout work:** see TECH-DEBT-18 (platform fee model) and
-  TECH-DEBT-19 (E2E payout test) in `docs/BACKLOG.md`.
+- **prod auto-deploys from `develop`**; last deployed commit `2ccda83` (trade modal live sync).
+  There is currently ONE Coolify app (`ff-sandbox-app`) on `develop`; `main` is not wired to any
+  deploy. See §3 / §4.
+- **Local repo:** `~/funded-app` (GitHub repo `funded-forecast`; local clone dir `funded-app`).
+- **Session 25 (2026-05-27) — 4 features shipped:** payout UX overhaul + payout wallet autofill +
+  Live Pricing Architecture (arbitrage protection) + Trade Modal live sync.
+- **Platform is now arbitrage-protected:** trades execute against a live Polymarket price
+  (fail-closed + 20s cooldown); live unrealized PnL is active on the dashboard. See
+  `docs/BUSINESS_RULES.md` → "Live Pricing Architecture".
+- **Remaining:** TECH-DEBT-21 (Coolify deploy-workflow clarification, P1), TECH-DEBT-22 (separate dev
+  environment, P2), TECH-DEBT-18 (platform fee model), TECH-DEBT-19 (E2E payout test).
 
 ### Where we are in task
-- **Demo readiness:** ✅ payout UX complete for demo.
-- **Outstanding:** E2E payout test (TECH-DEBT-19), platform fee implementation (TECH-DEBT-18).
+- **Live pricing + trade modal:** ✅ deployed to prod (2026-05-27).
+- **Outstanding:** dev/prod separation (TECH-DEBT-21/22), platform fee (TECH-DEBT-18),
+  E2E payout test (TECH-DEBT-19).
 
 ---
 
@@ -58,64 +60,63 @@ funded status → request payouts через on-chain USDC transfer.
 
 ---
 
-## 3. Environments — Production vs Development
+## 3. Deploy & environment
 
-**Critical: два полностью изолированных окружения. НЕ путать.**
+### Coolify applications
+Two applications in Coolify, both deployed from `develop` branch:
 
-### Production (НЕ ТРОГАТЬ без явного approval)
+**Dev environment**
+- App: `app-dev`
+- Domain: dev.tradepredictions.online
+- Source branch: `develop`
+- Auto-deploy: ENABLED (every push to develop triggers dev deploy automatically)
+- Database: `postgres-dev`
 
-- App container: `ff-sandbox-app`
-- Postgres container: `ff-sandbox-db` (hostname: `n6a214z1jmhhlogwdf4pllxj`)
-- Domain: https://tradepredictions.online
-- Branch: `main`
-- Chain: Base Sepolia (sandbox stage), CHAIN_ID=84532
+**Production environment**
+- App: `ff-sandbox-app` (note: "sandbox" in the name is historical, this is prod)
+- Domain: tradepredictions.online
+- Source branch: `develop`
+- Auto-deploy: DISABLED (manual deploy required via Coolify UI)
+- Database: `ff-sandbox-db` (note: "sandbox" in the name is historical, this is prod DB)
 
-### Development (рабочее окружение для Claude Code)
+### Workflow
+1. Edit code locally (~/funded-app)
+2. `git push origin develop` → auto-deploys to dev
+3. Verify on dev.tradepredictions.online
+4. Coolify UI → ff-sandbox-app → click Deploy (manual)
+5. Verify on tradepredictions.online (prod)
 
-- App container: `app-dev` (hostname: `wlugzzo3b2482ji68l6r3zcv-045726055218`)
-- Postgres container: `postgres-dev` (hostname: `ku2yqi907qdi78bk3xb5zy3p`)
-- Domain: https://dev.tradepredictions.online
-- Branch: `develop`
-- Database name: `fundedforecast` (внутри postgres-dev)
+### Safety properties
+- Prod is gated by manual deploy click — accidental push to develop cannot break prod
+- Dev and prod use SEPARATE databases (no cross-contamination)
+- Both apps deploy the same code (no branch divergence)
 
-### Важно про данные
-
-- БД `postgres-dev` содержит копию прод-данных (dump 2026-05-13)
-- Env-переменные в `app-dev` сейчас идентичны проду (Resend, Alchemy, JWT_SECRET и т.д.)
-- Это временное решение пока прод в sandbox-режиме
-- Перед выходом в боевой режим — разделить secrets (см. P1 task в BACKLOG)
+### Future
+When platform launches publicly, separate branches will be introduced:
+- develop → app-dev only (auto-deploy)
+- main → ff-sandbox-app only (manual deploy)
+- See TECH-DEBT-21 for the migration plan
 
 ---
 
-## 4. Git workflow
+## 4. Branch model
 
-### Branches
+Currently using a SINGLE working branch (`develop`):
+- All development happens on `develop`
+- All deploys (dev + prod) source from `develop`
+- `main` branch exists but is not connected to deploys (occasional archival merges only)
 
-- `main` — production. Защищён branch protection rules. Прямой push ЗАПРЕЩЁН.
-- `develop` — рабочая ветка для активной разработки. Все изменения идут сюда.
-- `feature/*` — опционально для длинных задач (>1 день), мерджатся в `develop`.
+### Why single-branch?
+- Faster development during pre-launch phase
+- Prod is still gated by manual deploy in Coolify UI
+- No real users yet, so deployment safety prioritizes speed over isolation
 
-### Стандартный цикл задачи
-
-1. Убедиться что находимся в develop: `git checkout develop && git pull`
-2. Внести изменения
-3. `git diff` (показать Алексею перед коммитом)
-4. Дождаться подтверждения
-5. `git add . && git commit -m "..." && git push origin develop`
-6. Coolify подхватывает push в develop → auto-deploy в app-dev
-7. Тест на https://dev.tradepredictions.online
-
-### Production release: develop → main
-
-Только Алексей выполняет этот процесс. Claude Code НЕ создаёт PR в main самостоятельно.
-
-1. Develop стабилен и протестирован на dev.tradepredictions.online
-2. Алексей создаёт PR develop → main на GitHub
-3. PR review (Алексей approve себя)
-4. Merge (strategy: Merge commit, не squash — сохраняем историю)
-5. Push в main НЕ триггерит auto-deploy (webhook выключен)
-6. Алексей вручную нажимает Deploy в Coolify для ff-sandbox-app
-7. Перед deploy — пройти PROD_RELEASE_CHECKLIST.md
+### When this changes
+Before public launch (TECH-DEBT-21):
+- develop → continue as dev branch
+- main → become production branch
+- Coolify ff-sandbox-app re-pointed to main
+- Standard "PR-from-develop-to-main" flow introduced
 
 ### Стиль коммитов
 
@@ -139,6 +140,11 @@ funded status → request payouts через on-chain USDC transfer.
 - Group: `docker` (доступ к docker daemon)
 
 ### Container access policy
+
+**⚠️ Naming note (historical):** "sandbox" in the prod container names does NOT mean "test".
+- `app-dev` / `postgres-dev` = the **DEV** environment (dev.tradepredictions.online) — safe to write/test.
+- `ff-sandbox-app` / `ff-sandbox-db` = **PRODUCTION** app + **REAL PROD DATABASE**
+  (tradepredictions.online) — do NOT write without explicit permission.
 
 **READ-ONLY operations — разрешены на ВСЕХ контейнерах (включая prod):**
 - `docker logs <container>` — диагностика, сравнение dev vs prod
@@ -237,6 +243,9 @@ read+write для issues, PRs, code, workflows.
 - Читать любой файл в `~/funded-app/`
 - Создавать, редактировать, удалять файлы в `src/`, `prisma/`, `scripts/`, `docs/`
 - `git add` + `git commit` + `git push origin develop` после завершения задачи
+  - NB: this push triggers an automatic deploy to the **dev** environment
+    (app-dev / dev.tradepredictions.online) within ~2 minutes. **Production is unaffected** unless
+    Alexey manually clicks Deploy on `ff-sandbox-app` in the Coolify UI.
 - `npm install` новых пакетов (если задача требует)
 - Запускать `npm run build`, `npm run lint`, `npx tsc --noEmit` для проверки
 - Запускать `npx prisma generate` (только client, не schema!)
@@ -352,4 +361,4 @@ Unmanaged DDL (partial indexes, soft FKs) задокументирован в `d
 
 ---
 
-Last updated: 2026-05-26 (Session 24 — payout UX overhaul, network fix, autofill; Current state section added)
+Last updated: 2026-05-27 (Session 25 — §3/§4/§5/§8 corrected: dual-app Coolify (app-dev auto-deploy + ff-sandbox-app manual), both on develop; live pricing + trade modal shipped)

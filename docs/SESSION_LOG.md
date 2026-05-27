@@ -9,6 +9,102 @@
 
 ---
 
+## Session 2026-05-27 — Live Pricing Architecture + Trade Modal UX (Session 25)
+
+### Context
+Полный день работы над защитой от арбитража и UX торгового флоу.
+Все фичи задеплоены на prod.
+
+### Features deployed (4 commits on develop, 1 merge to main)
+
+#### 1. Payout UX overhaul (`701895d` → `924b1ee`)
+- New "Available to withdraw" block on /account showing profit / userShare% / alreadyWithdrawn / availableNow per challenge
+- Backend GET /api/user/payout extended with `summaries[]` array
+- Admin /admin/payouts: wallet truncated (6+4) + Copy button with feedback
+- Removed misleading "Platform fee: 20%" hint (profitSharePct=70 is cap, not haircut)
+- pending_verification added to statusColor map
+
+#### 2. Payout wallet autofill (`dc9b1bd`)
+- On profile load, payout form's wallet/network auto-fill from User.walletAddress/walletNetwork
+- After successful submit: only challengeId/amount cleared, wallet/network preserved
+
+#### 3. Live Pricing Architecture (`9f1c2aa` → `c47cacf`)
+- **Closes arbitrage vulnerability** (audit: /tmp/arbitrage-vulnerability-audit.md)
+- Backend: live Polymarket fetch before every trade (3s timeout, fail-closed with 20s cooldown)
+- Slippage check now vs LIVE price (was DB vs DB, ineffective)
+- Background sync `live-price-sync`: Coolify cron `* * * * *` + 6-tick loop with sleep(10s) + Redis lock
+- Single hash `live:prices` in Upstash (TTL 15s) — cost-optimized for free tier
+- New endpoints: /api/markets/[id]/refresh-price (1/5s rate limit), /api/user/positions/live, /api/cron/live-price-sync
+- Frontend market page: auto-refresh every 10s, pause on hidden/idle (>30s), 5 button states (idle/loading/fresh/stale/error)
+- Dashboard polls /api/user/positions/live every 10s, shows stale indicator if Redis empty
+- Architecture decisions: gamma API (not CLOB — no schema change), single hash storage, Coolify loop (not separate worker)
+- Coolify task `live-price-sync` configured manually after deploy
+
+#### 4. Trade Modal Live Sync (`2ccda83`)
+- TradeModal extracted to src/components/TradeModal.tsx
+- Green countdown bar + "Next update in: Ns" text in modal
+- Button disabled when secondsLeft===1 (avoid race with refresh)
+- At 0s: fetch fresh price, reset bar to 100%, smooth CSS transition
+- Pre-submit: frontend fetches fresh price before POST
+- Significant change threshold = max(5%, 2¢), strict >
+- If change detected: inline confirmation dialog "Price changed significantly: X¢ → Y¢. Continue?"
+- Cancel → modal closes entirely; Yes → trade at new price
+- Parent auto-refresh paused while modal open (avoids 429 from double polling)
+- "Couldn't refresh" state with auto-retry every 5s
+
+### Architecture findings & key decisions
+
+**Decision: gamma vs CLOB for live prices**
+- Chose gamma API: no schema change needed (no clobTokenIds storage)
+- Sufficient for 100-500 users (30 req/sec limit vs CLOB's 150)
+- Can migrate to CLOB later when scaling beyond this
+
+**Decision: Redis storage model**
+- Single hash `live:prices` with HSET fields per market
+- Avoids 1.7M writes/day (per-key) → 17k writes/day (hash) — 100x cheaper
+- Stays in Upstash free tier
+
+**Decision: background sync mechanism**
+- Coolify cron `* * * * *` + internal 6-tick loop with sleep(10s) + Redis lock
+- Alternative considered: separate worker container (option D) — deferred for future scaling
+
+**Decision: arbitrage attack vector**
+- Paper trading + real payouts = users could exploit stale DB prices
+- 30+ arbitrage trades → passes challenge → real USDC payout
+- Backend now fetches live Polymarket price before every trade, slippage check vs live
+
+### Architecture notes
+
+**Coolify deploy model (corrected 2026-05-27 after Coolify UI inspection)**
+- Earlier note in this entry claimed "prod auto-deploys from develop" — that was WRONG.
+- Reality: TWO Coolify apps, BOTH on the `develop` branch:
+  - `app-dev` → dev.tradepredictions.online — auto-deploy ENABLED (every develop push deploys to dev)
+  - `ff-sandbox-app` → tradepredictions.online (PROD) — auto-deploy DISABLED (manual Deploy click)
+- Separate databases: `postgres-dev` (dev) vs `ff-sandbox-db` (prod). No cross-contamination.
+- So a dev environment DOES already exist; the confusion was that both apps share the `develop` source
+  branch (correct intent) — separation is enforced by the manual prod-deploy gate, not by branches.
+- Single-branch is intentional for pre-launch velocity; prod stays protected by the manual gate.
+- Backlog: TECH-DEBT-21 (branch-per-env split before launch), TECH-DEBT-22 (cosmetic ff-sandbox→ff-prod rename).
+- CLAUDE.md §3/§4/§5/§8 updated to this corrected reality (2026-05-27).
+
+### Smoke tests passed on prod
+- Market page auto-refresh every 10s ✓
+- Auto-refresh pauses on hidden tab / >30s idle ✓
+- Trade modal countdown bar shrinks smoothly ✓
+- Button disabled at 1s before refresh ✓
+- Live price matches polymarket.com ✓
+- Dashboard unrealized PnL updates without reload ✓
+- Cooldown UX works (closing market shows "retry in Ns") ✓
+- Rate limiter gracefully handles spam (frontend doesn't break) ✓
+
+### Files modified summary
+- 14 files changed across 4 deploys
+- ~1200 LOC added across backend + frontend
+- 0 schema migrations
+- 0 breaking changes to existing flows
+
+---
+
 ## Session 2026-05-26 (afternoon/evening) — Payout fixes: network mismatch + UX overhaul + autofill (Session 24)
 
 Status: CLOSED — 3 деплоя в prod, все протестированы
