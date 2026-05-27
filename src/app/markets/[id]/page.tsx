@@ -4,35 +4,14 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { apiFetch, getToken } from "@/lib/api";
 import { MarketDetail } from "@/lib/types";
-import { BUY_PRICE_CAP } from "@/lib/engine/constants";
-import {
-  applyBuySpread,
-  applySellSpread,
-} from "@/lib/engine/spreads";
 import {
   ChallengeFailedModal,
   ChallengeFailedInfo,
-  ChallengeFailedReason,
 } from "@/components/ChallengeFailedModal";
+import { TradeModal } from "@/components/TradeModal";
 
 type LivePriceData = { yesPrice: number; noPrice: number; updatedAt: number };
 type PriceState = "idle" | "loading" | "fresh" | "stale" | "error";
-
-type UserPositionsResp = {
-  success: boolean;
-  activeChallenge: {
-    id: number;
-    startBalance: number;
-    todayBuyVolume: number;
-    minDailyVolumeUsd: number;
-  } | null;
-  positions: Array<{
-    id: number;
-    marketId: string;
-    side: "yes" | "no";
-    shares: number;
-  }>;
-};
 
 export default function MarketDetailPage() {
   const params = useParams();
@@ -118,6 +97,11 @@ export default function MarketDetailPage() {
   // Live price: initial fetch + 10s auto-refresh (paused when inactive >30s or tab hidden),
   // activity/visibility listeners, immediate refresh on resume. Cleans up on unmount.
   useEffect(() => {
+    // While the trade modal is open, it owns the single price poller (avoids
+    // double-fetching the rate-limited refresh-price endpoint). On close this
+    // effect re-runs and the immediate refresh() below re-syncs the page.
+    if (tradeModal) return;
+
     refresh();
 
     const markActivity = () => { lastActivityRef.current = Date.now(); };
@@ -152,7 +136,7 @@ export default function MarketDetailPage() {
       window.removeEventListener("keydown", markActivity);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [refresh, setPState]);
+  }, [refresh, setPState, tradeModal]);
 
   if (loading) return (
     <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}>
@@ -294,7 +278,7 @@ export default function MarketDetailPage() {
       {tradeModal && (
         <TradeModal
           market={market}
-          livePrice={livePrice}
+          initialLivePrice={livePrice}
           onClose={() => setTradeModal(false)}
           onChallengeFailed={(info) => {
             setTradeModal(false);
@@ -311,296 +295,6 @@ export default function MarketDetailPage() {
           }}
         />
       )}
-    </div>
-  );
-}
-
-function TradeModal({
-  market,
-  livePrice,
-  onClose,
-  onChallengeFailed,
-}: {
-  market: MarketDetail;
-  livePrice: LivePriceData | null;
-  onClose: () => void;
-  onChallengeFailed: (info: ChallengeFailedInfo) => void;
-}) {
-  const [side, setSide] = useState<"yes" | "no">("yes");
-  const [action, setAction] = useState<"buy" | "sell">("buy");
-  const [amount, setAmount] = useState(10);
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
-
-  // P0.4: fetch user positions for full-sell-only enforcement.
-  const [userPositions, setUserPositions] = useState<UserPositionsResp | null>(null);
-  const [positionsState, setPositionsState] = useState<"loading" | "loaded" | "error">("loading");
-
-  useEffect(() => {
-    apiFetch<UserPositionsResp>("/api/user/positions")
-      .then((d) => { setUserPositions(d); setPositionsState("loaded"); })
-      .catch(() => setPositionsState("error"));
-  }, []);
-
-  const sellPosition = userPositions?.positions.find(
-    (p) => p.marketId === market.id && p.side === side,
-  );
-  const sellLockable = action === "sell" && positionsState === "loaded" && !!sellPosition;
-  const sellNoPosition = action === "sell" && positionsState === "loaded" && !sellPosition;
-  const sellLoading = action === "sell" && positionsState === "loading";
-  const sellFetchFailed = action === "sell" && positionsState === "error";
-
-  // Sync amount to position.shares when sell mode is locked.
-  useEffect(() => {
-    if (sellLockable && sellPosition) {
-      setAmount(sellPosition.shares);
-    }
-  }, [sellLockable, sellPosition?.shares, side]);
-
-  // P0.4: raw + effective price computation. Prefer the live price (fallback DB).
-  const mYes = livePrice?.yesPrice ?? market.yesPrice;
-  const mNo = livePrice?.noPrice ?? market.noPrice;
-  const rawPrice = side === "yes" ? mYes : mNo;
-
-  const capExceeded = action === "buy" && rawPrice >= BUY_PRICE_CAP;
-
-  let effectivePrice = rawPrice;
-  let spreadPct = 0;
-  if (action === "buy" && !capExceeded) {
-    const r = applyBuySpread(rawPrice);
-    effectivePrice = r.effectivePrice;
-    spreadPct = r.spreadPct;
-  } else if (action === "sell") {
-    const r = applySellSpread(rawPrice);
-    effectivePrice = r.effectivePrice;
-    spreadPct = r.spreadPct;
-  }
-
-  const cost = parseFloat((amount * effectivePrice).toFixed(2));
-  const payoutIfWin = parseFloat((amount * 1).toFixed(2));
-  const profitIfWin = parseFloat((payoutIfWin - cost).toFixed(2));
-
-  // Pre-trade rejects for rules #2/#3/#4 removed in TASK-PHILO-1.
-  // The Buy button gates only on technical invariants (cap, sell-state, loading).
-  const submitDisabled =
-    loading
-    || capExceeded
-    || sellLoading
-    || sellNoPosition
-    || amount <= 0;
-
-  async function handleTrade() {
-    setLoading(true);
-    setResult(null);
-    try {
-      const endpoint = action === "buy" ? "/api/trade/buy" : "/api/trade/sell";
-      const token = getToken();
-      // clientPrice is the live raw price the user saw; the server re-fetches the
-      // live price and checks slippage against it (closes the stale-price arbitrage).
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ marketId: market.id, side, amount, clientPrice: rawPrice }),
-      });
-
-      let data: {
-        success?: boolean;
-        balanceAfter?: number;
-        error?: string;
-        error_code?: string;
-        reason?: ChallengeFailedReason;
-        details?: string;
-      };
-      try {
-        data = await res.json();
-      } catch {
-        data = {};
-      }
-
-      // P0.4.bis — pre-trade challenge failure → structured modal, no inline toast.
-      if (res.status === 409 && data.error_code === "CHALLENGE_FAILED_PRE_TRADE" && data.reason) {
-        onChallengeFailed({
-          reason: data.reason,
-          details: data.details ?? "Your challenge has ended.",
-        });
-        return;
-      }
-
-      if (res.ok && data.success) {
-        setResult({
-          success: true,
-          message: `${action === "buy" ? "Bought" : "Sold"} ${amount} ${side.toUpperCase()} shares · Balance: $${data.balanceAfter?.toFixed(2)}`,
-        });
-      } else {
-        setResult({ success: false, message: data.error ?? "Trade failed" });
-      }
-    } catch {
-      setResult({ success: false, message: "Request failed" });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 16 }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div style={{
-        background: "linear-gradient(160deg, var(--bg-surface) 0%, var(--bg-page) 100%)",
-        borderRadius: 16,
-        padding: 28,
-        width: "100%",
-        maxWidth: 460,
-        border: "1px solid var(--border)",
-        boxShadow: "0 32px 80px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.04)",
-        animation: "fadeIn 0.2s ease",
-      }}>
-        {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 22 }}>
-          <div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5 }}>Place Trade</div>
-            <h2 style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", lineHeight: 1.4, margin: 0, maxWidth: 340 }}>{market.title}</h2>
-          </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 20, cursor: "pointer", lineHeight: 1, padding: 4 }}>×</button>
-        </div>
-
-        {/* BUY / SELL */}
-        <div style={{ display: "flex", background: "var(--bg-input)", borderRadius: 9, padding: 3, marginBottom: 14, border: "1px solid var(--border-subtle)" }}>
-          {(["buy", "sell"] as const).map((a) => (
-            <button key={a} onClick={() => setAction(a)} style={{
-              flex: 1, padding: "7px", borderRadius: 7, border: "none",
-              background: action === a ? "var(--bg-elevated)" : "transparent",
-              color: action === a ? "var(--text-primary)" : "var(--text-muted)",
-              fontWeight: action === a ? 600 : 400, fontSize: 13, cursor: "pointer",
-              textTransform: "uppercase", letterSpacing: "0.05em",
-              boxShadow: action === a ? "0 1px 4px rgba(0,0,0,0.3)" : "none",
-              transition: "all 0.15s",
-            }}>{a}</button>
-          ))}
-        </div>
-
-        {/* YES / NO */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
-          {(["yes", "no"] as const).map((s) => {
-            const color = s === "yes" ? "#22C55E" : "#EF4444";
-            const active = side === s;
-            return (
-              <button key={s} onClick={() => setSide(s)} style={{
-                flex: 1, padding: "12px", borderRadius: 9, border: `1px solid ${active ? (s === "yes" ? "rgba(34,197,94,0.4)" : "rgba(239,68,68,0.4)") : "var(--border)"}`,
-                background: active ? (s === "yes" ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.08)") : "transparent",
-                color: active ? color : "var(--text-muted)", fontWeight: 700, fontSize: 15, cursor: "pointer",
-                transition: "all 0.15s",
-              }}>
-                {s.toUpperCase()} <span style={{ fontWeight: 400, fontSize: 13 }}>{((s === "yes" ? mYes : mNo) * 100).toFixed(0)}¢</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Shares input */}
-        <div style={{ marginBottom: 18 }}>
-          <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 7, fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase" }}>
-            Shares{sellLockable ? " (full sell only)" : ""}
-          </label>
-          <input
-            type="number" min={1} max={10000} value={amount}
-            readOnly={sellLockable}
-            disabled={sellLoading || sellNoPosition}
-            onChange={(e) => setAmount(Math.max(1, parseInt(e.target.value) || 1))}
-            style={{
-              width: "100%", padding: "11px 14px", borderRadius: "var(--radius-input)",
-              border: "1px solid var(--border)", background: "var(--bg-input)",
-              color: sellLockable ? "var(--text-muted)" : "var(--text-primary)",
-              fontSize: 16, outline: "none",
-              boxSizing: "border-box", transition: "border-color 0.15s",
-              cursor: sellLockable ? "not-allowed" : "text",
-            }}
-            onFocus={(e) => (e.target.style.borderColor = "rgba(34,197,94,0.4)")}
-            onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
-          />
-          {sellFetchFailed && (
-            <div style={{ fontSize: 11, color: "#F59E0B", marginTop: 6 }}>
-              Could not load position size — manual input fallback.
-            </div>
-          )}
-        </div>
-
-        {/* P0.4 reject banners */}
-        {capExceeded && (
-          <div style={{
-            padding: "11px 14px", borderRadius: 8, marginBottom: 14,
-            background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
-            color: "#EF4444", fontSize: 13,
-          }}>
-            Buy cap: price ${rawPrice.toFixed(4)} is at or above ${BUY_PRICE_CAP.toFixed(2)}. Trade not allowed.
-          </div>
-        )}
-        {sellNoPosition && (
-          <div style={{
-            padding: "11px 14px", borderRadius: 8, marginBottom: 14,
-            background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
-            color: "#EF4444", fontSize: 13,
-          }}>
-            No {side.toUpperCase()} position to sell in this market.
-          </div>
-        )}
-
-        {/* Preview / Summary */}
-        <div style={{ background: "var(--bg-input)", borderRadius: 9, padding: "14px 16px", marginBottom: 18, border: "1px solid var(--border-subtle)" }}>
-          {[
-            { label: "Raw price", value: `$${rawPrice.toFixed(4)}`, color: "var(--text-primary)" },
-            ...(capExceeded ? [] : [
-              { label: `Spread (${spreadPct}%)`, value: action === "buy" ? `+$${(effectivePrice - rawPrice).toFixed(4)}` : `−$${(rawPrice - effectivePrice).toFixed(4)}`, color: spreadPct > 0 ? "#F59E0B" : "var(--text-muted)" },
-              { label: "Effective price", value: `$${effectivePrice.toFixed(4)}`, color: "var(--text-primary)" },
-              ...(action === "buy"
-                ? [
-                  { label: "Cost", value: `$${cost.toFixed(2)}`, color: "var(--text-primary)" },
-                  { label: "Payout if win", value: `$${payoutIfWin.toFixed(2)}`, color: "#22C55E" },
-                  { label: "Profit if win", value: `+$${profitIfWin.toFixed(2)}`, color: "#22C55E" },
-                ]
-                : [
-                  { label: "Payout", value: `$${cost.toFixed(2)}`, color: "#22C55E" },
-                ]),
-            ]),
-          ].map(({ label, value, color }) => (
-            <div key={label} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
-              <span style={{ color: "var(--text-muted)" }}>{label}</span>
-              <span style={{ color, fontWeight: 600 }}>{value}</span>
-            </div>
-          ))}
-        </div>
-
-        {result && (
-          <div style={{
-            padding: "11px 14px", borderRadius: 8, marginBottom: 14,
-            background: result.success ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.08)",
-            border: `1px solid ${result.success ? "rgba(34,197,94,0.2)" : "rgba(239,68,68,0.2)"}`,
-            color: result.success ? "#22C55E" : "#EF4444", fontSize: 13,
-          }}>
-            {result.message}
-          </div>
-        )}
-
-        <button
-          onClick={handleTrade}
-          disabled={submitDisabled}
-          style={{
-            width: "100%", padding: "13px", borderRadius: 10,
-            background: submitDisabled ? "var(--bg-elevated)" : "#22C55E",
-            color: submitDisabled ? "var(--text-muted)" : "#071A0E",
-            border: "none", fontSize: 14, fontWeight: 700, cursor: submitDisabled ? "not-allowed" : "pointer",
-            letterSpacing: "-0.01em",
-            boxShadow: submitDisabled ? "none" : "0 0 20px rgba(34,197,94,0.2)",
-            transition: "box-shadow 0.15s",
-          }}
-        >
-          {loading ? "Processing..." : sellLoading ? "Loading position..." : `Place ${action.toUpperCase()} · ${side.toUpperCase()}`}
-        </button>
-      </div>
     </div>
   );
 }
