@@ -79,10 +79,10 @@ export interface PolymarketResolvedMarket {
   outcomePrices: string;
 }
 
-export async function fetchMarketById(id: string): Promise<PolymarketResolvedMarket | null> {
+export async function fetchMarketById(id: string, timeoutMs = 5000): Promise<PolymarketResolvedMarket | null> {
   try {
     const res = await fetch(`${POLYMARKET_API}/markets/${id}`, {
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) return null;
     const data = await res.json();
@@ -93,6 +93,31 @@ export async function fetchMarketById(id: string): Promise<PolymarketResolvedMar
       outcomes: data.outcomes ?? '[]',
       outcomePrices: data.outcomePrices ?? '[]',
     };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Live yes/no price for a single market via gamma /markets/{id}.
+ * Used by the trade hot-path and the background sync. Returns null on
+ * timeout/error or if prices are not strictly within (0,1) — callers
+ * treat null as fail-closed.
+ */
+export async function fetchMarketLivePrice(
+  id: string,
+  timeoutMs = 3000,
+): Promise<{ yesPrice: number; noPrice: number } | null> {
+  const market = await fetchMarketById(id, timeoutMs);
+  if (!market) return null;
+  try {
+    const prices = JSON.parse(market.outcomePrices);
+    const yesPrice = parseFloat(prices[0]);
+    const noPrice = parseFloat(prices[1]);
+    if (yesPrice > 0 && yesPrice < 1 && noPrice > 0 && noPrice < 1) {
+      return { yesPrice, noPrice };
+    }
+    return null;
   } catch {
     return null;
   }

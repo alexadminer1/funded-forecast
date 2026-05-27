@@ -10,6 +10,8 @@ import {
   applyBuySpread,
   checkBuyCap,
 } from "@/lib/engine/spreads";
+import { fetchMarketLivePrice } from "@/lib/polymarket";
+import { getTradeCooldown, setTradeCooldown } from "@/lib/livePrice";
 
 const MAX_SLIPPAGE = 0.02;
 const SANDBOX_MAX_POSITION_PCT = 2;
@@ -151,6 +153,26 @@ export async function POST(req: NextRequest) {
     throw err;
   }
 
+  // === Live price (fail-closed) — execution must use the live Polymarket price,
+  //     never the stale DB cache. Fetched BEFORE any $transaction so the network
+  //     call never holds a DB transaction open. ===
+  const cooldownTtl = await getTradeCooldown(userId, marketId);
+  if (cooldownTtl != null) {
+    return NextResponse.json(
+      { error: "Market temporarily unavailable", retryAfter: cooldownTtl },
+      { status: 503 },
+    );
+  }
+  const livePrices = await fetchMarketLivePrice(marketId, 3000);
+  if (!livePrices) {
+    await setTradeCooldown(userId, marketId);
+    return NextResponse.json(
+      { error: "Market temporarily unavailable, try again in 20 seconds", retryAfter: 20 },
+      { status: 503 },
+    );
+  }
+  const livePrice = side === "yes" ? livePrices.yesPrice : livePrices.noPrice;
+
   // === Lazy daily reset (outside transaction so it persists even on rollback) ===
   const activeChallengePre = await prisma.challenge.findFirst({
     where: { userId, status: "active" },
@@ -195,7 +217,9 @@ export async function POST(req: NextRequest) {
         throw new MarketEndedError(market.endDate);
       }
 
-      const rawPrice = side === "yes" ? market.yesPrice : market.noPrice;
+      // Execution price is the live Polymarket price (fetched above), NOT the
+      // stale DB cache. Slippage is checked against the live price.
+      const rawPrice = livePrice;
       if (Math.abs(clientPrice - rawPrice) > MAX_SLIPPAGE) {
         throw new PriceMovedError(rawPrice);
       }
@@ -278,8 +302,8 @@ export async function POST(req: NextRequest) {
           challengeId,
           side, action: "buy",
           amount, price: executionPrice, cost,
-          marketYesPriceAtExecution: market.yesPrice,
-          marketNoPriceAtExecution: market.noPrice,
+          marketYesPriceAtExecution: livePrices.yesPrice,
+          marketNoPriceAtExecution: livePrices.noPrice,
         },
       });
 
